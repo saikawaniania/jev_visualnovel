@@ -258,6 +258,11 @@ body.debug #center-line {
 #settings .result.ok { color: #9fd89f; }
 #settings .result.ng { color: #f0a0a0; }
 #settings [data-show].off { display: none; }
+#settings .model-list { display: flex; flex-direction: column; gap: 6px; }
+#settings .model-list:empty { display: none; }
+#settings .model-list button { text-align: left; font-size: 13px; line-height: 1.5; }
+#settings .model-list button.current { border-color: var(--accent); }
+#settings .model-list .desc { display: block; color: var(--muted); font-size: 12px; }
 #reader-top .settings-btn { margin-left: auto; }
 </style>
 </head>
@@ -342,8 +347,13 @@ body.debug #center-line {
       </label>
       <label data-show="remote">モデル版
         <input data-key="model" type="text" spellcheck="false" onchange="JV.SettingsUI.change(this)">
-        <small>判定傾向がしきい値に影響するため、jev-latest ではなく版を固定します。</small>
+        <small>判定傾向がしきい値に影響するため、jev-latest ではなく版を固定します。名前は下のボタンで確かめられます。</small>
       </label>
+      <div class="row" data-show="remote">
+        <button type="button" id="models-btn" onclick="JV.SettingsUI.listModels()">使えるモデルを確認</button>
+        <span id="models-result" class="result"></span>
+      </div>
+      <div class="model-list" id="model-list" data-show="remote"></div>
       <label data-show="remote">選択肢のキー
         <select data-key="asciiKeys" onchange="JV.SettingsUI.change(this)">
           <option value="false">日本語（和室・夜 など）</option>
@@ -989,9 +999,48 @@ JV.SettingsUI = {
         else if (err.status === 500 && /not configured/.test(msg)) relayHint = '→ Netlify の環境変数 TYPESAFE_API_KEY と RELAY_PASSPHRASE を設定し、再デプロイしてください。';
         else if (err.status === 401) relayHint = '→ 中継に設定した TypeSafe の APIキーが通っていません。キーを確認してください。';
       }
+      if (/unknown model/i.test(msg)) relayHint = '→ このモデル名は使えません。「使えるモデルを確認」を押して、一覧から選んでください。';
       out.className = 'result ng';
       out.textContent = `失敗：${err.message} ${relayHint || hint}`;
       if (err.detail) console.warn('[jev-viewer] connection test', err.detail);
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  async listModels() {
+    const out = document.getElementById('models-result');
+    const box = document.getElementById('model-list');
+    const btn = document.getElementById('models-btn');
+    box.textContent = '';
+    if (JV.Judge.adapter() !== JV.Adapters.remote) { out.className = 'result ng'; out.textContent = 'APIキーを入力してください。'; return; }
+    btn.disabled = true;
+    out.className = 'result';
+    out.textContent = '取得中…';
+    try {
+      const models = await JV.Adapters.remote.listModels();
+      if (!models.length) { out.textContent = '一覧が空でした。'; return; }
+      out.className = 'result ok';
+      out.textContent = `${models.length} 件。押すとモデル版に入ります（版の付いた名前を選ぶのがおすすめ）。`;
+      const current = JV.Settings.get('model');
+      for (const m of models) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = m.name === current ? 'current' : '';
+        b.textContent = m.name + (m.release_date ? `（${m.release_date}）` : '');
+        if (m.description) { const d = document.createElement('span'); d.className = 'desc'; d.textContent = m.description; b.appendChild(d); }
+        b.onclick = () => {
+          const input = document.querySelector('#settings [data-key="model"]');
+          input.value = m.name;
+          this.change(input);
+          box.querySelectorAll('button').forEach((x) => x.classList.toggle('current', x === b));
+          document.getElementById('conn-result').textContent = '';
+        };
+        box.appendChild(b);
+      }
+    } catch (err) {
+      out.className = 'result ng';
+      out.textContent = `失敗：${err.message}`;
     } finally {
       btn.disabled = false;
     }
@@ -1492,6 +1541,30 @@ JV.Adapters.remote = {
       headers['X-Title'] = 'Jev Sound Novel Viewer';
     }
     return { url, headers };
+  },
+
+  /** 使えるモデルの一覧（GET …/v1/models）。[{ name, description, release_date }] */
+  async listModels() {
+    const { url, headers } = this.endpoint();
+    if (!url) throw new JV.Adapters.RemoteError('接続先URLが設定されていません', 'config');
+    const modelsUrl = url.replace(/\/systemone\/?(\?.*)?$/, '/models');
+    if (modelsUrl === url) throw new JV.Adapters.RemoteError('この接続先からはモデル一覧のURLが分かりません', 'config');
+    delete headers['Content-Type'];
+    let res;
+    try {
+      res = await fetch(modelsUrl, { method: 'GET', headers, mode: 'cors', credentials: 'omit', signal: AbortSignal.timeout ? AbortSignal.timeout(this.TIMEOUT_MS) : undefined });
+    } catch (err) {
+      throw new JV.Adapters.RemoteError('接続できません。ブラウザからの直接呼び出しが CORS で拒否されたか、ネットワークに届いていません', 'network', String(err));
+    }
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) { data = text; }
+    if (!res.ok) {
+      const msg = (data && (data.message || (data.error && (data.error.message || data.error)))) || text.slice(0, 200);
+      throw new JV.Adapters.RemoteError(`HTTP ${res.status}: ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`, res.status === 403 || res.status === 401 ? 'auth' : 'http', data, res.status);
+    }
+    const list = Array.isArray(data) ? data : (data && (data.models || data.data)) || [];
+    return list.map((m) => (typeof m === 'string' ? { name: m } : { name: m.name || m.id, description: m.description || '', release_date: m.release_date || '' })).filter((m) => m.name);
   },
 
   /** 応答から answers を取り出す。TypeSafe 形式のほか、OpenAI 互換の包み方にも一応対応 */

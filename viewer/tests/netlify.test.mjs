@@ -5,12 +5,25 @@ import { createServer } from 'node:http';
 import { openApp, check, done } from './harness.mjs';
 
 const upstreamLog = [];
+let strictModels = false; // true：本物と同じく jev-1.13 を知らないモデルとして断る
+const MODELS = { models: [{ name: 'jev-latest', description: 'Latest Jev', release_date: '2026-09-01' }, { name: 'jev-2026-09-01', description: 'Pinned', release_date: '2026-09-01' }] };
 const upstream = createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/v1/models') {
+    upstreamLog.push({ path: req.url, auth: req.headers.authorization });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(MODELS));
+    return;
+  }
   let raw = '';
   req.on('data', (c) => { raw += c; });
   req.on('end', () => {
     const body = JSON.parse(raw);
     upstreamLog.push({ auth: req.headers.authorization, body });
+    if (strictModels && !MODELS.models.some((m) => m.name === body.model)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error_type: 'api_usage_error', message: `Unknown model: ${body.model}` }));
+      return;
+    }
     if (body.state === 'UPSTREAM401') { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end('{"error":{"message":"invalid api key"}}'); return; }
     const answers = {};
     for (const [k, q] of Object.entries(body.questions || {})) {
@@ -29,7 +42,7 @@ const call = (init = {}) => fn.default(new Request('https://site.example/v1/syst
 const body = JSON.stringify({ model: 'jev-1.13', state: '汽車が着いた', questions: { era: { type: 'choice', criteria: { '近代日本': null, '現代日本': null } } }, extra: 'drop me' });
 
 console.log('関数の単体確認');
-check(fn.config.path === '/v1/systemone', 'パスは /v1/systemone');
+check(JSON.stringify(fn.config.path) === '["/v1/systemone","/v1/models"]', 'パスは /v1/systemone と /v1/models');
 delete process.env.TYPESAFE_API_KEY; delete process.env.RELAY_PASSPHRASE;
 let r = await call({ body, headers: { 'X-Relay-Passphrase': 'x' } });
 check(r.status === 500 && (await r.json()).error.includes('not configured'), '環境変数が未設定なら 500 で案内');
@@ -53,16 +66,24 @@ check(up.auth === 'Bearer netlify-secret-key', 'キーは関数が付ける');
 check(JSON.stringify(Object.keys(up.body)) === '["model","state","questions"]', '送るのは model・state・questions だけ');
 r = await call({ body: JSON.stringify({ state: 'UPSTREAM401', questions: {} }), headers: { 'X-Relay-Passphrase': 'hanabi-2026' } });
 check(r.status === 401, '上流のエラー（401）はそのまま返す');
+const get = (headers = {}) => fn.default(new Request('https://site.example/v1/models', { method: 'GET', headers }));
+r = await get();
+check(r.status === 403, 'モデル一覧も合言葉なしは 403');
+r = await get({ 'X-Relay-Passphrase': 'hanabi-2026' });
+const ml = await r.json();
+check(r.status === 200 && ml.models.length === 2 && upstreamLog.at(-1).auth === 'Bearer netlify-secret-key', 'モデル一覧を中継（キーは関数が付ける）');
+r = await fn.default(new Request('https://site.example/v1/models', { method: 'POST', body: '{}', headers: { 'X-Relay-Passphrase': 'hanabi-2026' } }));
+check(r.status === 405, 'モデル一覧は GET のみ');
 
 console.log('ビューアから通しで確認');
 const app = await openApp({ viewport: { width: 400, height: 820 } });
 const { page } = app;
 const browserHeaders = [];
 // Netlify 上と同じく、ページと同じオリジンの /v1/systemone をこの関数が受ける
-await page.route('**/v1/systemone', async (route) => {
+await page.route(/\/v1\/(systemone|models)$/, async (route) => {
   const req = route.request();
   browserHeaders.push(req.headers());
-  const res = await fn.default(new Request(req.url(), { method: req.method(), headers: req.headers(), body: req.postData() }));
+  const res = await fn.default(new Request(req.url(), { method: req.method(), headers: req.headers(), body: req.method() === 'GET' ? undefined : req.postData() }));
   await route.fulfill({ status: res.status, contentType: 'application/json', body: await res.text() });
 });
 
@@ -96,6 +117,25 @@ const scene = upstreamLog.find((x) => x.body.questions && x.body.questions.locat
 check(!!scene, `読書中の場面判定が関数を通って届く (${upstreamLog.length} 件)`);
 const bg = await page.evaluate(() => [...document.querySelectorAll('#stage .bg')].find((b) => b.style.zIndex === '2')?.dataset.loc);
 check(bg === 'washitsu', `応答どおりに合成 (${bg})`);
+
+// 本物の TypeSafe と同じく jev-1.13 を断る → 一覧から選び直す
+strictModels = true;
+await page.click('#reader-top .settings-btn');
+await page.click('#conn-test');
+await page.waitForFunction(() => !document.getElementById('conn-test').disabled);
+msg = await page.textContent('#conn-result');
+check(msg.includes('Unknown model: jev-1.13') && msg.includes('使えるモデルを確認'), `知らないモデル名なら一覧を案内 (${msg})`);
+await page.click('#models-btn');
+await page.waitForSelector('#model-list button');
+const names = await page.$$eval('#model-list button', (bs) => bs.map((b) => b.firstChild.textContent));
+check(names.join() === 'jev-latest（2026-09-01）,jev-2026-09-01（2026-09-01）', `一覧を表示 (${names})`);
+await page.click('#model-list button:nth-child(2)');
+check(await page.inputValue('#settings [data-key="model"]') === 'jev-2026-09-01' && await page.evaluate(() => JV.Settings.get('model')) === 'jev-2026-09-01', '押すとモデル版に入り、保存される');
+await page.click('#conn-test');
+await page.waitForFunction(() => !document.getElementById('conn-test').disabled);
+msg = await page.textContent('#conn-result');
+check(msg.startsWith('接続できました') && upstreamLog.at(-1).body.model === 'jev-2026-09-01', `選んだ版で接続できる (${msg})`);
+await page.click('#settings header button');
 
 // 関数の環境変数が未設定のときの案内
 delete process.env.RELAY_PASSPHRASE;

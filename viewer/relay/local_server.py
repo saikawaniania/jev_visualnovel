@@ -71,14 +71,33 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
-    def do_POST(self):
-        if self.path.split("?")[0] != "/v1/systemone":
-            self.send_json(404, {"error": "not found"})
-            return
+    def passphrase_ok(self) -> bool:
         if self.passphrase and not hmac.compare_digest(
             (self.headers.get("X-Relay-Passphrase") or "").encode(), self.passphrase.encode()
         ):
             self.send_json(403, {"error": "relay passphrase is wrong or missing"})
+            return False
+        return True
+
+    def do_GET(self):
+        # 使えるモデルの一覧だけ中継し、それ以外はビューアのファイルを返す
+        if self.path.split("?")[0] != "/v1/models":
+            super().do_GET()
+            return
+        if not self.passphrase_ok():
+            return
+        base = self.upstream.rsplit("/v1/", 1)[0]
+        req = urllib.request.Request(
+            f"{base}/v1/models",
+            headers={"Accept": "application/json", "Authorization": f"Bearer {self.api_key}", "User-Agent": "jev-viewer-local-relay/1"},
+        )
+        self.forward(req)
+
+    def do_POST(self):
+        if self.path.split("?")[0] != "/v1/systemone":
+            self.send_json(404, {"error": "not found"})
+            return
+        if not self.passphrase_ok():
             return
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
@@ -91,7 +110,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         # 判定に必要な 3 項目だけを渡す
         payload = json.dumps(
-            {"model": body.get("model") or "jev-1.13", "state": body.get("state"), "questions": body.get("questions")}
+            {"model": body.get("model") or "jev-latest", "state": body.get("state"), "questions": body.get("questions")}
         ).encode("utf-8")
         req = urllib.request.Request(
             self.upstream,
@@ -104,6 +123,9 @@ class Handler(SimpleHTTPRequestHandler):
                 "User-Agent": "jev-viewer-local-relay/1",
             },
         )
+        self.forward(req)
+
+    def forward(self, req: urllib.request.Request):
         try:
             with urllib.request.urlopen(req, timeout=15) as res:
                 self.send_raw(res.status, res.read())
@@ -124,7 +146,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         # 判定の中継だけを表示する（静的ファイルの行は省く）
-        if self.command == "POST":
+        if self.command == "POST" or self.path.startswith("/v1/"):
             sys.stderr.write(f"[relay] {self.address_string()} {fmt % args}\n")
 
 
