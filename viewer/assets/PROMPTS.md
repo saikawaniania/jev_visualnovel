@@ -13,12 +13,13 @@ MVP に必要なのは **背景15枚・シルエット30枚・群衆2枚**（す
 
 ## 背景（15枚）
 
-**仕様**：横長 16:9（1920×1080 程度）・人物なし・**低彩度**・輪郭を少しぼかす・明るすぎない中間の明るさ（上に白文字が乗るため）。
+**仕様**：**1:1**（1536×1536 前後。スマホ中心なら 3:4 でも可）・人物なし・**低彩度**・輪郭を少しぼかす・明るすぎない中間の明るさ（上に白文字が乗るため）。
+画面いっぱいに広げて端を切り落として表示するので、**大事なものは中央に**置く（縦長のスマホでは中央の半分ほどが見える）。1枚 300〜500KB が目安。
 形式は `.webp` 推奨（`.png` `.jpg` も可）。ファイル名は `bg/bg_modern_{場所}_day.webp`。
 
 共通の書き出し（各プロンプトの前に付ける）：
 
-> Muted, low-saturation painterly background for a Japanese visual novel, Meiji–Taisho era Japan (1900s–1920s), daytime, soft diffuse light, slightly blurred details, no people, no text, 16:9
+> Muted, low-saturation painterly background for a Japanese visual novel, Meiji–Taisho era Japan (1900s–1920s), daytime, soft diffuse light, slightly blurred details, no people, no text, main subject centered, square composition
 
 | ファイル名 | 場所 | 典型的な場面（プロンプト例） |
 | --- | --- | --- |
@@ -48,7 +49,7 @@ MVP に必要なのは **背景15枚・シルエット30枚・群衆2枚**（す
 
 - **白地に黒一色**で描いた JPG（`.jpg`）でよい。ビューアが読み込むときに白地を透明にする。透過 PNG でも可。
   ファイル名は `sil/sil_{体型}_{ポーズ}.jpg`（PNG なら `.png`）
-- **全部同じキャンバス**（例 1024×1024 の正方形）で作る。表示では全員が同じ高さに拡大されるので、**大人と子供の身長差はキャンバスの中の大きさで表す**
+- **全部同じキャンバス**（**1:1**、例 1024×1024 の正方形）で作る。表示では全員が同じ高さに拡大されるので、**大人と子供の身長差はキャンバスの中の大きさで表す**
   - 大人：頭がキャンバスの上端近く（上に 5% ほど余白）、**足はキャンバスの下端にぴったり**
   - 少年・少女：大人の 7 割くらいの背丈（上に 30% ほど余白）
   - 老人：大人の 9 割くらい、少し前かがみ
@@ -90,7 +91,7 @@ MVP に必要なのは **背景15枚・シルエット30枚・群衆2枚**（す
 
 ## 群衆（2枚）
 
-**仕様**：横長（2048×640 など）・白地に黒一色の JPG（透過 PNG も可）。ファイル名は `sil/crowd_1.jpg`・`sil/crowd_2.jpg`。
+**仕様**：横長 **16:9**（1920×1080 前後。3:1 まで横長でも可）・白地に黒一色の JPG（透過 PNG も可）。ファイル名は `sil/crowd_1.jpg`・`sil/crowd_2.jpg`。
 3人以上の場面で、主人物の後ろの中景に置かれます。
 
 > Solid pure black silhouette of a crowd of 6–8 people standing and walking in a row, Meiji–Taisho era Japanese clothing (kimono, hakama, bowler hats, parasols), mixed heights including a child, feet on the bottom edge, wide horizontal composition, plain white background, no ground, no shadow
