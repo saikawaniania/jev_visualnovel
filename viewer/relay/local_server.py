@@ -21,6 +21,8 @@ from __future__ import annotations
 import argparse
 import hmac
 import json
+import re
+import urllib.parse
 import os
 import socket
 import sys
@@ -33,6 +35,8 @@ HERE = Path(__file__).resolve().parent
 VIEWER = HERE.parent
 REPO = VIEWER.parent
 MAX_BODY = 1_000_000  # 1 回の判定で送るのは数 KB 程度
+# /aozora で取りに行けるのは青空文庫の図書カードと zip だけ
+AOZORA_PATH = re.compile(r"^cards/\d{6}/(card\d+\.html|files/[A-Za-z0-9_.-]+\.zip)$")
 
 
 def load_key() -> str:
@@ -79,9 +83,15 @@ class Handler(SimpleHTTPRequestHandler):
             return False
         return True
 
+    aozora_base = "https://www.aozora.gr.jp"
+
     def do_GET(self):
+        route = self.path.split("?")[0]
+        if route == "/aozora":
+            self.get_aozora()
+            return
         # 使えるモデルの一覧だけ中継し、それ以外はビューアのファイルを返す
-        if self.path.split("?")[0] != "/v1/models":
+        if route != "/v1/models":
             super().do_GET()
             return
         if not self.passphrase_ok():
@@ -92,6 +102,31 @@ class Handler(SimpleHTTPRequestHandler):
             headers={"Accept": "application/json", "Authorization": f"Bearer {self.api_key}", "User-Agent": "jev-viewer-local-relay/1"},
         )
         self.forward(req)
+
+    def get_aozora(self):
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        path = (query.get("path") or [""])[0]
+        if not AOZORA_PATH.match(path):
+            self.send_json(400, {"error": "path must be cards/NNNNNN/cardNNN.html or cards/NNNNNN/files/*.zip"})
+            return
+        req = urllib.request.Request(f"{self.aozora_base}/{path}", headers={"User-Agent": "jev-viewer-local-relay/1"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as res:
+                data = res.read(15_000_001)
+        except urllib.error.HTTPError as err:
+            self.send_json(404 if err.code == 404 else 502, {"error": f"aozora returned HTTP {err.code}"})
+            return
+        except (urllib.error.URLError, TimeoutError, OSError) as err:
+            self.send_json(502, {"error": f"aozora unreachable: {err}"})
+            return
+        if len(data) > 15_000_000:
+            self.send_json(413, {"error": "file too large"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip" if path.endswith(".zip") else "text/html")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):
         if self.path.split("?")[0] != "/v1/systemone":
@@ -161,6 +196,9 @@ def main() -> None:
         sys.exit("TYPESAFE_API_KEY が見つかりません。環境変数か viewer/relay/.env に書いてください。")
     Handler.api_key = key
     Handler.passphrase = os.environ.get("RELAY_PASSPHRASE", "").strip()
+    aozora = os.environ.get("AOZORA_BASE_URL", "").strip().rstrip("/")
+    if aozora:
+        Handler.aozora_base = aozora
     base = os.environ.get("TYPESAFE_BASE_URL", "").strip().rstrip("/")
     if base:
         Handler.upstream = f"{base}/v1/systemone"

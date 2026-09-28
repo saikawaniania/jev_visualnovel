@@ -89,6 +89,10 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 }
 .list .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
 #home-error { color: #f0a0a0; font-size: 14px; }
+#url-form { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+#url-form .url-row { display: flex; gap: 8px; }
+#url-form input { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--line); background: #0f1115; }
+#url-form small { color: var(--muted); font-size: 12px; }
 .recent-item { display: flex; gap: 6px; }
 .recent-item > button:first-child { flex: 1; min-width: 0; }
 .recent-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -277,9 +281,18 @@ body.debug #center-line {
 
   <label id="drop-zone" for="file-input">
     <span class="big">ファイルをここにドロップ</span>
-    <span class="small">またはタップして選択（.txt ／ .md、Shift_JIS・UTF-8 対応）</span>
-    <input id="file-input" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" onchange="JV.App.onFileInput(this)">
+    <span class="small">またはタップして選択（.txt ／ .md ／ 青空文庫の .zip、Shift_JIS・UTF-8 対応）</span>
+    <input id="file-input" type="file" accept=".txt,.md,.markdown,.zip,text/plain,text/markdown,application/zip" onchange="JV.App.onFileInput(this)">
   </label>
+
+  <form id="url-form" onsubmit="JV.App.onUrlSubmit(event)">
+    <label for="url-input">青空文庫のURLから読む</label>
+    <div class="url-row">
+      <input id="url-input" type="url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://www.aozora.gr.jp/cards/…/card….html">
+      <button type="submit" id="url-submit">読み込む</button>
+    </div>
+    <small>作品の図書カードのURLを貼り付けてください。</small>
+  </form>
   <div id="home-error" class="hidden"></div>
 
   <section id="recent-section" class="hidden">
@@ -444,6 +457,120 @@ JV.Encoding = {
     const euc = new TextDecoder('euc-jp').decode(u8);
     const bad = (s) => (s.match(/�/g) || []).length;
     return bad(euc) < bad(sjis) ? euc : sjis;
+  },
+};
+
+/* =====================================================================
+ * 読込部：zip（青空文庫の配布形式）から .txt を取り出す
+ * ===================================================================== */
+JV.Zip = {
+  isZip(buffer) {
+    const u8 = new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength));
+    return u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04;
+  },
+
+  /** 中央ディレクトリを読み、最初の .txt を展開して { name, bytes } を返す */
+  async extractText(buffer) {
+    const dv = new DataView(buffer);
+    // 末尾の「中央ディレクトリ終端」を探す（コメント最大 64KB）
+    let eocd = -1;
+    for (let i = buffer.byteLength - 22; i >= Math.max(0, buffer.byteLength - 22 - 65535); i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('zip ファイルとして読めません');
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const entries = [];
+    for (let n = 0; n < count; n++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('zip の目次が壊れています');
+      const method = dv.getUint16(p + 10, true);
+      const csize = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true);
+      const extraLen = dv.getUint16(p + 30, true);
+      const commentLen = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const nameBytes = new Uint8Array(buffer, p + 46, nameLen);
+      entries.push({ method, csize, local, name: JV.Encoding.decode(nameBytes.slice().buffer) });
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+    const e = entries.find((x) => /\.txt$/i.test(x.name));
+    if (!e) throw new Error('zip の中にテキストファイル（.txt）がありません');
+    const lnameLen = dv.getUint16(e.local + 26, true);
+    const lextraLen = dv.getUint16(e.local + 28, true);
+    const data = new Uint8Array(buffer, e.local + 30 + lnameLen + lextraLen, e.csize);
+    if (e.method === 0) return { name: e.name.split('/').pop(), bytes: data.slice().buffer };
+    if (e.method !== 8) throw new Error(`この圧縮方式（${e.method}）の zip には対応していません`);
+    if (typeof DecompressionStream === 'undefined') throw new Error('このブラウザは zip の展開に対応していません。展開した .txt を選んでください');
+    const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return { name: e.name.split('/').pop(), bytes: await new Response(stream).arrayBuffer() };
+  },
+};
+
+/* =====================================================================
+ * 読込部：青空文庫のURLから読む（同じサイトの /aozora 経由。Netlify の関数か local_server.py）
+ * ===================================================================== */
+JV.Aozora = {
+  /**
+   * 受け付けるURL：
+   *   図書カード   https://www.aozora.gr.jp/cards/000879/card92.html
+   *   zip          https://www.aozora.gr.jp/cards/000879/files/92_ruby_164.zip
+   *   XHTML 本文   https://www.aozora.gr.jp/cards/000879/files/92_14545.html（図書カードに読み替える）
+   */
+  parse(input) {
+    const s = String(input || '').trim();
+    const m = s.match(/^(?:https?:\/\/)?(?:www\.)?aozora\.gr\.jp\/(cards\/\d{6})\/(card\d+\.html|files\/[A-Za-z0-9_.-]+)(?:[?#].*)?$/i);
+    if (!m) return null;
+    const [, dir, rest] = m;
+    if (/^card\d+\.html$/i.test(rest)) return { card: `${dir}/${rest.toLowerCase()}` };
+    if (/\.zip$/i.test(rest)) return { zip: `${dir}/${rest}` };
+    const work = rest.match(/^files\/(\d+)_/);
+    if (work) return { card: `${dir}/card${work[1]}.html` };
+    return null;
+  },
+
+  async get(path) {
+    let res;
+    try {
+      res = await fetch(`aozora?path=${encodeURIComponent(path)}`);
+    } catch (err) {
+      throw new Error('読み込み用の中継に接続できません');
+    }
+    if (res.status === 404 && !(res.headers.get('Content-Type') || '').includes('json')) {
+      throw new Error('URLからの読み込みは、Netlify に置いたページ（または relay/local_server.py）でだけ使えます');
+    }
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { msg = (await res.json()).error || msg; } catch (_) { /* そのまま */ }
+      throw new Error(res.status === 404 ? `青空文庫にそのファイルがありません（${msg}）` : msg);
+    }
+    return res.arrayBuffer();
+  },
+
+  /** 図書カードから、ルビ付きテキストの zip の場所を探す */
+  findZip(cardHtml, cardPath) {
+    const dir = cardPath.replace(/[^/]+$/, '');
+    const links = [...cardHtml.matchAll(/href\s*=\s*["']([^"']+\.zip)["']/gi)].map((m) => m[1]);
+    if (!links.length) return null;
+    const pick = links.find((l) => /ruby/i.test(l)) || links[0];
+    // ./files/xxx.zip → cards/NNNNNN/files/xxx.zip
+    const abs = pick.replace(/^https?:\/\/(www\.)?aozora\.gr\.jp\//, '');
+    if (/^cards\//.test(abs)) return abs;
+    return (dir + pick.replace(/^\.\//, '')).replace(/[^/]+\/\.\.\//g, '');
+  },
+
+  /** URL → { text, name } */
+  async load(url) {
+    const t = this.parse(url);
+    if (!t) throw new Error('青空文庫の図書カードのURLを入れてください（例 https://www.aozora.gr.jp/cards/000879/card92.html）');
+    let zipPath = t.zip;
+    if (!zipPath) {
+      const html = JV.Encoding.decode(await this.get(t.card));
+      zipPath = this.findZip(html, t.card);
+      if (!zipPath) throw new Error('図書カードにテキストファイル（zip）が見つかりません。まだテキスト版が公開されていない作品かもしれません');
+    }
+    const zip = await this.get(zipPath);
+    const { name, bytes } = await JV.Zip.extractText(zip);
+    return { text: JV.Encoding.decode(bytes), name };
   },
 };
 
@@ -2769,9 +2896,35 @@ JV.App = {
   async openFile(file) {
     try {
       const buf = await file.arrayBuffer();
+      if (JV.Zip.isZip(buf)) {
+        const { name, bytes } = await JV.Zip.extractText(buf);
+        this.openText(JV.Encoding.decode(bytes), name);
+        return;
+      }
       this.openText(JV.Encoding.decode(buf), file.name);
     } catch (err) {
       this.showError(`ファイルを読み込めませんでした：${err.message || err}`);
+    }
+  },
+
+  async onUrlSubmit(e) {
+    e.preventDefault();
+    const input = document.getElementById('url-input');
+    const btn = document.getElementById('url-submit');
+    const url = input.value.trim();
+    if (!url) return;
+    btn.disabled = true;
+    btn.textContent = '読み込み中…';
+    this.hideError();
+    try {
+      const { text, name } = await JV.Aozora.load(url);
+      input.value = '';
+      this.openText(text, name);
+    } catch (err) {
+      this.showError(err.message || String(err));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '読み込む';
     }
   },
 

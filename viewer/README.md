@@ -14,7 +14,10 @@ python3 -m http.server 8000     # または npx http-server -p 8000
 `index.html` を直接（`file://`）開いても読書はできますが、サンプル一覧と `assets/manifest.json` は読めません
 （ファイル選択とドラッグ＆ドロップは使えます。素材は仮素材になります）。
 
-- 対応形式：青空文庫形式・プレーンテキスト（.txt）・Markdown（.md）。Shift_JIS / UTF-8 を自動判定
+- 対応形式：青空文庫形式・プレーンテキスト（.txt）・Markdown（.md）・青空文庫の配布 zip。Shift_JIS / UTF-8 を自動判定
+- 青空文庫のURLから読む：起動画面の欄に図書カードのURL（例 `https://www.aozora.gr.jp/cards/000879/card92.html`）を貼る。
+  XHTML 本文や zip のURLでもよい。青空文庫はブラウザから直接読めない（CORS）ため、同じサイトの `/aozora`
+  （Netlify の `netlify/functions/aozora.mjs` か `relay/local_server.py`）経由で取る。GitHub Pages や `file://` では使えない
 - API キーが未設定ならモック判定（キーワード一致の偽の判定器）で動きます
 - `D` キーまたは `?debug=1` でデバッグ表示（判定結果・確率・絵を替えた／替えなかった理由）
 
@@ -90,6 +93,7 @@ TYPESAFE_API_KEY=... python3 viewer/relay/local_server.py
 for i in 1 2 3 4 5 6; do node viewer/tests/step$i.test.mjs; done
 node viewer/tests/relay.test.mjs     # ローカル中継（偽の上流サーバーで確認）
 node viewer/tests/netlify.test.mjs   # Netlify の中継関数（同上）
+node viewer/tests/aozora.test.mjs    # 青空文庫のURL・zip 読込（偽の青空文庫サーバーで確認）
 ```
 
 グローバルにインストールされた `playwright`（Chromium）を使います。外部 API には接続せず、ステップ5・6の接続先と素材はテスト内の偽サーバーで代用しています。
