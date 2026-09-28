@@ -66,7 +66,7 @@ try {
   const up = upstreamLog.at(-1);
   check(up && up.path === '/v1/systemone' && up.auth === 'Bearer relay-secret-key', 'キーは中継が付けて TypeSafe の /v1/systemone へ');
   check(browserReqs.at(-1).url === `http://127.0.0.1:${port}/v1/systemone` && !browserReqs.at(-1).auth, 'ブラウザはキーを持たず、同じオリジンへ送るだけ（CORS なし）');
-  check(JSON.stringify(Object.keys(up.body)) === JSON.stringify(['model', 'state', 'questions']) && up.body.model === 'jev-1.13', '中継するのは model・state・questions だけ');
+  check(JSON.stringify(Object.keys(up.body)) === JSON.stringify(['model', 'state', 'questions']) && up.body.model === 'jev-latest', '中継するのは model・state・questions だけ');
 
   console.log('読書中の判定が中継を通る');
   await page.click('#settings header button');

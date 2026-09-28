@@ -50,7 +50,7 @@ await page.click('#home-footer button');
 check(await page.isVisible('#settings'), '起動画面から設定を開ける');
 const defaults = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#settings [data-key]')].map((e) => [e.dataset.key, e.type === 'checkbox' ? e.checked : e.value])));
 check(defaults.route === 'mock' && defaults.apiKey === '', 'APIキー・経路は未設定（モック）');
-check(defaults.model === 'jev-1.13', 'モデル版 jev-1.13');
+check(defaults.model === 'jev-latest', 'モデル版 jev-latest');
 check(defaults.stopDelay === '400' && defaults.sensitivity === '0.6' && defaults.fadeScale === '1', '停止待ち 400ms・感度 普通(0.6)・フェード 1.0');
 check(defaults.displayMode === 'novel' && defaults.writingMode === 'horizontal' && defaults.fontSize === '18', 'ノベル・横書き・18px');
 check(defaults.silhouettes === true && defaults.debug === false, 'シルエット オン・デバッグ オフ');
@@ -78,7 +78,7 @@ check(ok.startsWith('接続できました') && ok.includes('近代日本'), `�
 let r = requests.at(-1);
 check(r.url === 'https://api.typesafe.ai/v1/systemone', `POST /v1/systemone (${r.url})`);
 check(r.headers.authorization === 'Bearer ts-test-key-123', 'Bearer 認証');
-check(r.body.model === 'jev-1.13' && r.body.questions.era.type === 'choice', 'model と questions');
+check(r.body.model === 'jev-latest' && r.body.questions.era.type === 'choice', 'model と questions');
 await page.click('#settings header button');
 
 console.log('読書中の判定が実アダプタを通る');
@@ -111,7 +111,7 @@ check(/location: washitsu 0\.90/.test(dbg2), '英字IDの答えでも合成で�
 
 console.log('キャッシュは経路ごと');
 const keys = await page.evaluate(async () => [...new Set(((await JV.Store.all('judgments')) || []).map((j) => j.k.split('|')[1]))]);
-check(keys.length >= 2 && keys.some((k) => k.startsWith('typesafe:jev-1.13')), `判定器・モデル・キー形式ごとに別キャッシュ (${keys})`);
+check(keys.length >= 2 && keys.some((k) => k.startsWith('typesafe:jev-latest')), `判定器・モデル・キー形式ごとに別キャッシュ (${keys})`);
 
 console.log('エラー時は前の絵を維持');
 mode = '401';

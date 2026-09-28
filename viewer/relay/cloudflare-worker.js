@@ -28,7 +28,7 @@ export default {
     let body;
     try { body = await request.json(); } catch { return new Response('invalid json', { status: 400, headers: cors }); }
     // 送ってよいのは判定に必要な3項目だけ
-    const payload = JSON.stringify({ model: body.model || 'jev-1.13', state: body.state, questions: body.questions });
+    const payload = JSON.stringify({ model: body.model || 'jev-latest', state: body.state, questions: body.questions });
 
     const res = await fetch(UPSTREAM, {
       method: 'POST',

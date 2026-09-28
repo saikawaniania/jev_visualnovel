@@ -44,12 +44,18 @@ python3 -m http.server 8000     # または npx http-server -p 8000
 | 経路 | 状態 |
 | --- | --- |
 | モック | 動作確認済み |
-| TypeSafe 直接 | `POST https://api.typesafe.ai/v1/systemone`・Bearer 認証。形式は公式 SDK（`@typesafe-ai/sdk` 0.6.0）のソースで確認。実 API への疎通とブラウザからの CORS は**未確認** |
+| TypeSafe 直接 | `POST https://api.typesafe.ai/v1/systemone`・Bearer 認証。形式は公式 SDK（`@typesafe-ai/sdk` 0.6.0）のソースで確認。ブラウザからの直接呼び出しは接続できなかった（CORS とみられる）ため、実際には中継サーバー経由で使う |
 | OpenRouter 経由 | **未確認**。Jev の指定方法・エンドポイント・CORS が分からないため、TypeSafe と同じ本文を送る仮の実装。接続先URLは設定で変えられます |
 | 中継サーバー | 既定はページと同じサーバーの `/v1/systemone`。`relay/local_server.py`（Python 標準ライブラリのみ）か `relay/cloudflare-worker.js` を使い、キーはサーバー側に置きます |
 
 設定画面の「接続テスト」で、実際のブラウザから届くか・CORS で拒否されるか・応答の形式が合うかを確かめられます。
 GitHub Pages から TypeSafe 直接で接続テストすると「接続できません」になりました。URL は公式 SDK と同じなので、ブラウザからの直接呼び出しが CORS で拒否されているとみられます（公式 SDK もブラウザでの利用を既定で禁止しています）。その場合は中継サーバーを使います。
+
+### モデル名
+
+TypeSafe で使えるモデル名は、設定画面の「使えるモデルを確認」（`GET /v1/models`）で確かめられます。
+現時点で確認できたのは `jev-latest` だけで、これを既定にしています。SPEC の `jev-1.13` は TypeSafe では `Unknown model` になります。
+判定の傾向はしきい値に影響するので、版の付いた名前が一覧に出たらそちらに固定してください。
 
 ### Netlify に置く（スマホ単体で使う）
 

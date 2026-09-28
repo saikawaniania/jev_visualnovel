@@ -121,6 +121,8 @@ check(bg === 'washitsu', `応答どおりに合成 (${bg})`);
 // 本物の TypeSafe と同じく jev-1.13 を断る → 一覧から選び直す
 strictModels = true;
 await page.click('#reader-top .settings-btn');
+await page.fill('#settings [data-key="model"]', 'jev-1.13');
+await page.dispatchEvent('#settings [data-key="model"]', 'change');
 await page.click('#conn-test');
 await page.waitForFunction(() => !document.getElementById('conn-test').disabled);
 msg = await page.textContent('#conn-result');

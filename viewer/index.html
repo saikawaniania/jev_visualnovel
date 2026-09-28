@@ -347,7 +347,7 @@ body.debug #center-line {
       </label>
       <label data-show="remote">モデル版
         <input data-key="model" type="text" spellcheck="false" onchange="JV.SettingsUI.change(this)">
-        <small>判定傾向がしきい値に影響するため、jev-latest ではなく版を固定します。名前は下のボタンで確かめられます。</small>
+        <small>現在 TypeSafe で使えるのは jev-latest です。判定傾向はしきい値に影響するので、版の付いた名前が一覧に出たらそちらに固定してください。</small>
       </label>
       <div class="row" data-show="remote">
         <button type="button" id="models-btn" onclick="JV.SettingsUI.listModels()">使えるモデルを確認</button>
@@ -855,7 +855,7 @@ JV.Settings = {
     apiKey: '',            // APIキー（この端末の localStorage にだけ保存）
     relayPass: '',         // 中継サーバーの合言葉（Netlify の RELAY_PASSPHRASE と同じもの）
     endpoint: '',          // 接続先URLの上書き（空なら経路ごとの既定）
-    model: 'jev-1.13',     // モデル版（しきい値が版に依存するので固定する）
+    model: 'jev-latest',   // モデル版。TypeSafe で使えるのは現状 jev-latest のみ（版付きの名前が出たら固定する）
     asciiKeys: false,      // 選択肢のキーを英字IDで送る（日本語キーが通らない場合）
     stopDelay: 400,        // 停止判定の待ち時間(ms)
     sensitivity: 0.6,      // 絵を替える感度（しきい値）。普通=0.6
@@ -874,6 +874,8 @@ JV.Settings = {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(this.KEY) || '{}') || {}; } catch (_) { saved = {}; }
     this.values = { ...this.DEFAULTS, ...saved };
+    // 以前の既定 jev-1.13 は TypeSafe では使えない名前だった（Unknown model）
+    if (this.values.model === 'jev-1.13') this.values.model = this.DEFAULTS.model;
     const q = new URLSearchParams(location.search);
     if (q.has('debug')) this.values.debug = q.get('debug') !== '0';
     return this.values;
@@ -1585,7 +1587,7 @@ JV.Adapters.remote = {
     if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, this.TIMEOUT_MS);
-    const body = { model: JV.Settings.get('model') || 'jev-1.13', state, questions };
+    const body = { model: JV.Settings.get('model') || 'jev-latest', state, questions };
     try {
       let res;
       try {
