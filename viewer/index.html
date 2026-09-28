@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev サウンドノベル・ビューア</title>
+<style>
+:root {
+  --bg: #0d0f14;
+  --fg: #e8e6e1;
+  --muted: #9a978f;
+  --accent: #c9a86a;
+  --panel: rgba(16, 18, 24, 0.92);
+  --line: rgba(255, 255, 255, 0.12);
+  --font-size: 18px;
+  --serif: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", "Noto Serif CJK JP", serif;
+  --sans: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+button, input, select { font: inherit; color: inherit; }
+button {
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+button:hover { background: rgba(255, 255, 255, 0.12); }
+.hidden { display: none !important; }
+
+/* ---------- 起動画面 ---------- */
+#home {
+  min-height: 100vh;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 16px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+#home h1 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+#home .lead { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 8px 0 0; }
+#drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 180px;
+  border: 2px dashed rgba(201, 168, 106, 0.5);
+  border-radius: 12px;
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+#drop-zone.dragover { background: rgba(201, 168, 106, 0.08); border-color: var(--accent); }
+#drop-zone .big { font-size: 17px; }
+#drop-zone .small { font-size: 13px; color: var(--muted); }
+#file-input { display: none; }
+#home section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  margin: 0 0 10px;
+}
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.list button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.list .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+#home-error { color: #f0a0a0; font-size: 14px; }
+#home-footer { display: flex; gap: 10px; }
+
+/* ---------- 読書画面 ---------- */
+#reader { position: relative; min-height: 100vh; }
+#reader-top {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+  font-size: 13px;
+  pointer-events: none;
+}
+#reader-top > * { pointer-events: auto; }
+#reader-top .titles { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#reader-top .work-title { font-family: var(--serif); font-size: 15px; }
+#reader-top .chapter-name { color: var(--muted); margin-left: 10px; }
+#reader-top button { padding: 4px 10px; font-size: 12px; background: rgba(0, 0, 0, 0.4); }
+
+#text-column {
+  position: relative;
+  z-index: 10;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 64px 16px 60vh;
+}
+#text {
+  font-family: var(--serif);
+  font-size: var(--font-size);
+  line-height: 1.95;
+  letter-spacing: 0.03em;
+}
+#text p { margin: 0 0 0.35em; }
+#text .chapter-title {
+  font-size: 1.25em;
+  font-weight: 500;
+  margin: 2.4em 0 1.2em;
+  letter-spacing: 0.12em;
+}
+#text .chapter-title:first-child { margin-top: 0.6em; }
+#text .scene-break { text-align: center; color: var(--muted); margin: 1.6em 0; letter-spacing: 1em; }
+#text .end-mark { text-align: center; color: var(--muted); margin: 3em 0 0; font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<!-- 起動画面 -->
+<main id="home">
+  <header>
+    <h1>サウンドノベル・ビューア</h1>
+    <p class="lead">青空文庫形式・テキスト・Markdown のファイルを開くと、スクロールを止めた箇所の場面に合わせて背景と人物シルエットが切り替わります。</p>
+  </header>
+
+  <label id="drop-zone" for="file-input">
+    <span class="big">ファイルをここにドロップ</span>
+    <span class="small">またはタップして選択（.txt ／ .md、Shift_JIS・UTF-8 対応）</span>
+    <input id="file-input" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" onchange="JV.App.onFileInput(this)">
+  </label>
+  <div id="home-error" class="hidden"></div>
+
+  <section id="samples-section">
+    <h2>サンプル</h2>
+    <ul class="list" id="sample-list"></ul>
+  </section>
+
+  <footer id="home-footer"></footer>
+</main>
+
+<!-- 読書画面 -->
+<div id="reader" class="hidden">
+  <header id="reader-top">
+    <button type="button" onclick="JV.App.goHome()">← 戻る</button>
+    <div class="titles"><span class="work-title" id="work-title"></span><span class="chapter-name" id="chapter-name"></span></div>
+  </header>
+  <div id="text-column">
+    <article id="text"></article>
+  </div>
+</div>
+
+<script>
+'use strict';
+const JV = (window.JV = {});
+
+/* =====================================================================
+ * 読込部：文字コード判定
+ * ===================================================================== */
+JV.Encoding = {
+  /** ArrayBuffer を文字列に。BOM → UTF-8(厳密) → Shift_JIS / EUC-JP の順に試す */
+  decode(buffer) {
+    const u8 = new Uint8Array(buffer);
+    if (u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return new TextDecoder('utf-8').decode(u8.subarray(3));
+    if (u8[0] === 0xFF && u8[1] === 0xFE) return new TextDecoder('utf-16le').decode(u8.subarray(2));
+    if (u8[0] === 0xFE && u8[1] === 0xFF) return new TextDecoder('utf-16be').decode(u8.subarray(2));
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(u8);
+    } catch (_) { /* UTF-8 ではない */ }
+    const sjis = new TextDecoder('shift_jis').decode(u8);
+    const euc = new TextDecoder('euc-jp').decode(u8);
+    const bad = (s) => (s.match(/�/g) || []).length;
+    return bad(euc) < bad(sjis) ? euc : sjis;
+  },
+};
+
+/* =====================================================================
+ * 正規化部：3形式を「段落の配列＋章の区切り」に揃える
+ *
+ * 中間表現は行トークンの配列：
+ *   { t: 'text', s }   本文の行
+ *   { t: 'blank' }     空行
+ *   { t: 'heading', s } 章見出し
+ *   { t: 'break' }     場面区切り（◇・＊・水平線など）
+ * ===================================================================== */
+JV.Parser = {
+  LONG_PARAGRAPH: 400,   // これを超える段落は句点で分けて判定する
+  MAX_UNIT_CHARS: 800,   // 会話を束ねた判定単位の上限
+
+  /** 場面区切りの記号だけの行か */
+  isSeparator(line) {
+    const s = line.replace(/[\s　]/g, '');
+    if (!s || s.length > 20) return false;
+    if (!/^[◇◆＊*※☆★○●□■×・\-─―—〜~＃#]+$/.test(s)) return false;
+    // 「・・・」や短いダッシュだけの行は本文（沈黙の表現など）とみなす
+    return !/^・+$/.test(s) && !/^[―—─-]{1,2}$/.test(s);
+  },
+
+  /** 青空文庫・Web小説で共通に使われるルビ記法を外す（親文字だけ残す） */
+  stripRuby(s) {
+    return s.replace(/《[^》\n]*》/g, '').replace(/｜/g, '');
+  },
+
+  detectFormat(name, text) {
+    if (/\.(md|markdown)$/i.test(name)) return 'md';
+    if (/^-{20,}\s*$/m.test(text) && /《[^》\n]+》|［＃/.test(text)) return 'aozora';
+    if (/［＃[^］\n]*］/.test(text) || /^底本：/m.test(text)) return 'aozora';
+    return 'txt';
+  },
+
+  parse(rawText, fileName = '') {
+    const text = rawText.replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n');
+    const format = this.detectFormat(fileName, text);
+    const base = fileName.replace(/\.[^.]+$/, '');
+    let r;
+    if (format === 'aozora') r = this.tokensAozora(text);
+    else if (format === 'md') r = this.tokensMarkdown(text);
+    else r = this.tokensTxt(text);
+    const doc = this.build(r.tokens, r.mode);
+    doc.format = format;
+    doc.title = r.title || base || '無題';
+    doc.author = r.author || '';
+    doc.units = this.buildUnits(doc);
+    return doc;
+  },
+
+  /* ---------- 青空文庫 ---------- */
+  tokensAozora(text) {
+    let lines = text.split('\n');
+    let title = '', author = '';
+
+    // 冒頭の凡例（------- で囲まれた部分）と、その前の作品名・著者名
+    const d1 = lines.findIndex((l) => /^-{20,}\s*$/.test(l));
+    if (d1 >= 0) {
+      const d2 = lines.findIndex((l, i) => i > d1 && /^-{20,}\s*$/.test(l));
+      const head = lines.slice(0, d1).map((l) => l.trim()).filter(Boolean);
+      title = head[0] || '';
+      if (head.length > 1) author = head[head.length - 1];
+      lines = lines.slice((d2 >= 0 ? d2 : d1) + 1);
+    }
+    // 末尾の「底本：」以降
+    const tail = lines.findIndex((l) => /^底本[：:]/.test(l));
+    if (tail >= 0) lines = lines.slice(0, tail);
+
+    const tokens = [];
+    let inHeadingBlock = false;
+    let headingBuf = [];
+    for (const raw of lines) {
+      let line = raw.replace(/\s+$/, '');
+
+      // ［＃ここから中見出し］ … ［＃ここで中見出し終わり］
+      if (/［＃ここから[^］]*見出し］/.test(line)) { inHeadingBlock = true; headingBuf = []; continue; }
+      if (inHeadingBlock) {
+        if (/［＃ここで[^］]*見出し終わり］/.test(line)) {
+          inHeadingBlock = false;
+          tokens.push({ t: 'heading', s: this.cleanAozoraLine(headingBuf.join('　')).trim() });
+          continue;
+        }
+        headingBuf.push(line);
+        continue;
+      }
+
+      // 改ページは場面区切りとして扱う
+      if (/［＃改(ページ|丁|段|見開き)］/.test(line) && !this.cleanAozoraLine(line).trim()) {
+        tokens.push({ t: 'break' });
+        continue;
+      }
+
+      // 見出し：「○○」は中見出し ／ ［＃中見出し］○○［＃中見出し終わり］
+      let heading = null;
+      let m = line.match(/［＃「([^」]+)」は[^］]*見出し］/);
+      if (m) heading = m[1];
+      m = line.match(/［＃(?:同行|窓)?([大中小])見出し］(.+?)［＃(?:同行|窓)?\1見出し終わり］/);
+      if (m) heading = m[2];
+      if (heading !== null) {
+        tokens.push({ t: 'heading', s: this.cleanAozoraLine(heading).trim() });
+        continue;
+      }
+
+      const hadContent = line.trim() !== '';
+      line = this.cleanAozoraLine(line);
+      if (line.replace(/[\s　]/g, '') === '') {
+        // 注記だけの行は何もない行として捨てる。元から空の行は空行
+        if (!hadContent) tokens.push({ t: 'blank' });
+        continue;
+      }
+      if (this.isSeparator(line)) { tokens.push({ t: 'break' }); continue; }
+      tokens.push({ t: 'text', s: line });
+    }
+    return { tokens, mode: 'line', title, author };
+  },
+
+  /** 外字注記・ルビ・その他の［＃…］注記を除く */
+  cleanAozoraLine(line) {
+    let s = line;
+    // 外字：Unicode が書かれていればその字に、なければ〓
+    s = s.replace(/※［＃[^］]*］/g, (a) => {
+      const u = a.match(/U\+([0-9A-Fa-f]{4,6})/);
+      return u ? String.fromCodePoint(parseInt(u[1], 16)) : '〓';
+    });
+    s = this.stripRuby(s);
+    s = s.replace(/［＃[^］]*］/g, '');
+    // アクセント分解記法〔…〕は括弧だけ外す
+    s = s.replace(/〔([^〕]*)〕/g, (a, inner) => (/[A-Za-z]/.test(inner) ? inner : a));
+    return s;
+  },
+
+  /* ---------- プレーンテキスト ---------- */
+  tokensTxt(text) {
+    let lines = text.split('\n').map((l) => l.replace(/\s+$/, ''));
+    let title = '', author = '';
+
+    // 冒頭の短い1〜2行＋空行 は作品名・著者名とみなす
+    const firstBlank = lines.findIndex((l, i) => i > 0 && l.trim() === '');
+    if (firstBlank > 0 && firstBlank <= 2) {
+      const head = lines.slice(0, firstBlank).map((l) => l.trim());
+      if (head.every((h) => h.length > 0 && h.length <= 30 && !/[。「」]/.test(h))) {
+        title = head[0];
+        if (head[1]) author = head[1];
+        lines = lines.slice(firstBlank);
+      }
+    }
+
+    // 1行1段落の書き方か、途中で折り返して空行で段落を区切る書き方かを判定する。
+    // 空行を挟まずに続く行の多くが字下げ・かぎ括弧で始まるなら、それぞれが段落の頭（1行1段落）
+    let cont = 0, heads = 0;
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim() || !lines[i - 1].trim()) continue;
+      cont++;
+      if (/^[\s　「『（(【〈《]/.test(lines[i])) heads++;
+    }
+    const mode = cont > 0 && heads / cont < 0.5 ? 'block' : 'line';
+
+    const tokens = [];
+    for (const raw of lines) {
+      const line = this.stripRuby(raw);
+      if (line.trim() === '') { tokens.push({ t: 'blank' }); continue; }
+      if (this.isSeparator(line)) { tokens.push({ t: 'break' }); continue; }
+      if (this.isTxtHeading(line)) { tokens.push({ t: 'heading', s: line.trim().replace(/^[　]+/, '') }); continue; }
+      tokens.push({ t: 'text', s: line });
+    }
+    return { tokens, mode, title, author };
+  },
+
+  isTxtHeading(line) {
+    const s = line.trim().replace(/^[　]+/, '');
+    if (s.length > 40 || /[。、「」]$/.test(s)) return false;
+    return /^(第[一二三四五六七八九十百千〇零0-9０-９]+[章話節部回幕編]|序章|終章|序幕|終幕|プロローグ|エピローグ|Prologue|Epilogue|Chapter\s*\d+)([\s　:：].*)?$/i.test(s);
+  },
+
+  /* ---------- Markdown ---------- */
+  tokensMarkdown(text) {
+    let lines = text.split('\n');
+    let title = '', author = '';
+
+    // YAML front matter
+    if (/^---\s*$/.test(lines[0] || '')) {
+      const end = lines.findIndex((l, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(l));
+      if (end > 0) {
+        for (const l of lines.slice(1, end)) {
+          const m = l.match(/^(title|author)\s*:\s*["']?(.*?)["']?\s*$/);
+          if (m && m[1] === 'title') title = m[2];
+          if (m && m[1] === 'author') author = m[2];
+        }
+        lines = lines.slice(end + 1);
+      }
+    }
+
+    const tokens = [];
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i].replace(/\s+$/, '');
+      if (/^\s*(```|~~~)/.test(raw)) { inFence = !inFence; continue; }
+      if (inFence) { if (raw.trim()) tokens.push({ t: 'text', s: raw }); else tokens.push({ t: 'blank' }); continue; }
+      if (raw.trim() === '') { tokens.push({ t: 'blank' }); continue; }
+      if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(raw)) { tokens.push({ t: 'break' }); continue; }
+      const h = raw.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/);
+      if (h) { tokens.push({ t: 'heading', s: this.mdInline(h[2]), level: h[1].length }); continue; }
+      // Setext 見出し（=== のみ。--- は水平線として扱う）
+      if (/^=+\s*$/.test(raw) && tokens.length && tokens[tokens.length - 1].t === 'text') {
+        const prev = tokens.pop();
+        tokens.push({ t: 'heading', s: prev.s.trim(), level: 1 });
+        continue;
+      }
+      if (/^\s*<!--.*-->\s*$/.test(raw)) continue;
+      let s = raw
+        .replace(/^\s{0,3}>\s?/, '')                 // 引用
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '');     // 箇条書き
+      s = this.mdInline(s);
+      if (s.trim() === '') continue;
+      if (this.isSeparator(s)) { tokens.push({ t: 'break' }); continue; }
+      tokens.push({ t: 'text', s });
+    }
+
+    // 先頭の # 見出しが1つだけで作品名と同じ（または作品名がない）なら作品名として扱う
+    const h1s = tokens.filter((t) => t.t === 'heading' && t.level === 1);
+    const firstContent = tokens.find((t) => t.t !== 'blank');
+    if (h1s.length === 1 && firstContent === h1s[0] && (!title || title === h1s[0].s)) {
+      title = h1s[0].s;
+      tokens.splice(tokens.indexOf(h1s[0]), 1);
+    }
+    return { tokens, mode: 'block', title, author };
+  },
+
+  mdInline(s) {
+    return this.stripRuby(s)
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')                 // 画像
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')               // リンク
+      .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')              // 参照リンク
+      .replace(/<\/?[A-Za-z][^>]*>/g, '')                    // HTMLタグ
+      .replace(/(\*\*|__)(.+?)\1/g, '$2')                    // 強調
+      .replace(/(\*|_)(?=\S)(.+?)(?<=\S)\1/g, '$2')
+      .replace(/~~(.+?)~~/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, '$1')
+      .replace(/^\s+(?=\S)/, (sp) => (sp.includes('　') ? sp : ''));
+  },
+
+  /* ---------- 行トークン → 段落・章 ---------- */
+  build(tokens, mode) {
+    const paragraphs = [];
+    const chapters = [];
+    let blankRun = 0;
+    let pendingBreak = false;
+    let buf = [];
+    let chapter = -1;
+
+    const ensureChapter = () => {
+      if (chapter < 0) { chapters.push({ title: '', start: paragraphs.length }); chapter = 0; }
+    };
+    const pushPara = (s) => {
+      ensureChapter();
+      const firstInChapter = chapters[chapter].start === paragraphs.length;
+      paragraphs.push({ i: paragraphs.length, text: s, chapter, breakBefore: pendingBreak && !firstInChapter });
+      pendingBreak = false;
+    };
+    const flush = () => {
+      if (!buf.length) return;
+      // 行末が英数字なら空白で、和文ならそのまま繋ぐ
+      let s = buf[0];
+      for (let k = 1; k < buf.length; k++) s += (/[A-Za-z0-9,.;:!?]$/.test(s) ? ' ' : '') + buf[k].replace(/^\s+/, '');
+      pushPara(s);
+      buf = [];
+    };
+
+    for (const tk of tokens) {
+      if (tk.t === 'blank') {
+        blankRun++;
+        if (mode === 'block') flush();
+        if (blankRun >= 2 && paragraphs.length) pendingBreak = true;
+        continue;
+      }
+      blankRun = 0;
+      if (tk.t === 'break') { flush(); if (paragraphs.length) pendingBreak = true; continue; }
+      if (tk.t === 'heading') {
+        flush();
+        chapters.push({ title: tk.s, start: paragraphs.length });
+        chapter = chapters.length - 1;
+        pendingBreak = false;
+        continue;
+      }
+      if (mode === 'block') buf.push(tk.s);
+      else pushPara(tk.s);
+    }
+    flush();
+    // 段落を持たない章（見出しが連続した場合など）は、次の章の見出しと統合する
+    const merged = [];
+    for (let c = 0; c < chapters.length; c++) {
+      const ch = chapters[c];
+      const next = chapters[c + 1];
+      const end = next ? next.start : paragraphs.length;
+      if (end === ch.start && next) { next.title = ch.title && next.title ? `${ch.title}　${next.title}` : (ch.title || next.title); continue; }
+      if (end === ch.start) continue;
+      merged.push(ch);
+    }
+    const remap = new Map();
+    merged.forEach((ch, idx) => remap.set(chapters.indexOf(ch), idx));
+    for (const p of paragraphs) p.chapter = remap.has(p.chapter) ? remap.get(p.chapter) : p.chapter;
+    merged.forEach((ch, idx) => { ch.i = idx; });
+    return { paragraphs, chapters: merged };
+  },
+
+  /* ---------- 判定単位 ---------- */
+  isDialogue(s) {
+    const t = s.replace(/^[\s　]+/, '').replace(/[\s　]+$/, '');
+    return /^[「『（(]/.test(t) && /[」』）)]$/.test(t);
+  },
+
+  /** 長い段落を句点で分ける（表示は段落のまま、判定だけ細かくする） */
+  splitLong(text) {
+    if (text.length <= this.LONG_PARAGRAPH) return [text];
+    const sentences = text.match(/[^。！？!?]*[。！？!?]+[」』）)]*|[^。！？!?]+$/g) || [text];
+    const chunks = [];
+    let cur = '';
+    for (const s of sentences) {
+      if (cur && cur.length + s.length > this.LONG_PARAGRAPH) { chunks.push(cur); cur = ''; }
+      cur += s;
+    }
+    if (cur) chunks.push(cur);
+    return chunks;
+  },
+
+  /**
+   * 段落 → 表示用の断片（segment）→ 判定単位（unit）
+   * 会話文だけの段落は直前の地の文と束ねる（段の先頭なら直後の地の文と）。
+   */
+  buildUnits(doc) {
+    const segments = [];
+    for (const p of doc.paragraphs) {
+      const parts = this.splitLong(p.text);
+      p.segs = [];
+      for (const part of parts) {
+        const seg = { i: segments.length, para: p.i, text: part, dialogue: parts.length === 1 && this.isDialogue(part) };
+        p.segs.push(seg.i);
+        segments.push(seg);
+      }
+    }
+    doc.segments = segments;
+
+    const units = [];
+    let cur = null;
+    let pendingDialogue = [];
+    const boundary = (seg) => {
+      const p = doc.paragraphs[seg.para];
+      return !cur || cur.chapter !== p.chapter || (p.breakBefore && p.segs[0] === seg.i);
+    };
+    const newUnit = (seg) => {
+      cur = { i: units.length, segs: [], chapter: doc.paragraphs[seg.para].chapter, len: 0 };
+      units.push(cur);
+    };
+    const add = (seg) => { cur.segs.push(seg.i); cur.len += seg.text.length; seg.unit = cur.i; };
+
+    for (const seg of segments) {
+      const isBoundary = boundary(seg);
+      if (isBoundary && pendingDialogue.length) {
+        // 段の終わりまで会話だけだった → 会話だけで1単位
+        newUnit(pendingDialogue[0]);
+        pendingDialogue.forEach(add);
+        pendingDialogue = [];
+      }
+      if (seg.dialogue) {
+        if (!isBoundary && cur && cur.len + seg.text.length <= this.MAX_UNIT_CHARS) { add(seg); continue; }
+        if (!isBoundary && cur) { newUnit(seg); add(seg); continue; }
+        // 段の先頭の会話は、直後の地の文とまとめるため保留
+        pendingDialogue.push(seg);
+        if (pendingDialogue.reduce((n, s) => n + s.text.length, 0) > this.MAX_UNIT_CHARS) {
+          newUnit(pendingDialogue[0]);
+          pendingDialogue.forEach(add);
+          pendingDialogue = [];
+        }
+        continue;
+      }
+      if (pendingDialogue.length) {
+        newUnit(pendingDialogue[0]);
+        pendingDialogue.forEach(add);
+        pendingDialogue = [];
+        add(seg);
+        continue;
+      }
+      newUnit(seg);
+      add(seg);
+    }
+    if (pendingDialogue.length) { newUnit(pendingDialogue[0]); pendingDialogue.forEach(add); }
+
+    for (const u of units) {
+      u.text = u.segs.map((s) => segments[s].text.replace(/^[\s　]+/, '')).join('\n');
+      u.paraStart = segments[u.segs[0]].para;
+      u.paraEnd = segments[u.segs[u.segs.length - 1]].para;
+      delete u.len;
+    }
+    return units;
+  },
+};
+
+/* =====================================================================
+ * 読書画面：本文の描画
+ * ===================================================================== */
+JV.Reader = {
+  doc: null,
+
+  render(doc) {
+    this.doc = doc;
+    const root = document.getElementById('text');
+    root.textContent = '';
+    const frag = document.createDocumentFragment();
+    let lastChapter = -1;
+    for (const p of doc.paragraphs) {
+      if (p.chapter !== lastChapter) {
+        lastChapter = p.chapter;
+        const title = doc.chapters[p.chapter] && doc.chapters[p.chapter].title;
+        if (title) {
+          const h = document.createElement('h2');
+          h.className = 'chapter-title';
+          h.dataset.chapter = p.chapter;
+          h.textContent = title;
+          frag.appendChild(h);
+        }
+      }
+      if (p.breakBefore) {
+        const b = document.createElement('div');
+        b.className = 'scene-break';
+        b.textContent = '◇';
+        frag.appendChild(b);
+      }
+      const el = document.createElement('p');
+      el.className = 'para';
+      el.dataset.p = p.i;
+      for (const si of p.segs) {
+        const seg = doc.segments[si];
+        const span = document.createElement('span');
+        span.className = 'seg';
+        span.dataset.s = seg.i;
+        span.dataset.u = seg.unit;
+        span.textContent = seg.text;
+        el.appendChild(span);
+      }
+      frag.appendChild(el);
+    }
+    const end = document.createElement('div');
+    end.className = 'end-mark';
+    end.textContent = '（おわり）';
+    frag.appendChild(end);
+    root.appendChild(frag);
+
+    document.getElementById('work-title').textContent = doc.title + (doc.author ? `　${doc.author}` : '');
+    this.setChapterName(0);
+  },
+
+  setChapterName(ci) {
+    const ch = this.doc && this.doc.chapters[ci];
+    document.getElementById('chapter-name').textContent = ch && ch.title ? ch.title : '';
+  },
+};
+
+/* =====================================================================
+ * アプリ全体
+ * ===================================================================== */
+JV.App = {
+  SAMPLES: [
+    { file: 'samples/ame_no_teishaba.txt', label: '雨の停車場', note: '青空文庫形式・Shift_JIS' },
+    { file: 'samples/umibe_no_kissaten.md', label: '海辺の喫茶店', note: 'Markdown' },
+    { file: 'samples/mori_no_michi.txt', label: '森の道', note: 'テキスト' },
+  ],
+
+  init() {
+    this.renderSamples();
+    this.setupDrop();
+    window.addEventListener('popstate', () => { if (!location.hash) this.showHome(); });
+  },
+
+  renderSamples() {
+    const ul = document.getElementById('sample-list');
+    ul.textContent = '';
+    for (const s of this.SAMPLES) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '<span></span><span class="meta"></span>';
+      b.children[0].textContent = s.label;
+      b.children[1].textContent = s.note;
+      b.onclick = () => this.openSample(s);
+      li.appendChild(b);
+      ul.appendChild(li);
+    }
+  },
+
+  setupDrop() {
+    const zone = document.getElementById('drop-zone');
+    const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+    ['dragenter', 'dragover'].forEach((ev) => zone.addEventListener(ev, (e) => { stop(e); zone.classList.add('dragover'); }));
+    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { stop(e); zone.classList.remove('dragover'); }));
+    zone.addEventListener('drop', (e) => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) this.openFile(f);
+    });
+    // ゾーン外へのドロップでブラウザがファイルを開いてしまうのを防ぐ
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => e.preventDefault());
+  },
+
+  onFileInput(input) {
+    const f = input.files && input.files[0];
+    if (f) this.openFile(f);
+    input.value = '';
+  },
+
+  async openFile(file) {
+    try {
+      const buf = await file.arrayBuffer();
+      this.openText(JV.Encoding.decode(buf), file.name);
+    } catch (err) {
+      this.showError(`ファイルを読み込めませんでした：${err.message || err}`);
+    }
+  },
+
+  async openSample(s) {
+    try {
+      const res = await fetch(s.file);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      this.openText(JV.Encoding.decode(buf), s.file.split('/').pop());
+    } catch (err) {
+      this.showError(`サンプルを読み込めませんでした（file:// で開いている場合は、ローカルサーバー経由で開くかファイルを直接選んでください）：${err.message || err}`);
+    }
+  },
+
+  openText(text, name) {
+    const doc = JV.Parser.parse(text, name);
+    if (!doc.paragraphs.length) { this.showError('本文が見つかりませんでした。'); return; }
+    this.doc = doc;
+    this.hideError();
+    JV.Reader.render(doc);
+    this.showReader();
+  },
+
+  showReader() {
+    document.getElementById('home').classList.add('hidden');
+    document.getElementById('reader').classList.remove('hidden');
+    if (location.hash !== '#read') history.pushState(null, '', '#read');
+    window.scrollTo(0, 0);
+  },
+
+  goHome() {
+    if (location.hash === '#read') history.back();
+    else this.showHome();
+  },
+
+  showHome() {
+    document.getElementById('reader').classList.add('hidden');
+    document.getElementById('home').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  },
+
+  showError(msg) {
+    const el = document.getElementById('home-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  },
+  hideError() { document.getElementById('home-error').classList.add('hidden'); },
+};
+
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+JV.App.init();
+</script>
+</body>
+</html>
