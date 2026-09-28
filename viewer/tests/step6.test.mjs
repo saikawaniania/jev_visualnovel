@@ -18,24 +18,34 @@ const served = {
 let manifest = {
   version: 1, fallbackEra: 'modern', silFacing: 'left',
   bg: ['bg/bg_modern_washitsu_day.webp', 'bg/bg_modern_river_day.webp', 'bg/bg_modern_river_night.webp', 'bg/bg_modern_station_day.webp', 'bg/bg_modern_kitchen.webp'],
-  sil: ['sil/sil_woman_stand.png', 'sil/sil_man_talk.png', 'sil/sil_man_stand.png', 'sil/sil_cat_stand.png'],
+  sil: ['sil/sil_woman_stand.png', 'sil/sil_man_talk.png', 'sil/sil_man_stand.png', 'sil/sil_cat_stand.png', 'sil/sil_girl_walk.jpg'],
   crowd: ['sil/crowd_1.png'],
 };
 await page.route('**/assets/**', (route) => {
   const path = new URL(route.request().url()).pathname.replace(/^.*\/assets\//, '');
   if (path === 'manifest.json') return route.fulfill({ contentType: 'application/json', body: JSON.stringify(manifest) });
+  if (path === 'sil/sil_girl_walk.jpg' && served.jpeg) return route.fulfill({ contentType: 'image/jpeg', body: served.jpeg });
   if (served[path]) return route.fulfill({ contentType: 'image/svg+xml', body: served[path] });
   return route.fulfill({ status: 404, body: 'not found' });
 });
+// 白地に黒の人影を描いた本物の JPEG（圧縮のにじみ付き）をブラウザで作っておく
+await page.goto(app.url + 'samples/');
+served.jpeg = Buffer.from(await page.evaluate(() => {
+  const c = document.createElement('canvas'); c.width = 200; c.height = 200;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fbfbf8'; x.fillRect(0, 0, 200, 200);
+  x.fillStyle = '#050505'; x.beginPath(); x.arc(100, 40, 18, 0, Math.PI * 2); x.fill(); x.fillRect(80, 60, 40, 140);
+  return c.toDataURL('image/jpeg', 0.7).split(',')[1];
+}), 'base64');
 await page.goto(app.url + '?debug=1');
 await page.waitForTimeout(300);
 
 console.log('manifest.json の読込');
 const m = await page.evaluate(() => ({ bg: Object.keys(JV.Assets.manifest.bg), sil: Object.keys(JV.Assets.manifest.sil), crowd: JV.Assets.manifest.crowd.length, skipped: JV.Assets.manifestSkipped, dbg: JV.Debug.lines.assets }));
 check(m.bg.join() === 'modern_washitsu_day,modern_river_day,modern_river_night,modern_station_day', `背景をファイル名の規則で登録 (${m.bg})`);
-check(m.sil.join() === 'woman_stand,man_talk,man_stand' && m.crowd === 1, `シルエット・群衆 (${m.sil})`);
+check(m.sil.join() === 'woman_stand,man_talk,man_stand,girl_walk' && m.crowd === 1, `シルエット・群衆 (${m.sil})`);
 check(m.skipped.join() === 'bg/bg_modern_kitchen.webp,sil/sil_cat_stand.png', `規則外の名前は除外 (${m.skipped})`);
-check(/背景 4・シルエット 3・群衆 1（名前の規則外 2）/.test(m.dbg), `デバッグ表示に素材数 (${m.dbg})`);
+check(/背景 4・シルエット 4・群衆 1（名前の規則外 2）/.test(m.dbg), `デバッグ表示に素材数 (${m.dbg})`);
 
 await page.click('#sample-list li:first-child button');
 await page.waitForTimeout(400);
@@ -93,6 +103,23 @@ check(broken.src.startsWith('data:image/svg'), `読めないシルエットは�
 
 r = await showScene({ loc: '森・山道', time: '昼', people: '3人以上', main: '成人女性', pose: '立っている' });
 check(r.figs.some((f) => f.cls.includes('crowd') && /crowd_1\.png/.test(f.src)), '群衆の実素材');
+
+console.log('白地の JPG シルエット');
+r = await showScene({ loc: '森・山道', time: '昼', people: '1人', main: '少女', pose: '歩く・走る' });
+const jpgFig = r.figs.find((f) => f.cls.includes('main'));
+check(jpgFig && jpgFig.src.startsWith('blob:'), `白地の JPG は透過に変換して使う (${jpgFig && jpgFig.src.slice(0, 20)})`);
+const alpha = await page.evaluate(async () => {
+  const img = document.querySelector('#stage .fig.main img');
+  await img.decode();
+  const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+  const a = (px, py) => x.getImageData(px, py, 1, 1).data;
+  return { corner: a(3, 3)[3], edge: a(190, 100)[3], body: a(100, 120), head: a(100, 40)[3] };
+});
+check(alpha.corner === 0 && alpha.edge === 0, `白地は透明 (隅 ${alpha.corner}, 端 ${alpha.edge})`);
+check(alpha.body[3] > 240 && alpha.head > 240 && alpha.body[0] < 20, `人影は不透明な黒 (胴 ${alpha.body[3]}, 頭 ${alpha.head})`);
+const kept = await page.evaluate(() => { const u = JV.Assets.manifest.sil.woman_stand; return JV.Assets.cutout.get(u) === u; });
+check(kept, '白地でない（透過・黒一色の）画像は変換せずそのまま使う');
 
 console.log('時代の代用（fallbackEra）と向き');
 const other = await page.evaluate(() => JV.Assets.background('present', 'washitsu', 'day').key);

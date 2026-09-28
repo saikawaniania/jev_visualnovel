@@ -46,7 +46,8 @@ MVP に必要なのは **背景15枚・シルエット30枚・群衆2枚**（す
 
 **仕様**：
 
-- **黒一色・背景は透明**の PNG（`.png`）。ファイル名は `sil/sil_{体型}_{ポーズ}.png`
+- **白地に黒一色**で描いた JPG（`.jpg`）でよい。ビューアが読み込むときに白地を透明にする。透過 PNG でも可。
+  ファイル名は `sil/sil_{体型}_{ポーズ}.jpg`（PNG なら `.png`）
 - **全部同じキャンバス**（例 1024×1024 の正方形）で作る。表示では全員が同じ高さに拡大されるので、**大人と子供の身長差はキャンバスの中の大きさで表す**
   - 大人：頭がキャンバスの上端近く（上に 5% ほど余白）、**足はキャンバスの下端にぴったり**
   - 少年・少女：大人の 7 割くらいの背丈（上に 30% ほど余白）
@@ -76,19 +77,20 @@ MVP に必要なのは **背景15枚・シルエット30枚・群衆2枚**（す
 | `lie` 倒れる・横たわる | lying on the ground on their side (keep the figure low in the frame) |
 | `talk` 向き合って話す | standing and gesturing with one hand as if talking to someone |
 
-### 白背景で出てきた場合
+### 白地のままでよい
 
-多くの生成AIは本当の透明にならず、白背景や「透明っぽい市松模様」を描いてしまいます。
+透明にする作業は要りません。白地（またはごく薄いグレーの地）に黒い人影なら、ビューアが自動で地を透明にします。
 
-- 白背景なら、背景除去ツール（スマホの写真アプリの「被写体を切り抜く」、remove.bg など）で透過 PNG にする
-- 市松模様が描かれている場合は使えないので、「plain white background」で作り直してから切り抜く
-- 切り抜き後に**キャンバスの大きさと足元の位置**が崩れていないか確認する
+- **地は無地に**：床の影・地面の線・グラデーションが入ると、その部分も薄く人影として残る。「no ground, no shadow」を付ける
+- **人影はしっかり黒く**：グレーの人影は半透明になる
+- 「透明っぽい市松模様」が描かれた画像は使えない。「plain white background」で作り直す
+- 四隅が白くない画像（透過 PNG など）は、変換せずそのまま使う
 
 ---
 
 ## 群衆（2枚）
 
-**仕様**：横長（2048×640 など）・黒一色・透明背景の PNG。ファイル名は `sil/crowd_1.png`・`sil/crowd_2.png`。
+**仕様**：横長（2048×640 など）・白地に黒一色の JPG（透過 PNG も可）。ファイル名は `sil/crowd_1.jpg`・`sil/crowd_2.jpg`。
 3人以上の場面で、主人物の後ろの中景に置かれます。
 
 > Solid pure black silhouette of a crowd of 6–8 people standing and walking in a row, Meiji–Taisho era Japanese clothing (kimono, hakama, bowler hats, parasols), mixed heights including a child, feet on the bottom edge, wide horizontal composition, plain white background, no ground, no shadow

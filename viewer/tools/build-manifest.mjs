@@ -3,8 +3,9 @@
 //
 // ファイル名の規則（これ以外の名前は警告して manifest に入れない）：
 //   bg/bg_{era}_{location}_{time}.(webp|png|jpg)   例 bg_modern_washitsu_day.webp
-//   sil/sil_{figure}_{pose}.png                    例 sil_woman_sit.png
-//   sil/crowd_*.png                                群衆シルエット（3人以上用）
+//   sil/sil_{figure}_{pose}.(png|jpg|webp)         例 sil_woman_sit.png
+//   sil/crowd_*.(png|jpg|webp)                     群衆シルエット（3人以上用）
+//   シルエットは透過 PNG でも、白地に黒の JPG でもよい（白地はビューアが読み込み時に透明にする）
 // fallbackEra・silFacing は既存の manifest.json の値を引き継ぐ。
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -33,8 +34,8 @@ const sil = [];
 const crowd = [];
 for (const f of await list('sil')) {
   if (f.startsWith('.') || /\.md$/i.test(f)) continue;
-  if (/^crowd_.*\.(png|webp)$/i.test(f)) { crowd.push(`sil/${f}`); continue; }
-  const m = f.match(/^sil_([a-z0-9]+)_([a-z0-9]+)\.(png|webp)$/i);
+  if (/^crowd_.*\.(png|jpe?g|webp)$/i.test(f)) { crowd.push(`sil/${f}`); continue; }
+  const m = f.match(/^sil_([a-z0-9]+)_([a-z0-9]+)\.(png|jpe?g|webp)$/i);
   if (m && FIGURES.includes(m[1]) && POSES.includes(m[2])) sil.push(`sil/${f}`);
   else warn.push(`sil/${f}`);
 }

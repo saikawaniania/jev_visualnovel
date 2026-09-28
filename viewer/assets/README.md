@@ -17,8 +17,8 @@
 | 種類 | 名前 | 例 |
 | --- | --- | --- |
 | 背景 | `bg/bg_{era}_{location}_{time}.webp` | `bg/bg_modern_washitsu_day.webp` |
-| シルエット | `sil/sil_{figure}_{pose}.png`（透過） | `sil/sil_woman_sit.png` |
-| 群衆 | `sil/crowd_*.png`（透過・3人以上用） | `sil/crowd_1.png` |
+| シルエット | `sil/sil_{figure}_{pose}.jpg`（白地に黒。透過 PNG も可） | `sil/sil_woman_sit.jpg` |
+| 群衆 | `sil/crowd_*.jpg`（白地に黒。透過 PNG も可・3人以上用） | `sil/crowd_1.jpg` |
 
 - era：`modern`（近代日本）・`present`（現代日本）・`western`（西洋風）・`fantasy`（ファンタジー）
 - location：`washitsu` 和室・`yoshitsu` 洋室・`kitchen` 台所・`genkan` 廊下・玄関・`classroom` 教室・`shop` 店・酒場・`station` 駅・車内・`street` 街路・`alley` 路地・`garden` 庭・`field` 田畑・野原・`forest` 森・山道・`river` 川・水辺・`seaside` 海辺・`nightsky` 夜空の見える屋外
@@ -34,7 +34,7 @@
 ## 素材の仕様
 
 - 背景：人物なし、低彩度、輪郭をややぼかす。白文字が上に乗っても読める明度に揃える。16:9 以上の横長で、中央が見切れても成立する構図
-- シルエット：黒一色の透過 PNG。足元を画像の下端に揃える。体格差（子供・老人）は画像内の大きさで表す（同じキャンバスの高さで描く）
+- シルエット：白地に黒一色の JPG（ビューアが読み込み時に白地を透明にする）か、黒一色の透過 PNG。足元を画像の下端に揃える。体格差（子供・老人）は画像内の大きさで表す（同じキャンバスの高さで描く）
 - 向き：既定では**画面の左を向いた姿**で描く（主人物は右に置かれ、左の相手と向かい合う）。右向きで揃えたなら `manifest.json` の `silFacing` を `"right"` にする
 - 読み込みに失敗したファイルは自動で仮素材に戻ります
 

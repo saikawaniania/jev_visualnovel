@@ -1850,15 +1850,79 @@ JV.Assets = {
 
   silhouette(figId, poseId) {
     const own = (this.manifest.sil || {})[`${figId}_${poseId}`];
-    return own && !this.broken.has(own) ? own : this.svgUrl(this.svgFigure(figId, poseId));
+    return own && !this.broken.has(own) ? (this.cutout.get(own) || own) : this.svgUrl(this.svgFigure(figId, poseId));
   },
 
   isPlaceholder(url) { return url.startsWith('data:image/svg+xml'); },
 
   crowd(k = 0) {
     const list = (this.manifest.crowd || []).filter((u) => !this.broken.has(u));
-    if (list.length) return list[k % list.length];
+    if (list.length) { const u = list[k % list.length]; return this.cutout.get(u) || u; }
     return this.svgUrl(this.svgCrowd(k));
+  },
+
+  /**
+   * 白地に黒で描いたシルエット（JPG や白背景の PNG）を、読み込み時に透過シルエットへ変換する。
+   * 四隅が不透明な明るい色なら「白地」とみなし、明るさに応じて透明度を付けて黒一色にする。
+   * もともと透過している PNG はそのまま使う。結果は URL ごとに覚えておく。
+   */
+  cutout: new Map(),
+  cutoutPending: new Map(),
+
+  prepareSilhouette(url) {
+    if (!url || url.startsWith('data:') || url.startsWith('blob:') || this.cutout.has(url)) return Promise.resolve();
+    if (this.cutoutPending.has(url)) return this.cutoutPending.get(url);
+    const job = new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth, h = img.naturalHeight;
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0);
+          const d = ctx.getImageData(0, 0, w, h);
+          const px = d.data;
+          const at = (x, y) => (y * w + x) * 4;
+          const corners = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)];
+          const whiteGround = corners.every((i) => px[i + 3] > 250 && (px[i] + px[i + 1] + px[i + 2]) / 3 > 200);
+          if (!whiteGround) { this.cutout.set(url, url); resolve(); return; }
+          // 地の明るさを基準にして、それより暗いほど不透明にする（JPG のにじみや薄いグレーの地も消える）
+          const ground = corners.reduce((a, i) => a + (px[i] + px[i + 1] + px[i + 2]) / 3, 0) / 4;
+          const hi = ground - 18, lo = 60;
+          for (let i = 0; i < px.length; i += 4) {
+            const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+            const a = lum >= hi ? 0 : lum <= lo ? 255 : Math.round(255 * (hi - lum) / (hi - lo));
+            px[i] = 7; px[i + 1] = 8; px[i + 2] = 11; px[i + 3] = a;
+          }
+          ctx.putImageData(d, 0, 0);
+          c.toBlob((blob) => {
+            this.cutout.set(url, blob ? URL.createObjectURL(blob) : url);
+            resolve();
+          }, 'image/png');
+        } catch (_) {
+          this.cutout.set(url, url); // 読めない（別オリジンなど）ときはそのまま
+          resolve();
+        }
+      };
+      img.onerror = () => { this.broken.add(url); resolve(); };
+      img.src = url;
+    }).finally(() => this.cutoutPending.delete(url));
+    this.cutoutPending.set(url, job);
+    return job;
+  },
+
+  /** 場面に出す人物の素材を、表示前に準備する */
+  prepareFigures(scene) {
+    const f = scene && scene.figures;
+    if (!f || f.layout === 'none') return Promise.resolve();
+    const urls = [];
+    const own = (fig, pose) => fig && (this.manifest.sil || {})[`${fig}_${pose}`];
+    urls.push(own(f.main, f.pose), own(f.sub, f.pose === 'lie' ? 'stand' : f.pose));
+    if (f.layout === 'many') urls.push(...(this.manifest.crowd || []));
+    const jobs = urls.filter(Boolean).map((u) => this.prepareSilhouette(u));
+    // 遅くても表示は止めない（最大 1.5 秒待つ）
+    return Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 1500))]);
   },
 
   /** 画像を先に読み込む。失敗したら broken に記録して false */
@@ -2221,6 +2285,10 @@ JV.Stage = {
     if (needBg && s.location) {
       let spec = bgSpec();
       while (spec.kind === 'image' && !(await JV.Assets.preload(spec.url))) spec = bgSpec();
+      if (!alive()) return;
+    }
+    if (figsChanged) {
+      await JV.Assets.prepareFigures(s);
       if (!alive()) return;
     }
 
