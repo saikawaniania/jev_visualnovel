@@ -1,0 +1,11 @@
+[project]
+name = "jev-starter"
+version = "0.1.0"
+description = "Jev (TypeSafe System One) starter for a web app (no Colab)"
+requires-python = ">=3.10"
+dependencies = [
+    "typesafe-sdk",
+    "python-dotenv",
+    "fastapi",
+    "uvicorn[standard]",
+]
