@@ -134,6 +134,60 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 #text .chapter-title:first-child { margin-top: 0.6em; }
 #text .scene-break { text-align: center; color: var(--muted); margin: 1.6em 0; letter-spacing: 1em; }
 #text .end-mark { text-align: center; color: var(--muted); margin: 3em 0 0; font-size: 0.85em; }
+
+/* ノベルモード：絵を全画面に固定し、本文は半透明の暗い帯の上に流す */
+#stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #1b1d22;
+}
+#stage .layer { position: absolute; inset: 0; pointer-events: none; }
+body.novel #text-column {
+  background: rgba(8, 10, 14, 0.62);
+  box-shadow: 0 0 60px 30px rgba(8, 10, 14, 0.62);
+  color: #f3f1ec;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+body.effects-off #stage { display: none; }
+body.effects-off #text-column { background: transparent; box-shadow: none; }
+
+#effects-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+#effects-toggle[aria-pressed="false"] { color: var(--muted); }
+
+/* デバッグ表示 */
+#debug {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 40;
+  max-width: min(360px, calc(100vw - 120px));
+  max-height: 45vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #cfe8cf;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+body.debug #text .seg.current { outline: 1px dashed rgba(160, 230, 160, 0.7); outline-offset: 2px; }
+body.debug #center-line {
+  position: fixed; left: 0; right: 0; top: 50%; height: 0; z-index: 35;
+  border-top: 1px dashed rgba(160, 230, 160, 0.35); pointer-events: none;
+}
 </style>
 </head>
 <body>
@@ -162,6 +216,7 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 
 <!-- 読書画面 -->
 <div id="reader" class="hidden">
+  <div id="stage" aria-hidden="true"></div>
   <header id="reader-top">
     <button type="button" onclick="JV.App.goHome()">← 戻る</button>
     <div class="titles"><span class="work-title" id="work-title"></span><span class="chapter-name" id="chapter-name"></span></div>
@@ -169,6 +224,9 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
   <div id="text-column">
     <article id="text"></article>
   </div>
+  <button id="effects-toggle" type="button" aria-pressed="true" onclick="JV.App.toggleEffects()">演出 オン</button>
+  <div id="center-line"></div>
+  <div id="debug" class="hidden"></div>
 </div>
 
 <script>
@@ -594,6 +652,141 @@ JV.Parser = {
 };
 
 /* =====================================================================
+ * 設定（localStorage に保存。画面はステップ5）
+ * ===================================================================== */
+JV.Settings = {
+  KEY: 'jev-viewer-settings',
+  DEFAULTS: {
+    stopDelay: 400,        // 停止判定の待ち時間(ms)
+    effects: true,         // 演出オン／オフ
+    debug: false,          // デバッグ表示
+  },
+  values: null,
+
+  load() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(this.KEY) || '{}') || {}; } catch (_) { saved = {}; }
+    this.values = { ...this.DEFAULTS, ...saved };
+    const q = new URLSearchParams(location.search);
+    if (q.has('debug')) this.values.debug = q.get('debug') !== '0';
+    return this.values;
+  },
+  get(k) { if (!this.values) this.load(); return this.values[k]; },
+  set(k, v) {
+    if (!this.values) this.load();
+    this.values[k] = v;
+    try { localStorage.setItem(this.KEY, JSON.stringify(this.values)); } catch (_) { /* 保存できなくても動かす */ }
+  },
+};
+
+/* =====================================================================
+ * 停止検知部：スクロールが一定時間止まったら、画面の縦中央にかかる断片を特定する
+ * ===================================================================== */
+JV.StopDetector = {
+  io: null,
+  atCenter: new Set(),
+  timer: 0,
+  segEls: [],
+  lastUnit: null,
+  onStop: null,
+  onScrollBound: null,
+
+  attach(root, onStop) {
+    this.detach();
+    this.onStop = onStop;
+    this.segEls = Array.from(root.querySelectorAll('.seg'));
+    // 高さ0の「中央線」に交差している断片を常に把握しておく
+    this.io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) this.atCenter.add(e.target);
+        else this.atCenter.delete(e.target);
+      }
+    }, { rootMargin: '-50% 0px -50% 0px', threshold: 0 });
+    this.segEls.forEach((el) => this.io.observe(el));
+    this.onScrollBound = () => this.arm();
+    window.addEventListener('scroll', this.onScrollBound, { passive: true });
+    window.addEventListener('scrollend', this.onScrollBound);
+    window.addEventListener('resize', this.onScrollBound);
+    this.arm();
+  },
+
+  detach() {
+    if (this.io) this.io.disconnect();
+    this.io = null;
+    this.atCenter.clear();
+    clearTimeout(this.timer);
+    if (this.onScrollBound) {
+      window.removeEventListener('scroll', this.onScrollBound);
+      window.removeEventListener('scrollend', this.onScrollBound);
+      window.removeEventListener('resize', this.onScrollBound);
+    }
+    this.onScrollBound = null;
+    this.lastUnit = null;
+  },
+
+  /** スクロールのたびにタイマーを掛け直す。動いている間は発火しない */
+  arm() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.fire(), JV.Settings.get('stopDelay'));
+  },
+
+  fire(force = false) {
+    const el = this.centerSegment();
+    if (!el) return;
+    const unit = Number(el.dataset.u);
+    if (!force && unit === this.lastUnit) return; // 前回と同じなら何もしない
+    this.lastUnit = unit;
+    if (this.onStop) this.onStop({ unit, seg: Number(el.dataset.s), el });
+  },
+
+  centerSegment() {
+    const cy = window.innerHeight / 2;
+    let best = null, bestD = Infinity;
+    for (const el of this.atCenter) {
+      const r = el.getBoundingClientRect();
+      const d = Math.abs((r.top + r.bottom) / 2 - cy);
+      if (d < bestD) { best = el; bestD = d; }
+    }
+    if (best) return best;
+    // 段落の隙間や見出しに中央線がある場合：文書順の二分探索で最も近い断片
+    const els = this.segEls;
+    if (!els.length) return null;
+    let lo = 0, hi = els.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (els[mid].getBoundingClientRect().bottom < cy) lo = mid + 1; else hi = mid;
+    }
+    const cand = [els[lo], els[lo - 1]].filter(Boolean);
+    cand.sort((a, b) => {
+      const da = Math.min(Math.abs(a.getBoundingClientRect().top - cy), Math.abs(a.getBoundingClientRect().bottom - cy));
+      const db = Math.min(Math.abs(b.getBoundingClientRect().top - cy), Math.abs(b.getBoundingClientRect().bottom - cy));
+      return da - db;
+    });
+    return cand[0];
+  },
+};
+
+/* =====================================================================
+ * デバッグ表示
+ * ===================================================================== */
+JV.Debug = {
+  lines: {},
+  set(key, text) {
+    this.lines[key] = text;
+    this.render();
+  },
+  clear() { this.lines = {}; this.render(); },
+  render() {
+    const el = document.getElementById('debug');
+    const on = JV.Settings.get('debug');
+    document.body.classList.toggle('debug', on);
+    el.classList.toggle('hidden', !on);
+    if (!on) return;
+    el.textContent = Object.values(this.lines).filter(Boolean).join('\n');
+  },
+};
+
+/* =====================================================================
  * 読書画面：本文の描画
  * ===================================================================== */
 JV.Reader = {
@@ -651,6 +844,19 @@ JV.Reader = {
     const ch = this.doc && this.doc.chapters[ci];
     document.getElementById('chapter-name').textContent = ch && ch.title ? ch.title : '';
   },
+
+  /** 判定単位 u の断片に印をつける（デバッグ表示時に枠線） */
+  markCurrent(u) {
+    document.querySelectorAll('#text .seg.current').forEach((el) => el.classList.remove('current'));
+    document.querySelectorAll(`#text .seg[data-u="${u}"]`).forEach((el) => el.classList.add('current'));
+  },
+
+  /** 判定単位 u の直前2段落（場面判定の context_before 用） */
+  contextBefore(u, n = 2) {
+    const unit = this.doc.units[u];
+    const start = Math.max(0, unit.paraStart - n);
+    return this.doc.paragraphs.slice(start, unit.paraStart).map((p) => p.text.replace(/^[\s　]+/, '')).join('\n');
+  },
 };
 
 /* =====================================================================
@@ -664,9 +870,42 @@ JV.App = {
   ],
 
   init() {
+    JV.Settings.load();
+    document.body.classList.add('novel');
+    this.applyEffects();
     this.renderSamples();
     this.setupDrop();
     window.addEventListener('popstate', () => { if (!location.hash) this.showHome(); });
+    // デバッグ表示の切り替え（D キー。設定画面からも切り替えられる）
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) {
+        JV.Settings.set('debug', !JV.Settings.get('debug'));
+        JV.Debug.render();
+      }
+    });
+    JV.Debug.render();
+  },
+
+  toggleEffects() {
+    JV.Settings.set('effects', !JV.Settings.get('effects'));
+    this.applyEffects();
+  },
+
+  applyEffects() {
+    const on = JV.Settings.get('effects');
+    document.body.classList.toggle('effects-off', !on);
+    const b = document.getElementById('effects-toggle');
+    b.setAttribute('aria-pressed', String(on));
+    b.textContent = on ? '演出 オン' : '演出 オフ';
+  },
+
+  /** スクロール停止時：画面中央の判定単位が変わったときだけ呼ばれる */
+  onStop({ unit }) {
+    const doc = this.doc;
+    const u = doc.units[unit];
+    JV.Reader.markCurrent(unit);
+    JV.Reader.setChapterName(u.chapter);
+    JV.Debug.set('unit', `単位 #${unit}（段落 ${u.paraStart}${u.paraEnd !== u.paraStart ? `〜${u.paraEnd}` : ''}・${u.text.length}字・章 ${u.chapter}）\n${u.text.slice(0, 60).replace(/\n/g, ' / ')}${u.text.length > 60 ? '…' : ''}`);
   },
 
   renderSamples() {
@@ -731,7 +970,9 @@ JV.App = {
     this.doc = doc;
     this.hideError();
     JV.Reader.render(doc);
+    JV.Debug.clear();
     this.showReader();
+    JV.StopDetector.attach(document.getElementById('text'), (e) => this.onStop(e));
   },
 
   showReader() {
@@ -747,6 +988,7 @@ JV.App = {
   },
 
   showHome() {
+    JV.StopDetector.detach();
     document.getElementById('reader').classList.add('hidden');
     document.getElementById('home').classList.remove('hidden');
     window.scrollTo(0, 0);
