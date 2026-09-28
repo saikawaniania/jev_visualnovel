@@ -1,0 +1,7 @@
+# Netlify：ビューア（viewer/）を公開し、/v1/systemone を TypeSafe への中継関数につなぐ。
+# 環境変数（Site configuration → Environment variables）に次の2つを設定すること：
+#   TYPESAFE_API_KEY   TypeSafe の API キー
+#   RELAY_PASSPHRASE   中継の合言葉（ビューアの設定画面に同じものを入れた人だけが使える）
+[build]
+  publish = "viewer"
+  functions = "netlify/functions"

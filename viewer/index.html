@@ -257,7 +257,7 @@ body.debug #center-line {
 #settings .result { font-size: 13px; line-height: 1.6; }
 #settings .result.ok { color: #9fd89f; }
 #settings .result.ng { color: #f0a0a0; }
-#settings [data-show="remote"].off { display: none; }
+#settings [data-show].off { display: none; }
 #reader-top .settings-btn { margin-left: auto; }
 </style>
 </head>
@@ -328,7 +328,11 @@ body.debug #center-line {
           <option value="relay">中継サーバー（Cloudflare Workers 等）</option>
         </select>
       </label>
-      <label data-show="remote">APIキー
+      <label data-show="relay">合言葉
+        <input data-key="relayPass" type="password" autocomplete="off" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small>中継サーバー（Netlify など）に設定した合言葉。PC の local_server.py で合言葉を設定していなければ空でかまいません。</small>
+      </label>
+      <label data-show="direct">APIキー
         <input data-key="apiKey" type="password" autocomplete="off" spellcheck="false" onchange="JV.SettingsUI.change(this)">
         <small>この端末のブラウザ（localStorage）にだけ保存されます。ページを見られる人にはキーが見えるため、共用の端末では使わないでください。</small>
       </label>
@@ -839,6 +843,7 @@ JV.Settings = {
   DEFAULTS: {
     route: 'mock',         // 呼び出し経路：mock | typesafe | openrouter | relay
     apiKey: '',            // APIキー（この端末の localStorage にだけ保存）
+    relayPass: '',         // 中継サーバーの合言葉（Netlify の RELAY_PASSPHRASE と同じもの）
     endpoint: '',          // 接続先URLの上書き（空なら経路ごとの既定）
     model: 'jev-1.13',     // モデル版（しきい値が版に依存するので固定する）
     asciiKeys: false,      // 選択肢のキーを英字IDで送る（日本語キーが通らない場合）
@@ -876,7 +881,7 @@ JV.Settings = {
  * ===================================================================== */
 JV.SettingsUI = {
   // 変えたら判定をやり直す項目
-  JUDGE_KEYS: new Set(['route', 'apiKey', 'endpoint', 'model', 'asciiKeys']),
+  JUDGE_KEYS: new Set(['route', 'apiKey', 'relayPass', 'endpoint', 'model', 'asciiKeys']),
   dirtyJudge: false,
 
   open() {
@@ -927,17 +932,19 @@ JV.SettingsUI = {
     const route = JV.Settings.get('route');
     const remote = route !== 'mock';
     document.querySelectorAll('#settings [data-show="remote"]').forEach((e) => e.classList.toggle('off', !remote));
+    document.querySelectorAll('#settings [data-show="direct"]').forEach((e) => e.classList.toggle('off', !remote || route === 'relay'));
+    document.querySelectorAll('#settings [data-show="relay"]').forEach((e) => e.classList.toggle('off', route !== 'relay'));
     const def = (JV.Adapters.remote.ROUTES[route] || {}).url;
     const ep = document.querySelector('#settings [data-key="endpoint"]');
     ep.placeholder = def;
     document.getElementById('endpoint-hint').textContent = route === 'relay'
-      ? '空欄なら、このページを配信しているサーバーの /v1/systemone（relay/local_server.py）。Cloudflare Workers などを使うならそのURL。キーは中継側に置くので、APIキー欄は空でかまいません。'
+      ? '空欄なら、このページを配信しているサーバーの /v1/systemone（Netlify の関数や relay/local_server.py）。別の場所の中継（Cloudflare Workers など）を使うときだけURLを入れます。'
       : `空欄なら既定${route === 'openrouter' ? '（仮・要確認）' : ''}：${def}`;
     const notes = {
       mock: 'APIを呼ばず、キーワード一致の偽の判定で動きます。画面と演出の確認用です。',
       openrouter: 'OpenRouter での Jev の指定方法とブラウザからの直接呼び出し（CORS）は未確認です。まず「接続テスト」で確かめてください。通らない場合は中継サーバーを使います。',
       typesafe: 'TypeSafe の API（/v1/systemone）を直接呼びます。新規登録は停止中のため既存アカウント向けです。',
-      relay: '中継サーバー経由で呼びます。PC で python3 viewer/relay/local_server.py を動かし、そのサーバーが表示するURLでこのページを開いてください（同じ Wi-Fi のスマホからも使えます）。',
+      relay: '中継サーバー経由で呼びます。APIキーは中継側に置きます。Netlify に置いたこのページなら、合言葉を入れるだけで使えます（PC で動かすなら relay/local_server.py）。',
     };
     document.getElementById('route-note').textContent = notes[route] || '';
   },
@@ -974,8 +981,14 @@ JV.SettingsUI = {
         format: '→ 経路の応答形式が TypeSafe と違います。デバッグ表示で中身を確認してください。',
         rate: '→ 少し待ってから再試行してください。',
       }[err.kind] || '';
-      const relayHint = route === 'relay' && (err.status === 404 || err.status === 405 || err.status === 501)
-        ? '→ このページが relay/local_server.py から配信されていない可能性があります。PC で起動し、表示されたURLで開き直してください。' : '';
+      const msg = err.message || '';
+      let relayHint = '';
+      if (route === 'relay') {
+        if (err.status === 404 || err.status === 405 || err.status === 501) relayHint = '→ このページは中継サーバーから配信されていないようです。Netlify のURL（または local_server.py が表示したURL）で開き直してください。';
+        else if (err.status === 403 && /passphrase/.test(msg)) relayHint = '→ 合言葉が違います。Netlify の RELAY_PASSPHRASE と同じものを入れてください。';
+        else if (err.status === 500 && /not configured/.test(msg)) relayHint = '→ Netlify の環境変数 TYPESAFE_API_KEY と RELAY_PASSPHRASE を設定し、再デプロイしてください。';
+        else if (err.status === 401) relayHint = '→ 中継に設定した TypeSafe の APIキーが通っていません。キーを確認してください。';
+      }
       out.className = 'result ng';
       out.textContent = `失敗：${err.message} ${relayHint || hint}`;
       if (err.detail) console.warn('[jev-viewer] connection test', err.detail);
@@ -1468,7 +1481,11 @@ JV.Adapters.remote = {
     const url = custom || (this.ROUTES[route] || {}).url;
     const key = (JV.Settings.get('apiKey') || '').trim();
     const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
-    if (key) headers.Authorization = `Bearer ${key}`;
+    if (route === 'relay') {
+      // 中継にはキーを渡さない（キーは中継側にある）。合言葉だけ送る
+      const pass = (JV.Settings.get('relayPass') || '').trim();
+      if (pass) headers['X-Relay-Passphrase'] = pass;
+    } else if (key) headers.Authorization = `Bearer ${key}`;
     if (route === 'openrouter') {
       // OpenRouter がアプリの識別に使うヘッダー（任意）
       if (/^https?:/.test(location.href)) headers['HTTP-Referer'] = location.origin;

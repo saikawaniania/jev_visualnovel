@@ -13,11 +13,13 @@
     ビューアの「設定」で経路を「中継サーバー」にする（接続先URLは空のままでよい）。
 
 注意：同じネットワークにいる人は誰でもこの中継を使えるため、自宅など信頼できるネットワークでだけ動かすこと。
+環境変数 RELAY_PASSPHRASE を設定すると、ビューアの設定で同じ合言葉を入れた人だけが使える。
 """
 
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
 import socket
@@ -59,6 +61,7 @@ def lan_ip() -> str:
 class Handler(SimpleHTTPRequestHandler):
     upstream = "https://api.typesafe.ai/v1/systemone"
     api_key = ""
+    passphrase = ""  # RELAY_PASSPHRASE を設定したときだけ確かめる
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(VIEWER), **kwargs)
@@ -71,6 +74,11 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path.split("?")[0] != "/v1/systemone":
             self.send_json(404, {"error": "not found"})
+            return
+        if self.passphrase and not hmac.compare_digest(
+            (self.headers.get("X-Relay-Passphrase") or "").encode(), self.passphrase.encode()
+        ):
+            self.send_json(403, {"error": "relay passphrase is wrong or missing"})
             return
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
@@ -130,6 +138,7 @@ def main() -> None:
     if not key:
         sys.exit("TYPESAFE_API_KEY が見つかりません。環境変数か viewer/relay/.env に書いてください。")
     Handler.api_key = key
+    Handler.passphrase = os.environ.get("RELAY_PASSPHRASE", "").strip()
     base = os.environ.get("TYPESAFE_BASE_URL", "").strip().rstrip("/")
     if base:
         Handler.upstream = f"{base}/v1/systemone"

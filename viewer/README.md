@@ -26,6 +26,7 @@ python3 -m http.server 8000     # または npx http-server -p 8000
 | `samples/` | 動作確認用の短い作品（青空文庫形式 Shift_JIS・Markdown・テキスト。すべて書き下ろし） |
 | `assets/` | 素材ライブラリと `manifest.json`。置き方は `assets/README.md` |
 | `tools/build-manifest.mjs` | `assets/` の中身から `manifest.json` を作り直す |
+| `../netlify.toml`・`../netlify/functions/systemone.mjs` | Netlify で公開するときの設定と中継関数（合言葉つき） |
 | `relay/local_server.py` | ビューアの配信と TypeSafe への中継を1つで行うローカルサーバー |
 | `relay/cloudflare-worker.js` | 同じ中継を Cloudflare Workers で動かす例 |
 | `tests/` | 各ステップの動作確認（Playwright） |
@@ -50,6 +51,22 @@ python3 -m http.server 8000     # または npx http-server -p 8000
 設定画面の「接続テスト」で、実際のブラウザから届くか・CORS で拒否されるか・応答の形式が合うかを確かめられます。
 GitHub Pages から TypeSafe 直接で接続テストすると「接続できません」になりました。URL は公式 SDK と同じなので、ブラウザからの直接呼び出しが CORS で拒否されているとみられます（公式 SDK もブラウザでの利用を既定で禁止しています）。その場合は中継サーバーを使います。
 
+### Netlify に置く（スマホ単体で使う）
+
+リポジトリ直下の `netlify.toml` と `netlify/functions/systemone.mjs` で、ビューアの公開と中継を Netlify 1か所で行います。
+ページと中継が同じサイトにあるので CORS はかからず、APIキーは Netlify の環境変数にだけ置かれます。
+
+1. https://app.netlify.com/ に GitHub でログイン
+2. **Add new project → Import an existing project → GitHub** で `jev_visualnovel` を選ぶ
+3. **Branch to deploy** を使うブランチにする。Build command は空、Publish directory は `netlify.toml` の `viewer` が自動で入る → **Deploy**
+4. **Project configuration → Environment variables** で2つ追加
+   - `TYPESAFE_API_KEY`：TypeSafe の APIキー
+   - `RELAY_PASSPHRASE`：自分で決めた合言葉（長めの文字列）
+5. **Deploys → Trigger deploy → Deploy project without cache** で再デプロイ（環境変数は再デプロイ後に効く）
+6. スマホで `https://<サイト名>.netlify.app/` を開き、設定で経路を **中継サーバー**、**合言葉** に 4 と同じものを入れて **接続テスト**
+
+URLを知っている人でも、合言葉がなければ中継は使えません（403 を返し、TypeSafe には送りません）。
+
 ### ローカル中継で使う（アカウント追加なし）
 
 ```bash
@@ -65,7 +82,8 @@ TYPESAFE_API_KEY=... python3 viewer/relay/local_server.py
 
 ```bash
 for i in 1 2 3 4 5 6; do node viewer/tests/step$i.test.mjs; done
-node viewer/tests/relay.test.mjs   # ローカル中継（偽の上流サーバーで確認）
+node viewer/tests/relay.test.mjs     # ローカル中継（偽の上流サーバーで確認）
+node viewer/tests/netlify.test.mjs   # Netlify の中継関数（同上）
 ```
 
 グローバルにインストールされた `playwright`（Chromium）を使います。外部 API には接続せず、ステップ5・6の接続先と素材はテスト内の偽サーバーで代用しています。

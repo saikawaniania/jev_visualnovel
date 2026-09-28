@@ -155,8 +155,7 @@ await page.waitForFunction(() => !document.getElementById('conn-test').disabled)
 r = requests.at(-1);
 check(r.url.startsWith('https://openrouter.ai/api/v1/') && r.headers.authorization === 'Bearer sk-or-test' && r.headers['x-title'], `OpenRouter へ送る (${r.url})`);
 await page.selectOption('#settings [data-key="route"]', 'relay');
-await page.fill('#settings [data-key="apiKey"]', '');
-await page.dispatchEvent('#settings [data-key="apiKey"]', 'change');
+// APIキー（sk-or-test）は残っているが、中継には送らない
 await page.fill('#settings [data-key="endpoint"]', 'https://relay.example.com/judge');
 await page.dispatchEvent('#settings [data-key="endpoint"]', 'change');
 await page.click('#conn-test');
