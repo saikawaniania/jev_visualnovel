@@ -5,3 +5,5 @@
 [build]
   publish = "viewer"
   functions = "netlify/functions"
+  # 素材（viewer/assets/bg・sil）の一覧をデプロイのたびに作り直す。画像をアップロードするだけで反映される
+  command = "node viewer/tools/build-manifest.mjs"

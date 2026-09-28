@@ -6,8 +6,11 @@
 ## 置き方
 
 1. 下の規則どおりの名前で `bg/` と `sil/` に置く
-2. `node viewer/tools/build-manifest.mjs` を実行して `manifest.json` を作り直す（手で書いてもよい）
+2. `node viewer/tools/build-manifest.mjs` を実行して `manifest.json` を作り直す（手で書いてもよい）。
+   Netlify ではデプロイのたびに自動で実行されるので、画像を GitHub にアップロードするだけでよい
 3. ビューアをローカルサーバー経由で開き直す（`file://` では manifest を読めないため仮素材のみ）
+
+画像生成AIで作るときのプロンプト例と典型的な場面の一覧は `PROMPTS.md` にあります。
 
 ## ファイル名
 
