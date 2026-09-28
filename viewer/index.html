@@ -93,7 +93,8 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 .recent-item > button:first-child { flex: 1; min-width: 0; }
 .recent-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-item .del { width: auto; flex: none; padding: 0 14px; color: var(--muted); }
-#home-footer { display: flex; gap: 10px; }
+#home-footer { display: flex; gap: 12px; align-items: center; }
+#home-footer .meta { color: var(--muted); font-size: 12px; }
 
 /* ---------- 読書画面 ---------- */
 #reader { position: relative; min-height: 100vh; }
@@ -226,6 +227,35 @@ body.debug #center-line {
   position: fixed; left: 0; right: 0; top: 50%; height: 0; z-index: 35;
   border-top: 1px dashed rgba(160, 230, 160, 0.35); pointer-events: none;
 }
+
+/* 設定画面 */
+#settings {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; justify-content: center; align-items: flex-start;
+  overflow-y: auto; padding: 24px 16px;
+}
+#settings .sheet {
+  width: 100%; max-width: 560px;
+  background: #16181e; border: 1px solid var(--line); border-radius: 12px;
+  padding: 16px 18px 20px;
+}
+#settings header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+#settings h2 { margin: 0; font-size: 18px; font-weight: 600; }
+#settings fieldset { border: 0; border-top: 1px solid var(--line); margin: 12px 0 0; padding: 12px 0 0; display: flex; flex-direction: column; gap: 12px; }
+#settings legend { color: var(--accent); font-size: 13px; letter-spacing: 0.1em; padding: 0 8px 0 0; }
+#settings label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+#settings label.check { flex-direction: row; align-items: center; gap: 8px; }
+#settings input[type="text"], #settings input[type="url"], #settings input[type="password"], #settings input[type="number"], #settings select {
+  width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: #0f1115;
+}
+#settings small, #settings .note { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
+#settings .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#settings .result { font-size: 13px; line-height: 1.6; }
+#settings .result.ok { color: #9fd89f; }
+#settings .result.ng { color: #f0a0a0; }
+#settings [data-show="remote"].off { display: none; }
+#reader-top .settings-btn { margin-left: auto; }
 </style>
 </head>
 <body>
@@ -254,7 +284,10 @@ body.debug #center-line {
     <ul class="list" id="sample-list"></ul>
   </section>
 
-  <footer id="home-footer"></footer>
+  <footer id="home-footer">
+    <button type="button" onclick="JV.SettingsUI.open()">設定</button>
+    <span id="route-status" class="meta"></span>
+  </footer>
 </main>
 
 <!-- 読書画面 -->
@@ -263,6 +296,7 @@ body.debug #center-line {
   <header id="reader-top">
     <button type="button" onclick="JV.App.goHome()">← 戻る</button>
     <div class="titles"><span class="work-title" id="work-title"></span><span class="chapter-name" id="chapter-name"></span></div>
+    <button type="button" class="settings-btn" onclick="JV.SettingsUI.open()">設定</button>
   </header>
   <div id="text-column">
     <article id="text"></article>
@@ -270,6 +304,106 @@ body.debug #center-line {
   <button id="effects-toggle" type="button" aria-pressed="true" onclick="JV.App.toggleEffects()">演出 オン</button>
   <div id="center-line"></div>
   <div id="debug" class="hidden"></div>
+</div>
+
+
+<!-- 設定画面 -->
+<div id="settings" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="sheet">
+    <header>
+      <h2 id="settings-title">設定</h2>
+      <button type="button" onclick="JV.SettingsUI.close()">閉じる</button>
+    </header>
+
+    <fieldset>
+      <legend>判定（Jev）</legend>
+      <label>呼び出し経路
+        <select data-key="route" onchange="JV.SettingsUI.change(this)">
+          <option value="mock">モック（APIなし・キーワード判定）</option>
+          <option value="openrouter">OpenRouter 経由</option>
+          <option value="typesafe">TypeSafe 直接</option>
+          <option value="relay">中継サーバー（Cloudflare Workers 等）</option>
+        </select>
+      </label>
+      <label data-show="remote">APIキー
+        <input data-key="apiKey" type="password" autocomplete="off" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small>この端末のブラウザ（localStorage）にだけ保存されます。ページを見られる人にはキーが見えるため、共用の端末では使わないでください。</small>
+      </label>
+      <label data-show="remote">接続先URL
+        <input data-key="endpoint" type="url" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small id="endpoint-hint"></small>
+      </label>
+      <label data-show="remote">モデル版
+        <input data-key="model" type="text" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small>判定傾向がしきい値に影響するため、jev-latest ではなく版を固定します。</small>
+      </label>
+      <label data-show="remote">選択肢のキー
+        <select data-key="asciiKeys" onchange="JV.SettingsUI.change(this)">
+          <option value="false">日本語（和室・夜 など）</option>
+          <option value="true">英字ID（washitsu・night など）</option>
+        </select>
+      </label>
+      <div class="row" data-show="remote">
+        <button type="button" id="conn-test" onclick="JV.SettingsUI.test()">接続テスト</button>
+        <span id="conn-result" class="result"></span>
+      </div>
+      <p class="note" id="route-note"></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>演出</legend>
+      <label>停止判定の待ち時間（ms）
+        <input data-key="stopDelay" type="number" min="150" max="2000" step="50" onchange="JV.SettingsUI.change(this)">
+      </label>
+      <label>絵を替える感度
+        <select data-key="sensitivity" onchange="JV.SettingsUI.change(this)">
+          <option value="0.75">低い（しきい値 0.75）</option>
+          <option value="0.6">普通（しきい値 0.6）</option>
+          <option value="0.45">高い（しきい値 0.45）</option>
+        </select>
+      </label>
+      <label>フェード時間の倍率
+        <select data-key="fadeScale" onchange="JV.SettingsUI.change(this)">
+          <option value="0.5">0.5</option>
+          <option value="0.75">0.75</option>
+          <option value="1">1.0</option>
+          <option value="1.5">1.5</option>
+          <option value="2">2.0</option>
+        </select>
+      </label>
+      <label class="check"><input data-key="silhouettes" type="checkbox" onchange="JV.SettingsUI.change(this)"> 人物シルエットを表示</label>
+      <label class="check"><input data-key="hideNarrator" type="checkbox" onchange="JV.SettingsUI.change(this)"> 一人称の作品では語り手を描かず、相手だけを描く</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>表示</legend>
+      <label>表示モード
+        <select data-key="displayMode" onchange="JV.SettingsUI.change(this)">
+          <option value="novel">ノベル（絵を全画面、本文を半透明の帯に）</option>
+          <option value="illust" disabled>挿絵（拡張予定）</option>
+        </select>
+      </label>
+      <label>書字方向
+        <select data-key="writingMode" onchange="JV.SettingsUI.change(this)">
+          <option value="horizontal">横書き</option>
+          <option value="vertical" disabled>縦書き（拡張予定）</option>
+        </select>
+      </label>
+      <label>文字サイズ（px）
+        <input data-key="fontSize" type="number" min="12" max="32" step="1" onchange="JV.SettingsUI.change(this)">
+      </label>
+      <label class="check"><input data-key="debug" type="checkbox" onchange="JV.SettingsUI.change(this)"> デバッグ表示（判定結果と確率）</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>データ</legend>
+      <div class="row">
+        <button type="button" onclick="JV.SettingsUI.clearCache()">判定キャッシュを消去</button>
+        <button type="button" onclick="JV.SettingsUI.resetAll()">設定を既定に戻す</button>
+        <span id="data-result" class="result"></span>
+      </div>
+    </fieldset>
+  </div>
 </div>
 
 <script>
@@ -700,6 +834,11 @@ JV.Parser = {
 JV.Settings = {
   KEY: 'jev-viewer-settings',
   DEFAULTS: {
+    route: 'mock',         // 呼び出し経路：mock | typesafe | openrouter | relay
+    apiKey: '',            // APIキー（この端末の localStorage にだけ保存）
+    endpoint: '',          // 接続先URLの上書き（空なら経路ごとの既定）
+    model: 'jev-1.13',     // モデル版（しきい値が版に依存するので固定する）
+    asciiKeys: false,      // 選択肢のキーを英字IDで送る（日本語キーが通らない場合）
     stopDelay: 400,        // 停止判定の待ち時間(ms)
     sensitivity: 0.6,      // 絵を替える感度（しきい値）。普通=0.6
     fadeScale: 1.0,        // フェード時間の倍率
@@ -707,6 +846,9 @@ JV.Settings = {
     hideNarrator: false,   // 一人称の作品で主人物（語り手）を出さず相手だけを描く
     effects: true,         // 演出オン／オフ
     debug: false,          // デバッグ表示
+    displayMode: 'novel',  // 表示モード：novel（挿絵モードは拡張）
+    writingMode: 'horizontal', // 横書き（縦書きは拡張）
+    fontSize: 18,          // 文字サイズ(px)
   },
   values: null,
 
@@ -723,6 +865,135 @@ JV.Settings = {
     if (!this.values) this.load();
     this.values[k] = v;
     try { localStorage.setItem(this.KEY, JSON.stringify(this.values)); } catch (_) { /* 保存できなくても動かす */ }
+  },
+};
+
+/* =====================================================================
+ * 設定画面
+ * ===================================================================== */
+JV.SettingsUI = {
+  // 変えたら判定をやり直す項目
+  JUDGE_KEYS: new Set(['route', 'apiKey', 'endpoint', 'model', 'asciiKeys']),
+  dirtyJudge: false,
+
+  open() {
+    this.dirtyJudge = false;
+    this.fill();
+    document.getElementById('settings').classList.remove('hidden');
+  },
+
+  close() {
+    document.getElementById('settings').classList.add('hidden');
+    document.getElementById('conn-result').textContent = '';
+    document.getElementById('data-result').textContent = '';
+    JV.App.onSettingsClosed(this.dirtyJudge);
+  },
+
+  fill() {
+    for (const el of document.querySelectorAll('#settings [data-key]')) {
+      const v = JV.Settings.get(el.dataset.key);
+      if (el.type === 'checkbox') el.checked = !!v;
+      else if (el.tagName === 'SELECT') {
+        el.value = String(v);
+        if (el.selectedIndex < 0) el.value = el.options[0].value;
+      } else el.value = v == null ? '' : v;
+    }
+    this.refreshRoute();
+  },
+
+  change(el) {
+    const key = el.dataset.key;
+    let v;
+    if (el.type === 'checkbox') v = el.checked;
+    else if (el.type === 'number') {
+      v = Number(el.value);
+      const min = Number(el.min), max = Number(el.max);
+      if (!Number.isFinite(v)) v = JV.Settings.DEFAULTS[key];
+      v = Math.min(max, Math.max(min, v));
+      el.value = v;
+    } else if (key === 'sensitivity' || key === 'fadeScale') v = Number(el.value);
+    else if (key === 'asciiKeys') v = el.value === 'true';
+    else v = el.value.trim();
+    JV.Settings.set(key, v);
+    if (this.JUDGE_KEYS.has(key)) { this.dirtyJudge = true; document.getElementById('conn-result').textContent = ''; }
+    if (key === 'route') this.refreshRoute();
+    JV.App.applySettings();
+  },
+
+  refreshRoute() {
+    const route = JV.Settings.get('route');
+    const remote = route !== 'mock';
+    document.querySelectorAll('#settings [data-show="remote"]').forEach((e) => e.classList.toggle('off', !remote));
+    const def = (JV.Adapters.remote.ROUTES[route] || {}).url;
+    const ep = document.querySelector('#settings [data-key="endpoint"]');
+    ep.placeholder = def || 'https://…（中継サーバーのURL）';
+    document.getElementById('endpoint-hint').textContent = route === 'relay'
+      ? '中継サーバーのURL（必須）。TypeSafe と同じ形式の本文を POST します。キーは中継側に置けば、ここは空でかまいません。'
+      : `空欄なら既定${route === 'openrouter' ? '（仮・要確認）' : ''}：${def}`;
+    const notes = {
+      mock: 'APIを呼ばず、キーワード一致の偽の判定で動きます。画面と演出の確認用です。',
+      openrouter: 'OpenRouter での Jev の指定方法とブラウザからの直接呼び出し（CORS）は未確認です。まず「接続テスト」で確かめてください。通らない場合は中継サーバーを使います。',
+      typesafe: 'TypeSafe の API（/v1/systemone）を直接呼びます。新規登録は停止中のため既存アカウント向けです。',
+      relay: '小さな中継サーバー経由で呼びます。viewer/relay/ に Cloudflare Workers 用の例があります。',
+    };
+    document.getElementById('route-note').textContent = notes[route] || '';
+  },
+
+  /** 小さな作品判定を1回送って、届くか・形式が合うかを確かめる */
+  async test() {
+    const out = document.getElementById('conn-result');
+    const btn = document.getElementById('conn-test');
+    const route = JV.Settings.get('route');
+    if (route === 'mock') { out.className = 'result'; out.textContent = 'モックでは不要です。'; return; }
+    if (JV.Judge.adapter() !== JV.Adapters.remote) {
+      out.className = 'result ng';
+      out.textContent = route === 'relay' ? '中継サーバーのURLを入力してください。' : 'APIキーを入力してください。';
+      return;
+    }
+    btn.disabled = true;
+    out.className = 'result';
+    out.textContent = '送信中…';
+    const t0 = performance.now();
+    try {
+      const qs = JV.Judge.questions('work');
+      const ans = await JV.Adapters.remote.judge('汽車が停車場に着いた。私は外套の襟を立てて、雪の降る往来へ出た。', qs);
+      const ms = Math.round(performance.now() - t0);
+      const era = ans.era, bad = [];
+      for (const k of Object.keys(qs)) if (!ans[k] || !(ans[k].choice in qs[k].criteria)) bad.push(k);
+      if (bad.length) throw new JV.Adapters.RemoteError(`応答は届きましたが、形式が想定と違います（${bad.join(', ')}）`, 'format', ans);
+      out.className = 'result ok';
+      out.textContent = `接続できました（${ms}ms）。era = ${era.choice}（${Number(era.confidence).toFixed(2)}）`;
+    } catch (err) {
+      const hint = {
+        network: '→ CORS で拒否されている場合は、中継サーバー経由に切り替えてください。',
+        auth: '→ APIキーと経路の組み合わせを確認してください。',
+        notfound: '→ 接続先URLまたはこの経路での Jev の呼び方が違う可能性があります。',
+        format: '→ 経路の応答形式が TypeSafe と違います。デバッグ表示で中身を確認してください。',
+        rate: '→ 少し待ってから再試行してください。',
+      }[err.kind] || '';
+      out.className = 'result ng';
+      out.textContent = `失敗：${err.message} ${hint}`;
+      if (err.detail) console.warn('[jev-viewer] connection test', err.detail);
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  async clearCache() {
+    await JV.Store.clearJudgments();
+    JV.Judge.memory.clear();
+    document.getElementById('data-result').textContent = '消去しました。';
+    this.dirtyJudge = true;
+  },
+
+  resetAll() {
+    const keep = { apiKey: JV.Settings.get('apiKey') };
+    JV.Settings.values = { ...JV.Settings.DEFAULTS, ...keep };
+    JV.Settings.set('apiKey', keep.apiKey);
+    this.dirtyJudge = true;
+    this.fill();
+    JV.App.applySettings();
+    document.getElementById('data-result').textContent = '既定に戻しました（APIキーは残しています）。';
   },
 };
 
@@ -1167,6 +1438,93 @@ JV.Adapters.mock = {
     }
     return answers;
   },
+};
+
+/**
+ * 実Jevアダプタ。経路ごとの違い（URL・ヘッダー・応答の包み方）はここに閉じ込める。
+ *   typesafe   : TypeSafe 直接。POST https://api.typesafe.ai/v1/systemone（公式SDKと同じ形式）
+ *   openrouter : OpenRouter 経由。TypeSafe と同じ本文を送る（OpenRouter 側の形式は要確認のため URL は設定で変更可）
+ *   relay      : 任意の中継（Cloudflare Workers 等）。TypeSafe と同じ本文を送り、キーは中継側に置ける
+ */
+JV.Adapters.remote = {
+  TIMEOUT_MS: 8000,
+  ROUTES: {
+    typesafe: { label: 'TypeSafe 直接', url: 'https://api.typesafe.ai/v1/systemone' },
+    openrouter: { label: 'OpenRouter 経由', url: 'https://openrouter.ai/api/v1/systemone' },
+    relay: { label: '中継サーバー', url: '' },
+  },
+
+  get name() { return JV.Settings.get('route'); },
+  cacheKey() { return `${this.name}:${JV.Settings.get('model')}`; },
+
+  endpoint() {
+    const route = JV.Settings.get('route');
+    const custom = (JV.Settings.get('endpoint') || '').trim();
+    const url = custom || (this.ROUTES[route] || {}).url;
+    const key = (JV.Settings.get('apiKey') || '').trim();
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+    if (key) headers.Authorization = `Bearer ${key}`;
+    if (route === 'openrouter') {
+      // OpenRouter がアプリの識別に使うヘッダー（任意）
+      if (/^https?:/.test(location.href)) headers['HTTP-Referer'] = location.origin;
+      headers['X-Title'] = 'Jev Sound Novel Viewer';
+    }
+    return { url, headers };
+  },
+
+  /** 応答から answers を取り出す。TypeSafe 形式のほか、OpenAI 互換の包み方にも一応対応 */
+  extractAnswers(data) {
+    if (data && data.answers) return data.answers;
+    const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (typeof content === 'string') {
+      try { const j = JSON.parse(content); if (j.answers) return j.answers; return j; } catch (_) { /* 下へ */ }
+    }
+    throw new JV.Adapters.RemoteError('応答に answers がありません（経路の形式を確認してください）', 'format', data);
+  },
+
+  async judge(state, questions, { signal } = {}) {
+    const { url, headers } = this.endpoint();
+    if (!url) throw new JV.Adapters.RemoteError('接続先URLが設定されていません', 'config');
+    const ctl = new AbortController();
+    const onAbort = () => ctl.abort();
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, this.TIMEOUT_MS);
+    const body = { model: JV.Settings.get('model') || 'jev-1.13', state, questions };
+    try {
+      let res;
+      try {
+        res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctl.signal, mode: 'cors', credentials: 'omit' });
+      } catch (err) {
+        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (timedOut) throw new JV.Adapters.RemoteError(`${this.TIMEOUT_MS}ms 以内に応答がありません`, 'timeout');
+        // ブラウザは CORS 拒否とネットワーク断を区別して教えてくれない
+        throw new JV.Adapters.RemoteError('接続できません。ブラウザからの直接呼び出しが CORS で拒否されたか、ネットワークに届いていません', 'network', String(err));
+      }
+      const text = await res.text();
+      let data;
+      try { data = text ? JSON.parse(text) : undefined; } catch (_) { data = text; }
+      if (!res.ok) {
+        const msg = (data && (data.error && (data.error.message || data.error) || data.message || data.detail)) || text.slice(0, 200);
+        const kind = res.status === 401 || res.status === 403 ? 'auth' : res.status === 429 ? 'rate' : res.status === 404 ? 'notfound' : 'http';
+        throw new JV.Adapters.RemoteError(`HTTP ${res.status}: ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`, kind, data, res.status);
+      }
+      return this.extractAnswers(data);
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+  },
+};
+
+JV.Adapters.RemoteError = class extends Error {
+  constructor(message, kind, detail, status) {
+    super(message);
+    this.name = 'RemoteError';
+    this.kind = kind;       // config | network | timeout | auth | rate | notfound | http | format
+    this.detail = detail;
+    this.status = status;
+  }
 };
 
 JV.util = {
@@ -1814,8 +2172,18 @@ JV.Judge = {
   hashKey: '',
   stats: { calls: 0, memoryHits: 0, dbHits: 0, aborted: 0 },
 
-  adapter() { return JV.Adapters.mock; },
-  adapterKey() { const a = this.adapter(); return `${a.cacheKey ? a.cacheKey() : a.name}@s${this.SCHEMA_VERSION}`; },
+  /** 設定から判定器を選ぶ。キー（中継ならURL）が未設定ならモック */
+  adapter() {
+    const route = JV.Settings.get('route');
+    if (route === 'mock' || !JV.Adapters.remote.ROUTES[route]) return JV.Adapters.mock;
+    const ready = route === 'relay' ? !!(JV.Settings.get('endpoint') || '').trim() : !!(JV.Settings.get('apiKey') || '').trim();
+    return ready ? JV.Adapters.remote : JV.Adapters.mock;
+  },
+  adapterKey() {
+    const a = this.adapter();
+    return `${a.cacheKey ? a.cacheKey() : a.name}${JV.Settings.get('asciiKeys') ? ':id' : ''}@s${this.SCHEMA_VERSION}`;
+  },
+  questions(group) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys') }); },
   key(unit) { return `${this.hashKey}|${this.adapterKey()}|${unit}`; },
 
   setWork(hash) {
@@ -1873,7 +2241,7 @@ JV.Judge = {
   /** 作品判定：冒頭約3,000字 */
   async judgeWork(doc, { signal } = {}) {
     const head = doc.paragraphs.map((p) => p.text.replace(/^[\s　]+/, '')).join('\n').slice(0, 3000);
-    const answers = await this.adapter().judge(head, JV.Schema.toQuestions('work'), { signal });
+    const answers = await this.adapter().judge(head, this.questions('work'), { signal });
     const pick = (key, fallback) => {
       const a = answers[key];
       const o = a && (JV.Schema.byLabel('work', key, a.choice) || JV.Schema.byId('work', key, a.choice));
@@ -1897,7 +2265,7 @@ JV.Judge = {
   async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
     const state = this.sceneState(doc, unit, work, prevScene);
     const t0 = performance.now();
-    const answers = await this.adapter().judge(state, JV.Schema.toQuestions('scene'), { signal });
+    const answers = await this.adapter().judge(state, this.questions('scene'), { signal });
     return { answers, ms: Math.round(performance.now() - t0), source: this.adapter().name };
   },
 
@@ -2002,13 +2370,14 @@ JV.App = {
     JV.Settings.load();
     document.body.classList.add('novel');
     JV.Stage.init();
-    this.applyEffects();
+    this.applySettings();
     this.renderSamples();
     this.renderRecent();
     this.setupDrop();
     window.addEventListener('popstate', () => { if (!location.hash) this.showHome(); });
     // デバッグ表示の切り替え（D キー。設定画面からも切り替えられる）
     window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !document.getElementById('settings').classList.contains('hidden')) { JV.SettingsUI.close(); return; }
       if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) {
         JV.Settings.set('debug', !JV.Settings.get('debug'));
         JV.Debug.render();
@@ -2027,6 +2396,31 @@ JV.App = {
       JV.Stage.reset();
       JV.StopDetector.fire(true);
     } else JV.Judge.abortExcept(new Set());
+  },
+
+  /** 設定を画面に反映（文字サイズ・シルエット・デバッグなど） */
+  applySettings() {
+    document.documentElement.style.setProperty('--font-size', `${Number(JV.Settings.get('fontSize')) || 18}px`);
+    this.applyEffects();
+    JV.Debug.render();
+    const a = JV.Judge.adapter();
+    const route = JV.Settings.get('route');
+    const status = a === JV.Adapters.mock
+      ? (route === 'mock' ? '判定：モック' : `判定：モック（${JV.Adapters.remote.ROUTES[route].label} は未設定）`)
+      : `判定：${JV.Adapters.remote.ROUTES[route].label}・${JV.Settings.get('model')}`;
+    const el = document.getElementById('route-status');
+    if (el) el.textContent = status;
+  },
+
+  /** 判定器に関わる設定が変わったら、作品判定からやり直す */
+  onSettingsClosed(judgeChanged) {
+    if (!this.doc || document.getElementById('reader').classList.contains('hidden')) return;
+    if (judgeChanged) {
+      JV.Judge.abortExcept(new Set());
+      JV.Judge.memory.clear();
+      this.startWorkJudgment();
+    }
+    JV.StopDetector.fire(true);
   },
 
   applyEffects() {
