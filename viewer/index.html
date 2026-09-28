@@ -89,6 +89,10 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 }
 .list .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
 #home-error { color: #f0a0a0; font-size: 14px; }
+.recent-item { display: flex; gap: 6px; }
+.recent-item > button:first-child { flex: 1; min-width: 0; }
+.recent-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-item .del { width: auto; flex: none; padding: 0 14px; color: var(--muted); }
 #home-footer { display: flex; gap: 10px; }
 
 /* ---------- 読書画面 ---------- */
@@ -239,6 +243,11 @@ body.debug #center-line {
     <input id="file-input" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" onchange="JV.App.onFileInput(this)">
   </label>
   <div id="home-error" class="hidden"></div>
+
+  <section id="recent-section" class="hidden">
+    <h2>最近読んだ作品</h2>
+    <ul class="list" id="recent-list"></ul>
+  </section>
 
   <section id="samples-section">
     <h2>サンプル</h2>
@@ -1708,10 +1717,158 @@ JV.Director = {
 };
 
 /* =====================================================================
+ * 保存：IndexedDB（作品ハッシュ単位の判定結果と、最近読んだ作品）
+ * 使えない環境（プライベートモード等）ではメモリだけで動く
+ * ===================================================================== */
+JV.Store = {
+  DB: 'jev-viewer',
+  VERSION: 1,
+  dbp: null,
+
+  open() {
+    if (this.dbp) return this.dbp;
+    this.dbp = new Promise((resolve) => {
+      if (!window.indexedDB) { resolve(null); return; }
+      let req;
+      try { req = indexedDB.open(this.DB, this.VERSION); } catch (_) { resolve(null); return; }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('judgments')) {
+          const js = db.createObjectStore('judgments', { keyPath: 'k' });
+          js.createIndex('hash', 'hash');
+        }
+        if (!db.objectStoreNames.contains('works')) {
+          const ws = db.createObjectStore('works', { keyPath: 'hash' });
+          ws.createIndex('updatedAt', 'updatedAt');
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    });
+    return this.dbp;
+  },
+
+  async tx(store, mode, fn) {
+    const db = await this.open();
+    if (!db) return undefined;
+    return new Promise((resolve) => {
+      let out;
+      try {
+        const t = db.transaction(store, mode);
+        const r = fn(t.objectStore(store));
+        if (r) r.onsuccess = () => { out = r.result; };
+        t.oncomplete = () => resolve(out);
+        t.onerror = () => resolve(undefined);
+        t.onabort = () => resolve(undefined);
+      } catch (_) { resolve(undefined); }
+    });
+  },
+
+  get(store, key) { return this.tx(store, 'readonly', (s) => s.get(key)); },
+  put(store, value) { return this.tx(store, 'readwrite', (s) => s.put(value)); },
+  del(store, key) { return this.tx(store, 'readwrite', (s) => s.delete(key)); },
+  all(store) { return this.tx(store, 'readonly', (s) => s.getAll()); },
+
+  /** ある作品の判定結果を消す（hash を省略すると全部） */
+  async clearJudgments(hash) {
+    if (!hash) return this.tx('judgments', 'readwrite', (s) => s.clear());
+    const db = await this.open();
+    if (!db) return undefined;
+    return new Promise((resolve) => {
+      const t = db.transaction('judgments', 'readwrite');
+      const req = t.objectStore('judgments').index('hash').openKeyCursor(IDBKeyRange.only(hash));
+      req.onsuccess = () => { const c = req.result; if (c) { t.objectStore('judgments').delete(c.primaryKey); c.continue(); } };
+      t.oncomplete = () => resolve();
+      t.onerror = () => resolve();
+    });
+  },
+
+  /** 作品ハッシュ：SHA-256（使えなければ FNV-1a を2本） */
+  async hash(text) {
+    try {
+      if (crypto && crypto.subtle) {
+        const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(d).slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (_) { /* 下へ */ }
+    let h1 = 0x811c9dc5, h2 = 0x01000193 ^ text.length;
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+      h2 = Math.imul(h2 ^ c, 0x5bd1e995) >>> 0;
+    }
+    return `f${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+  },
+};
+
+/* =====================================================================
  * 判定の呼び出し：作品判定（1回）と場面判定（停止ごと）
+ * キャッシュ：メモリ → IndexedDB → 判定器。キーは「作品ハッシュ｜判定器｜判定単位」
  * ===================================================================== */
 JV.Judge = {
+  SCHEMA_VERSION: 1,     // 質問の文言を変えたら上げる（古いキャッシュを使わないため）
+  PREFETCH: 3,           // 停止した段落の後ろを何単位先読みするか
+  memory: new Map(),
+  inflight: new Map(),   // key → { promise, ctl, unit }
+  hashKey: '',
+  stats: { calls: 0, memoryHits: 0, dbHits: 0, aborted: 0 },
+
   adapter() { return JV.Adapters.mock; },
+  adapterKey() { const a = this.adapter(); return `${a.cacheKey ? a.cacheKey() : a.name}@s${this.SCHEMA_VERSION}`; },
+  key(unit) { return `${this.hashKey}|${this.adapterKey()}|${unit}`; },
+
+  setWork(hash) {
+    this.abortExcept(new Set());
+    this.hashKey = hash;
+    this.memory.clear();
+  },
+
+  /** 指定の単位以外の進行中リクエストを中断する */
+  abortExcept(keep) {
+    for (const [k, f] of this.inflight) {
+      if (!keep.has(f.unit)) { f.ctl.abort(); this.inflight.delete(k); this.stats.aborted++; }
+    }
+  },
+
+  /** 場面判定（キャッシュ付き）。同じ単位が判定中ならその結果を待つ */
+  async scene(doc, unit, work, prevScene) {
+    const k = this.key(unit);
+    const hit = this.memory.get(k);
+    if (hit) { this.stats.memoryHits++; return { ...hit, cached: 'memory' }; }
+    const running = this.inflight.get(k);
+    if (running) return running.promise;
+
+    const ctl = new AbortController();
+    const promise = (async () => {
+      const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
+      if (saved && saved.answers) {
+        const r = { answers: saved.answers, ms: saved.ms, source: saved.source };
+        this.memory.set(k, r);
+        this.stats.dbHits++;
+        return { ...r, cached: 'db' };
+      }
+      if (ctl.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      this.stats.calls++;
+      const r = await this.judgeScene(doc, unit, work, prevScene, { signal: ctl.signal });
+      this.memory.set(k, r);
+      if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit, answers: r.answers, ms: r.ms, source: r.source, at: Date.now() });
+      return r;
+    })();
+    this.inflight.set(k, { promise, ctl, unit });
+    promise.then(() => {}, () => {}).finally(() => { const f = this.inflight.get(k); if (f && f.ctl === ctl) this.inflight.delete(k); });
+    return promise;
+  },
+
+  /** 作品判定（キャッシュ付き） */
+  async work(doc) {
+    const k = this.key('work');
+    const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
+    if (saved && saved.work) return { ...saved.work, cached: true };
+    const w = await this.judgeWork(doc);
+    if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit: -1, work: { era: w.era, narration: w.narration, raw: w.raw }, at: Date.now() });
+    return w;
+  },
 
   /** 作品判定：冒頭約3,000字 */
   async judgeWork(doc, { signal } = {}) {
@@ -1847,6 +2004,7 @@ JV.App = {
     JV.Stage.init();
     this.applyEffects();
     this.renderSamples();
+    this.renderRecent();
     this.setupDrop();
     window.addEventListener('popstate', () => { if (!location.hash) this.showHome(); });
     // デバッグ表示の切り替え（D キー。設定画面からも切り替えられる）
@@ -1868,7 +2026,7 @@ JV.App = {
       JV.Director.reset();
       JV.Stage.reset();
       JV.StopDetector.fire(true);
-    } else if (this.inflight) this.inflight.abort();
+    } else JV.Judge.abortExcept(new Set());
   },
 
   applyEffects() {
@@ -1888,6 +2046,7 @@ JV.App = {
     JV.Reader.markCurrent(unit);
     JV.Reader.setChapterName(u.chapter);
     JV.Debug.set('unit', `単位 #${unit}（段落 ${u.paraStart}${u.paraEnd !== u.paraStart ? `〜${u.paraEnd}` : ''}・${u.text.length}字・章 ${u.chapter}）\n${u.text.slice(0, 60).replace(/\n/g, ' / ')}${u.text.length > 60 ? '…' : ''}`);
+    this.saveProgress(unit);
     if (JV.Settings.get('effects')) this.judgeAndShow(unit);
   },
 
@@ -1895,30 +2054,41 @@ JV.App = {
   startWorkJudgment() {
     const doc = this.doc;
     this.work = { era: 'modern', narration: 'third' };
-    this.workReady = JV.Judge.judgeWork(doc)
+    this.workReady = this.hashReady
+      .then(() => JV.Judge.work(doc))
       .then((w) => {
         if (this.doc !== doc) return;
         this.work = w;
-        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}`);
+        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}${w.cached ? '（キャッシュ）' : ''}`);
       })
-      .catch((err) => { JV.Debug.set('work', `作品判定エラー: ${err.message || err}`); });
+      .catch((err) => { JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱う）`); });
   },
 
+  /**
+   * 停止した単位を判定して見せ、後ろの3単位を裏で先読みする。
+   * 新しい停止が来たら、その単位と先読み範囲以外の進行中リクエストは中断する。
+   */
   async judgeAndShow(unit) {
-    if (this.inflight) this.inflight.abort();
-    const ctl = new AbortController();
-    this.inflight = ctl;
     const doc = this.doc;
+    const ahead = [];
+    for (let i = 1; i <= JV.Judge.PREFETCH && unit + i < doc.units.length; i++) ahead.push(unit + i);
+    JV.Judge.abortExcept(new Set([unit, ...ahead]));
     try {
       await this.workReady;
-      const r = await JV.Judge.judgeScene(doc, unit, this.work, JV.Director.scene, { signal: ctl.signal });
-      if (ctl.signal.aborted || this.doc !== doc || this.currentUnit !== unit) return;
+      if (this.doc !== doc) return;
+      const r = await JV.Judge.scene(doc, unit, this.work, JV.Director.scene);
+      if (this.doc !== doc || this.currentUnit !== unit || !JV.Settings.get('effects')) return;
       this.present(unit, r);
+      // 先読み：いま決まった場面を「前の場面」として渡す
+      const prev = JV.Director.scene;
+      for (const n of ahead) {
+        JV.Judge.scene(doc, n, this.work, prev).catch((err) => {
+          if (!JV.util.isAbort(err)) JV.Debug.set('prefetch', `先読みエラー #${n}: ${err.message || err}`);
+        });
+      }
     } catch (err) {
       if (JV.util.isAbort(err)) return;
       JV.Debug.set('judge', `判定エラー: ${err.message || err}（前の絵を維持）`);
-    } finally {
-      if (this.inflight === ctl) this.inflight = null;
     }
   },
 
@@ -1932,7 +2102,52 @@ JV.App = {
     });
     if (JV.Settings.get('effects')) JV.Stage.show(plan);
     const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物'].filter(Boolean);
-    JV.Debug.set('judge', `判定 #${unit}（${r.source}${r.cached ? '・キャッシュ' : ''}・${r.ms}ms）\n${JV.Judge.describe(r.answers)}\n→ ${[...plan.why, ...changes].join(' / ') || '変化なし'}`);
+    const src = r.cached ? `キャッシュ(${r.cached === 'db' ? 'IndexedDB' : 'メモリ'})` : `${r.ms}ms`;
+    const st = JV.Judge.stats;
+    JV.Debug.set('judge', `判定 #${unit}（${r.source}・${src}）\n${JV.Judge.describe(r.answers)}\n→ ${[...plan.why, ...changes].join(' / ') || '変化なし'}`);
+    JV.Debug.set('stats', `呼び出し ${st.calls}・メモリ ${st.memoryHits}・DB ${st.dbHits}・中断 ${st.aborted}・判定中 ${JV.Judge.inflight.size}`);
+  },
+
+  /** 読んだ位置を最近読んだ作品に記録（1秒に1回まで） */
+  saveProgress(unit) {
+    this.progressUnit = unit;
+    if (this.progressTimer) return;
+    this.progressTimer = setTimeout(async () => {
+      this.progressTimer = 0;
+      const hash = this.hash;
+      if (!hash) return;
+      const rec = await JV.Store.get('works', hash);
+      if (rec) { rec.lastUnit = this.progressUnit; rec.updatedAt = Date.now(); JV.Store.put('works', rec); }
+    }, 1000);
+  },
+
+  async renderRecent() {
+    const works = ((await JV.Store.all('works')) || []).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 10);
+    const sec = document.getElementById('recent-section');
+    const ul = document.getElementById('recent-list');
+    ul.textContent = '';
+    sec.classList.toggle('hidden', works.length === 0);
+    for (const w of works) {
+      const li = document.createElement('li');
+      li.className = 'recent-item';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '<span class="name"></span><span class="meta"></span>';
+      b.children[0].textContent = w.title + (w.author ? `　${w.author}` : '');
+      const d = new Date(w.updatedAt);
+      const pct = w.unitCount ? Math.round(((w.lastUnit || 0) + 1) / w.unitCount * 100) : 0;
+      b.children[1].textContent = `${d.getMonth() + 1}/${d.getDate()}・${pct}%`;
+      b.onclick = () => this.openText(w.text, w.name, { resumeUnit: w.lastUnit });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'del';
+      del.title = '履歴と判定キャッシュを削除';
+      del.setAttribute('aria-label', `${w.title} を履歴から削除`);
+      del.textContent = '×';
+      del.onclick = async () => { await JV.Store.del('works', w.hash); await JV.Store.clearJudgments(w.hash); this.renderRecent(); };
+      li.append(b, del);
+      ul.appendChild(li);
+    }
   },
 
   renderSamples() {
@@ -1991,17 +2206,34 @@ JV.App = {
     }
   },
 
-  openText(text, name) {
+  openText(text, name, { resumeUnit = null } = {}) {
     const doc = JV.Parser.parse(text, name);
     if (!doc.paragraphs.length) { this.showError('本文が見つかりませんでした。'); return; }
     this.doc = doc;
+    this.hash = '';
     this.hideError();
     JV.Reader.render(doc);
     JV.Debug.clear();
     JV.Director.reset();
     JV.Stage.reset();
+    // 作品ハッシュ → キャッシュの切り替えと、最近読んだ作品への登録
+    JV.Judge.setWork('');
+    this.hashReady = JV.Store.hash(text).then(async (hash) => {
+      if (this.doc !== doc) return;
+      this.hash = hash;
+      JV.Judge.setWork(hash);
+      const old = await JV.Store.get('works', hash);
+      await JV.Store.put('works', {
+        hash, name, text, title: doc.title, author: doc.author, format: doc.format,
+        unitCount: doc.units.length, lastUnit: old ? old.lastUnit : 0, updatedAt: Date.now(),
+      });
+    });
     this.startWorkJudgment();
     this.showReader();
+    if (resumeUnit > 0 && resumeUnit < doc.units.length) {
+      const el = document.querySelector(`#text .seg[data-u="${resumeUnit}"]`);
+      if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight / 2 + 4);
+    }
     JV.StopDetector.attach(document.getElementById('text'), (e) => this.onStop(e));
   },
 
@@ -2019,9 +2251,11 @@ JV.App = {
 
   showHome() {
     JV.StopDetector.detach();
+    JV.Judge.abortExcept(new Set());
     document.getElementById('reader').classList.add('hidden');
     document.getElementById('home').classList.remove('hidden');
     window.scrollTo(0, 0);
+    this.renderRecent();
   },
 
   showError(msg) {
