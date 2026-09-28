@@ -333,7 +333,7 @@ body.debug #center-line {
         <small>この端末のブラウザ（localStorage）にだけ保存されます。ページを見られる人にはキーが見えるため、共用の端末では使わないでください。</small>
       </label>
       <label data-show="remote">接続先URL
-        <input data-key="endpoint" type="url" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <input data-key="endpoint" type="text" inputmode="url" autocapitalize="off" spellcheck="false" onchange="JV.SettingsUI.change(this)">
         <small id="endpoint-hint"></small>
       </label>
       <label data-show="remote">モデル版
@@ -929,15 +929,15 @@ JV.SettingsUI = {
     document.querySelectorAll('#settings [data-show="remote"]').forEach((e) => e.classList.toggle('off', !remote));
     const def = (JV.Adapters.remote.ROUTES[route] || {}).url;
     const ep = document.querySelector('#settings [data-key="endpoint"]');
-    ep.placeholder = def || 'https://…（中継サーバーのURL）';
+    ep.placeholder = def;
     document.getElementById('endpoint-hint').textContent = route === 'relay'
-      ? '中継サーバーのURL（必須）。TypeSafe と同じ形式の本文を POST します。キーは中継側に置けば、ここは空でかまいません。'
+      ? '空欄なら、このページを配信しているサーバーの /v1/systemone（relay/local_server.py）。Cloudflare Workers などを使うならそのURL。キーは中継側に置くので、APIキー欄は空でかまいません。'
       : `空欄なら既定${route === 'openrouter' ? '（仮・要確認）' : ''}：${def}`;
     const notes = {
       mock: 'APIを呼ばず、キーワード一致の偽の判定で動きます。画面と演出の確認用です。',
       openrouter: 'OpenRouter での Jev の指定方法とブラウザからの直接呼び出し（CORS）は未確認です。まず「接続テスト」で確かめてください。通らない場合は中継サーバーを使います。',
       typesafe: 'TypeSafe の API（/v1/systemone）を直接呼びます。新規登録は停止中のため既存アカウント向けです。',
-      relay: '小さな中継サーバー経由で呼びます。viewer/relay/ に Cloudflare Workers 用の例があります。',
+      relay: '中継サーバー経由で呼びます。PC で python3 viewer/relay/local_server.py を動かし、そのサーバーが表示するURLでこのページを開いてください（同じ Wi-Fi のスマホからも使えます）。',
     };
     document.getElementById('route-note').textContent = notes[route] || '';
   },
@@ -950,7 +950,7 @@ JV.SettingsUI = {
     if (route === 'mock') { out.className = 'result'; out.textContent = 'モックでは不要です。'; return; }
     if (JV.Judge.adapter() !== JV.Adapters.remote) {
       out.className = 'result ng';
-      out.textContent = route === 'relay' ? '中継サーバーのURLを入力してください。' : 'APIキーを入力してください。';
+      out.textContent = 'APIキーを入力してください。';
       return;
     }
     btn.disabled = true;
@@ -974,8 +974,10 @@ JV.SettingsUI = {
         format: '→ 経路の応答形式が TypeSafe と違います。デバッグ表示で中身を確認してください。',
         rate: '→ 少し待ってから再試行してください。',
       }[err.kind] || '';
+      const relayHint = route === 'relay' && (err.status === 404 || err.status === 405 || err.status === 501)
+        ? '→ このページが relay/local_server.py から配信されていない可能性があります。PC で起動し、表示されたURLで開き直してください。' : '';
       out.className = 'result ng';
-      out.textContent = `失敗：${err.message} ${hint}`;
+      out.textContent = `失敗：${err.message} ${relayHint || hint}`;
       if (err.detail) console.warn('[jev-viewer] connection test', err.detail);
     } finally {
       btn.disabled = false;
@@ -1454,7 +1456,7 @@ JV.Adapters.remote = {
   ROUTES: {
     typesafe: { label: 'TypeSafe 直接', url: 'https://api.typesafe.ai/v1/systemone' },
     openrouter: { label: 'OpenRouter 経由', url: 'https://openrouter.ai/api/v1/systemone' },
-    relay: { label: '中継サーバー', url: '' },
+    relay: { label: '中継サーバー', url: '/v1/systemone' }, // 既定はページと同じサーバー（relay/local_server.py）
   },
 
   get name() { return JV.Settings.get('route'); },
@@ -2261,7 +2263,8 @@ JV.Judge = {
   adapter() {
     const route = JV.Settings.get('route');
     if (route === 'mock' || !JV.Adapters.remote.ROUTES[route]) return JV.Adapters.mock;
-    const ready = route === 'relay' ? !!(JV.Settings.get('endpoint') || '').trim() : !!(JV.Settings.get('apiKey') || '').trim();
+    // 中継はキーをサーバー側に置けるので、キーなしでも使う
+    const ready = route === 'relay' || !!(JV.Settings.get('apiKey') || '').trim();
     return ready ? JV.Adapters.remote : JV.Adapters.mock;
   },
   adapterKey() {

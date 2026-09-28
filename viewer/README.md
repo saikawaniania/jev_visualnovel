@@ -26,7 +26,8 @@ python3 -m http.server 8000     # または npx http-server -p 8000
 | `samples/` | 動作確認用の短い作品（青空文庫形式 Shift_JIS・Markdown・テキスト。すべて書き下ろし） |
 | `assets/` | 素材ライブラリと `manifest.json`。置き方は `assets/README.md` |
 | `tools/build-manifest.mjs` | `assets/` の中身から `manifest.json` を作り直す |
-| `relay/cloudflare-worker.js` | ブラウザから直接呼べない（CORS）場合の中継の例 |
+| `relay/local_server.py` | ビューアの配信と TypeSafe への中継を1つで行うローカルサーバー |
+| `relay/cloudflare-worker.js` | 同じ中継を Cloudflare Workers で動かす例 |
 | `tests/` | 各ステップの動作確認（Playwright） |
 
 `index.html` の中は部品ごとに分かれています：`JV.Encoding`（文字コード判定）・`JV.Parser`（正規化・段落分割・判定単位）・
@@ -44,15 +45,27 @@ python3 -m http.server 8000     # または npx http-server -p 8000
 | モック | 動作確認済み |
 | TypeSafe 直接 | `POST https://api.typesafe.ai/v1/systemone`・Bearer 認証。形式は公式 SDK（`@typesafe-ai/sdk` 0.6.0）のソースで確認。実 API への疎通とブラウザからの CORS は**未確認** |
 | OpenRouter 経由 | **未確認**。Jev の指定方法・エンドポイント・CORS が分からないため、TypeSafe と同じ本文を送る仮の実装。接続先URLは設定で変えられます |
-| 中継サーバー | 任意の URL に TypeSafe と同じ本文を送る。`relay/cloudflare-worker.js` を使えばキーをサーバー側に置けます |
+| 中継サーバー | 既定はページと同じサーバーの `/v1/systemone`。`relay/local_server.py`（Python 標準ライブラリのみ）か `relay/cloudflare-worker.js` を使い、キーはサーバー側に置きます |
 
 設定画面の「接続テスト」で、実際のブラウザから届くか・CORS で拒否されるか・応答の形式が合うかを確かめられます。
-CORS で拒否された場合は中継サーバーに切り替えてください。
+TypeSafe はブラウザからの直接呼び出しを CORS で拒否することを確認済みです（GitHub Pages から接続テスト）。その場合は中継サーバーを使います。
+
+### ローカル中継で使う（アカウント追加なし）
+
+```bash
+TYPESAFE_API_KEY=... python3 viewer/relay/local_server.py
+# キーは viewer/relay/.env か python/.env に TYPESAFE_API_KEY=... と書いてもよい
+```
+
+表示された URL（PC は `http://localhost:8000/`、同じ Wi-Fi のスマホは `http://<PCのIP>:8000/`）でビューアを開き、
+設定で経路を「中継サーバー」にします（接続先URL・APIキー欄は空のまま）。キーは PC の中だけにあり、ブラウザには渡りません。
+同じネットワークの人は誰でも中継を使えるので、信頼できるネットワークでだけ動かしてください。
 
 ## 動作確認
 
 ```bash
 for i in 1 2 3 4 5 6; do node viewer/tests/step$i.test.mjs; done
+node viewer/tests/relay.test.mjs   # ローカル中継（偽の上流サーバーで確認）
 ```
 
 グローバルにインストールされた `playwright`（Chromium）を使います。外部 API には接続せず、ステップ5・6の接続先と素材はテスト内の偽サーバーで代用しています。
