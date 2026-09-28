@@ -175,7 +175,10 @@ body.no-silhouettes #stage .figures { display: none; }
 #stage .fig.pos-solo { left: 60%; }
 #stage .fig.pos-right { left: 70%; }
 #stage .fig.pos-left { left: 30%; }
-#stage .fig.pos-left img { transform: scaleX(-1); }          /* 主人物と向かい合わせる */
+/* シルエットは画面左向きに描く前提（manifest の silFacing: "right" なら逆）。主人物と向かい合わせる */
+#stage .fig.pos-left img { transform: scaleX(-1); }
+#stage .figures.face-right .fig img { transform: scaleX(-1); }
+#stage .figures.face-right .fig.pos-left img, #stage .figures.face-right .fig.pos-crowd img { transform: none; }
 #stage .fig.pos-front { left: 62%; height: 76vh; }
 #stage .fig.pos-crowd { left: 45%; bottom: 7vh; height: 46vh; opacity: 0.6; filter: blur(0.6px); }
 /* 5 空気（周辺減光。彩度は .scene の filter） */
@@ -1093,7 +1096,7 @@ JV.Debug = {
     this.lines[key] = text;
     this.render();
   },
-  clear() { this.lines = {}; this.render(); },
+  clear() { this.lines = this.lines.assets ? { assets: this.lines.assets } : {}; this.render(); },
   render() {
     const el = document.getElementById('debug');
     const on = JV.Settings.get('debug');
@@ -1544,7 +1547,10 @@ JV.util = {
  * 実素材がない組み合わせは仮素材（場所名入りのグラデーション・図形のシルエット）で代用する
  * ===================================================================== */
 JV.Assets = {
-  manifest: { bg: {}, sil: {}, crowd: [] }, // ステップ6で assets/manifest.json から読む
+  // assets/manifest.json から読んだ実素材の一覧（キー → URL）。なければ仮素材
+  manifest: { bg: {}, sil: {}, crowd: [], fallbackEra: '', silFacing: 'left' },
+  broken: new Set(),     // 読み込みに失敗したURL（以後は仮素材で代用）
+  BASE: 'assets/',
 
   // 仮背景の色（上・下）。低彩度で、白文字が乗っても読める明度に揃える
   PALETTE: {
@@ -1556,27 +1562,85 @@ JV.Assets = {
     none: ['#2b2e36', '#15171c'],
   },
 
+  /**
+   * manifest.json を読む。素材はファイル名の規則でキーを決める：
+   *   bg/bg_{era}_{location}_{time}.webp   例 bg/bg_modern_washitsu_day.webp
+   *   sil/sil_{figure}_{pose}.png          例 sil/sil_woman_sit.png
+   *   crowd には群衆シルエットのパスを並べる
+   */
+  async loadManifest(url = `${this.BASE}manifest.json`) {
+    try {
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      this.applyManifest(await res.json(), url);
+      return true;
+    } catch (err) {
+      // file:// で開いた場合など。仮素材だけで動く
+      this.manifestError = String(err.message || err);
+      return false;
+    }
+  },
+
+  applyManifest(m, url = `${this.BASE}manifest.json`) {
+    const base = url.replace(/[^/]*$/, '');
+    const abs = (p) => (/^(https?:|data:|\/)/.test(p) ? p : base + p);
+    const out = { bg: {}, sil: {}, crowd: [], fallbackEra: m.fallbackEra || '', silFacing: m.silFacing === 'right' ? 'right' : 'left' };
+    const skipped = [];
+    for (const p of m.bg || []) {
+      const k = String(p).match(/bg_([a-z0-9]+)_([a-z0-9]+)_([a-z0-9]+)\.[a-z0-9]+$/i);
+      if (k && JV.Schema.byId('scene', 'location', k[2]) && JV.Schema.byId('scene', 'time', k[3])) out.bg[`${k[1]}_${k[2]}_${k[3]}`] = abs(p);
+      else skipped.push(p);
+    }
+    for (const p of m.sil || []) {
+      const k = String(p).match(/sil_([a-z0-9]+)_([a-z0-9]+)\.[a-z0-9]+$/i);
+      if (k && this.BODY[k[1]] && JV.Schema.byId('scene', 'pose', k[2])) out.sil[`${k[1]}_${k[2]}`] = abs(p);
+      else skipped.push(p);
+    }
+    out.crowd = (m.crowd || []).map(abs);
+    this.manifest = out;
+    this.broken.clear();
+    this.manifestSkipped = skipped;
+    return out;
+  },
+
   bgKey(eraId, locId, timeId) { return `${eraId}_${locId}_${timeId}`; },
 
-  /** 背景：era×location×time の絵 → なければ昼の絵＋色調 → なければ仮素材 */
+  /** 背景：era×location×time の絵 → 昼の絵＋色調 → （fallbackEra で同じ順）→ 仮素材 */
   background(eraId, locId, timeId) {
     const bg = this.manifest.bg || {};
-    const exact = bg[this.bgKey(eraId, locId, timeId)];
-    if (exact) return { kind: 'image', url: exact, ownTime: true, key: this.bgKey(eraId, locId, timeId) };
-    const day = bg[this.bgKey(eraId, locId, 'day')];
-    if (day) return { kind: 'image', url: day, ownTime: false, key: this.bgKey(eraId, locId, 'day') };
+    const eras = [eraId, this.manifest.fallbackEra].filter((e, i, a) => e && a.indexOf(e) === i);
+    for (const era of eras) {
+      for (const [t, ownTime] of [[timeId, true], ['day', timeId === 'day']]) {
+        const k = this.bgKey(era, locId, t);
+        if (bg[k] && !this.broken.has(bg[k])) return { kind: 'image', url: bg[k], ownTime, key: k };
+      }
+    }
     return { kind: 'placeholder', key: `ph_${locId}`, locId };
   },
 
   silhouette(figId, poseId) {
     const own = (this.manifest.sil || {})[`${figId}_${poseId}`];
-    return own || this.svgUrl(this.svgFigure(figId, poseId));
+    return own && !this.broken.has(own) ? own : this.svgUrl(this.svgFigure(figId, poseId));
   },
 
+  isPlaceholder(url) { return url.startsWith('data:image/svg+xml'); },
+
   crowd(k = 0) {
-    const list = this.manifest.crowd || [];
+    const list = (this.manifest.crowd || []).filter((u) => !this.broken.has(u));
     if (list.length) return list[k % list.length];
     return this.svgUrl(this.svgCrowd(k));
+  },
+
+  /** 画像を先に読み込む。失敗したら broken に記録して false */
+  preload(url, timeoutMs = 2500) {
+    if (!url || url.startsWith('data:')) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const img = new Image();
+      const t = setTimeout(() => resolve(true), timeoutMs); // 遅いだけなら表示は進める
+      img.onload = () => { clearTimeout(t); resolve(true); };
+      img.onerror = () => { clearTimeout(t); this.broken.add(url); resolve(false); };
+      img.src = url;
+    });
   },
 
   svgUrl(svg) { return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; },
@@ -1812,7 +1876,7 @@ JV.Stage = {
   /* ---------- 各レイヤー ---------- */
   setBackground(scene, ms) {
     const era = scene.era || 'modern';
-    const loc = scene.location;
+    const loc = scene.location || 'none';
     const spec = JV.Assets.background(era, loc, scene.time);
     const next = this.bgEls[this.bgFront ^ 1];
     const cur = this.bgEls[this.bgFront];
@@ -1881,16 +1945,26 @@ JV.Stage = {
     const [crowd, sub, main] = ['crowd', 'sub', 'main'].map((c) => this.figs.querySelector(`.fig.${c}`));
     [crowd, sub, main].forEach((e) => { e.className = e.className.replace(/\s*pos-\S+/g, ''); e.style.display = 'none'; });
     if (!f || f.layout === 'none') return;
-    const show = (el, url, pos) => { el.querySelector('img').src = url; el.classList.add(pos); el.style.display = ''; };
+    this.figs.classList.toggle('face-right', JV.Assets.manifest.silFacing === 'right');
+    const show = (el, url, pos, fallback) => {
+      const img = el.querySelector('img');
+      img.onerror = () => { JV.Assets.broken.add(url); img.onerror = null; img.src = fallback(); };
+      img.src = url;
+      el.classList.add(pos);
+      el.style.display = '';
+    };
     const pose = f.pose;
-    if (f.layout === 'one' && f.main) show(main, JV.Assets.silhouette(f.main, pose), 'pos-solo');
+    const sil = (fig, p) => () => JV.Assets.silhouette(fig, p);
+    const subPose = pose === 'lie' ? 'stand' : pose;
+    if (f.layout === 'one' && f.main) show(main, sil(f.main, pose)(), 'pos-solo', sil(f.main, pose));
     if (f.layout === 'two') {
-      if (f.main) show(main, JV.Assets.silhouette(f.main, pose), 'pos-right');
-      if (f.sub) show(sub, JV.Assets.silhouette(f.sub, pose === 'talk' || pose === 'lie' ? (pose === 'lie' ? 'stand' : 'talk') : pose), 'pos-left');
+      if (f.main) show(main, sil(f.main, pose)(), 'pos-right', sil(f.main, pose));
+      if (f.sub) show(sub, sil(f.sub, subPose)(), 'pos-left', sil(f.sub, subPose));
     }
     if (f.layout === 'many') {
-      show(crowd, JV.Assets.crowd(s.crowdVariant || 0), 'pos-crowd');
-      if (f.main) show(main, JV.Assets.silhouette(f.main, pose), 'pos-front');
+      const v = s.crowdVariant || 0;
+      show(crowd, JV.Assets.crowd(v), 'pos-crowd', () => JV.Assets.crowd(v));
+      if (f.main) show(main, sil(f.main, pose)(), 'pos-front', sil(f.main, pose));
     }
   },
 
@@ -1908,6 +1982,16 @@ JV.Stage = {
     const alive = () => gen === this.gen;
     const newFigKey = this.figuresKey(s);
     const figsChanged = newFigKey !== this.figKey;
+
+    // 実素材は読み込んでから切り替える（失敗したら仮素材で代用）
+    const bgSpec = () => JV.Assets.background(s.era || 'modern', s.location, s.time);
+    const front = this.bgEls[this.bgFront];
+    const needBg = plan.bg || plan.chapter || (plan.tone && s.location && bgSpec().key !== front.dataset.key);
+    if (needBg && s.location) {
+      let spec = bgSpec();
+      while (spec.kind === 'image' && !(await JV.Assets.preload(spec.url))) spec = bgSpec();
+      if (!alive()) return;
+    }
 
     if (plan.chapter) {
       // 章が変わる：一度黒に落としてから新しい場面（1,000ms）
@@ -1946,7 +2030,8 @@ JV.Stage = {
       return;
     }
 
-    // 時間帯・天候だけ変わる：色調・天候レイヤーだけゆっくり（1,200ms）
+    // 時間帯・天候だけ変わる：色調・天候レイヤーだけゆっくり（1,200ms）。時間帯専用の絵があれば背景も
+    if (needBg && s.location) this.setBackground(s, 1200 * k);
     if (plan.tone) this.setTone(s, 1200 * k);
     this.setMood(s.mood, 1200 * k);
     this.shown = s;
@@ -2371,6 +2456,12 @@ JV.App = {
     document.body.classList.add('novel');
     JV.Stage.init();
     this.applySettings();
+    JV.Assets.loadManifest().then((ok) => {
+      const m = JV.Assets.manifest;
+      JV.Debug.set('assets', ok
+        ? `素材: 背景 ${Object.keys(m.bg).length}・シルエット ${Object.keys(m.sil).length}・群衆 ${m.crowd.length}${JV.Assets.manifestSkipped.length ? `（名前の規則外 ${JV.Assets.manifestSkipped.length}）` : ''}`
+        : `素材: 仮素材のみ（manifest.json を読めません: ${JV.Assets.manifestError}）`);
+    });
     this.renderSamples();
     this.renderRecent();
     this.setupDrop();
