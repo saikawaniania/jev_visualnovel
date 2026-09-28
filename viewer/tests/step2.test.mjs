@@ -16,7 +16,7 @@ const layout = await page.evaluate(() => {
 });
 check(layout.novel, 'ノベルモードが既定');
 check(layout.stagePos === 'fixed', '絵の領域は全画面に固定');
-check(/rgba\(8, 10, 14, 0\.6/.test(layout.band), `本文は半透明の暗い帯 (${layout.band})`);
+check(/rgba\(8, 10, 14, 0\.5\)/.test(layout.band), `本文は半透明の暗い帯 (${layout.band})`);
 check(await page.isVisible('#effects-toggle'), '右下に演出トグル');
 
 // onStop の呼び出しを記録する

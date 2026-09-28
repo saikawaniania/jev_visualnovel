@@ -144,11 +144,45 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
   background: #1b1d22;
 }
 #stage .layer { position: absolute; inset: 0; pointer-events: none; }
+#stage canvas.layer { width: 100%; height: 100%; }
+/* 1 背景（2枚でクロスフェード）。仮素材は場所名入りのグラデーション */
+#stage .bgs { z-index: 0; }  /* クロスフェード用の z-index を背景の中に閉じ込める */
+#stage .bg { opacity: 0; background-size: cover; background-position: center; }
+#stage .bg-label {
+  position: absolute; left: 50%; top: 18%; transform: translateX(-50%);
+  font-family: var(--serif); font-size: clamp(28px, 9vw, 72px); letter-spacing: 0.3em;
+  color: rgba(255, 255, 255, 0.10); white-space: nowrap;
+}
+/* 2 色調（時間帯） */
+#stage .tint { opacity: 0; }
+#stage .tint-morning { background: rgba(150, 190, 255, 0.28); mix-blend-mode: soft-light; }
+#stage .tint-evening { background: linear-gradient(to bottom, rgba(255, 120, 40, 0.55), rgba(190, 70, 60, 0.35)); mix-blend-mode: multiply; }
+#stage .tint-night { background: rgba(25, 40, 110, 0.85); mix-blend-mode: multiply; }
+#stage .tint-night-dim { background: rgba(0, 0, 12, 0.35); }
+/* 3 天候（曇り・霧。雨雪は canvas） */
+#stage .cloudy { opacity: 0; background: rgba(110, 115, 125, 0.30); mix-blend-mode: multiply; }
+#stage .fog { opacity: 0; background: linear-gradient(to top, rgba(225, 228, 232, 0.75), rgba(220, 224, 230, 0.35) 55%, rgba(220, 224, 230, 0.15)); }
+/* 4 人物シルエット */
+#stage .figures { opacity: 0; }
+body.no-silhouettes #stage .figures { display: none; }
+#stage .fig { position: absolute; bottom: 0; height: 72vh; transform: translateX(-50%); }
+#stage .fig img { height: 100%; width: auto; display: block; }
+#stage .fig.pos-solo { left: 60%; }
+#stage .fig.pos-right { left: 70%; }
+#stage .fig.pos-left { left: 30%; }
+#stage .fig.pos-left img { transform: scaleX(-1); }          /* 主人物と向かい合わせる */
+#stage .fig.pos-front { left: 62%; height: 76vh; }
+#stage .fig.pos-crowd { left: 45%; bottom: 7vh; height: 46vh; opacity: 0.6; filter: blur(0.6px); }
+/* 5 空気（周辺減光。彩度は .scene の filter） */
+#stage .vignette { opacity: 0.2; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.9) 100%); }
+#stage .blackout { background: #000; opacity: 0; }
 body.novel #text-column {
-  background: rgba(8, 10, 14, 0.62);
-  box-shadow: 0 0 60px 30px rgba(8, 10, 14, 0.62);
+  background: linear-gradient(to right, rgba(8, 10, 14, 0) 0, rgba(8, 10, 14, 0.5) 32px, rgba(8, 10, 14, 0.5) calc(100% - 32px), rgba(8, 10, 14, 0) 100%);
   color: #f3f1ec;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.9);
+}
+@media (max-width: 700px) {
+  body.novel #text-column { background: rgba(8, 10, 14, 0.5); }
 }
 body.effects-off #stage { display: none; }
 body.effects-off #text-column { background: transparent; box-shadow: none; }
@@ -658,6 +692,10 @@ JV.Settings = {
   KEY: 'jev-viewer-settings',
   DEFAULTS: {
     stopDelay: 400,        // 停止判定の待ち時間(ms)
+    sensitivity: 0.6,      // 絵を替える感度（しきい値）。普通=0.6
+    fadeScale: 1.0,        // フェード時間の倍率
+    silhouettes: true,     // 人物シルエット表示
+    hideNarrator: false,   // 一人称の作品で主人物（語り手）を出さず相手だけを描く
     effects: true,         // 演出オン／オフ
     debug: false,          // デバッグ表示
   },
@@ -787,6 +825,940 @@ JV.Debug = {
 };
 
 /* =====================================================================
+ * 判定の質問定義
+ *
+ * 選択肢は { id: 英字ID（素材のファイル名にも使う）, label: 表示名＝APIに送る criteria のキー,
+ * desc: criteria の説明（境界例・言い換えを書く）}。
+ * ===================================================================== */
+JV.Schema = {
+  work: {
+    era: {
+      type: 'choice',
+      instructions: '作品の舞台となる時代・世界。文体や語彙ではなく、登場する事物（乗り物・服装・道具・制度）で判断する',
+      options: [
+        { id: 'modern', label: '近代日本', desc: '明治〜昭和前期の日本。汽車・人力車・着物・書生・下駄・ランプ・停車場・候文など' },
+        { id: 'present', label: '現代日本', desc: '昭和後期以降の日本。携帯電話・スマホ・コンビニ・テレビ・自動車・パソコンなど' },
+        { id: 'western', label: '西洋風', desc: '現実の欧米、またはそれを模した舞台。貴族・馬車・教会・城館・紳士淑女など。魔法はない' },
+        { id: 'fantasy', label: 'ファンタジー', desc: '魔法・竜・精霊・架空の王国など、現実にない要素が物語の前提になっている' },
+      ],
+    },
+    narration: {
+      type: 'choice',
+      instructions: '地の文の語りの人称。会話文の中の「私」「僕」は数えない',
+      options: [
+        { id: 'first', label: '一人称', desc: '地の文で語り手が「私」「僕」「俺」などとして自分の行動を語る' },
+        { id: 'third', label: '三人称', desc: '地の文が登場人物を名前や「彼」「彼女」で外から語る' },
+      ],
+    },
+  },
+
+  scene: {
+    scene_changed: {
+      type: 'noul',
+      instructions: '現在の段落(current)で、前の場面(previous_scene)から場所か時間帯が実際に変わった。回想・夢・会話の中で別の場所や時間が話題に出ただけなら変わっていない',
+    },
+    location: {
+      type: 'choice',
+      instructions: '現在の段落(current)で、視点人物がいま実際に居る場所。回想や会話の中で話題に出ただけの場所は選ばない。場所が読み取れなければ「不明」',
+      options: [
+        { id: 'washitsu', label: '和室', desc: '畳の部屋。座敷・茶の間・居間・床の間・襖・障子・縁側の内側。「座敷＝和室」' },
+        { id: 'yoshitsu', label: '洋室', desc: '洋風の部屋。応接間・書斎・寝室・ホテルの部屋・ソファ・暖炉・椅子とテーブル' },
+        { id: 'kitchen', label: '台所', desc: '台所・勝手・土間の炊事場・厨房。竈・流し・鍋' },
+        { id: 'genkan', label: '廊下・玄関', desc: '廊下・玄関・上がり框・戸口・階段・渡り廊下' },
+        { id: 'classroom', label: '教室', desc: '学校の教室・講堂・黒板・教壇' },
+        { id: 'shop', label: '店・酒場', desc: '商店・喫茶店・カフェ・料理屋・酒場・バー・宿の帳場。店内に居る場合' },
+        { id: 'station', label: '駅・車内', desc: '駅・停車場・プラットフォーム・待合室・汽車や電車やバスの車内' },
+        { id: 'street', label: '街路', desc: '町の通り・大通り・往来・街角・広場・商店街の路上' },
+        { id: 'alley', label: '路地', desc: '狭い路地・横丁・裏通り' },
+        { id: 'garden', label: '庭', desc: '家の庭・中庭・庭園・縁側から見える庭（庭に出ている場合）' },
+        { id: 'field', label: '田畑・野原', desc: '田んぼ・畑・野原・草原・原っぱ・土手（川の見えないもの）' },
+        { id: 'forest', label: '森・山道', desc: '森・林・山・山道・峠・谷' },
+        { id: 'river', label: '川・水辺', desc: '川・川岸・土手（川沿い）・橋・池・湖のほとり' },
+        { id: 'seaside', label: '海辺', desc: '海・浜辺・砂浜・港・岬・波打ち際' },
+        { id: 'nightsky', label: '夜空の見える屋外', desc: '星空・月夜を見上げる屋上・丘・野外など、夜空そのものが主役の屋外' },
+        { id: 'unknown', label: '不明', desc: '場所の手がかりがない。会話だけが続き場所が書かれていない場合もこれ' },
+      ],
+    },
+    time: {
+      type: 'choice',
+      instructions: '現在の段落(current)の時間帯。回想の中の時間は選ばない。手がかりがなければ「不明」',
+      options: [
+        { id: 'morning', label: '朝', desc: '夜明け・早朝・朝日・朝食' },
+        { id: 'day', label: '昼', desc: '日中・昼過ぎ・正午・真昼' },
+        { id: 'evening', label: '夕方', desc: '夕暮れ・夕日・黄昏・日暮れ' },
+        { id: 'night', label: '夜', desc: '夜・夜更け・深夜・月明かり・灯火' },
+        { id: 'unknown', label: '不明', desc: '時間帯の手がかりがない' },
+      ],
+    },
+    weather: {
+      type: 'choice',
+      instructions: '現在の段落(current)の天候。いま降っている・かかっているものだけ。「雨上がり」は雨ではない',
+      options: [
+        { id: 'none', label: '記述なし', desc: '天候の記述がない、または晴れ' },
+        { id: 'cloudy', label: '曇り', desc: '曇り空・どんよりした空' },
+        { id: 'rain', label: '雨', desc: '雨が降っている・嵐・夕立' },
+        { id: 'snow', label: '雪', desc: '雪が降っている・吹雪' },
+        { id: 'fog', label: '霧', desc: '霧・靄・もや・霞' },
+      ],
+    },
+    people: {
+      type: 'choice',
+      instructions: '現在の段落(current)の場面にいま居合わせている人数。語り手も含める。話題に出ただけ・回想の中の人物は数えない',
+      options: [
+        { id: 'none', label: '誰もいない', desc: '人物がいない風景だけの描写' },
+        { id: 'one', label: '1人', desc: '1人だけ（語り手ひとりを含む）' },
+        { id: 'two', label: '2人', desc: '2人。会話している2人など' },
+        { id: 'many', label: '3人以上', desc: '3人以上・大勢・群衆' },
+      ],
+    },
+    figure_main: {
+      type: 'choice',
+      instructions: '場面の中心にいる人物の見た目。語り手が中心なら語り手',
+      options: [
+        { id: 'man', label: '成人男性', desc: '大人の男' },
+        { id: 'woman', label: '成人女性', desc: '大人の女' },
+        { id: 'boy', label: '少年', desc: '男の子・少年' },
+        { id: 'girl', label: '少女', desc: '女の子・少女' },
+        { id: 'old', label: '老人', desc: '老人・老婆・白髪の年寄り' },
+        { id: 'unknown', label: '不明', desc: '見た目の手がかりがない' },
+      ],
+    },
+    figure_sub: {
+      type: 'choice',
+      instructions: '中心人物の相手（2人目）の見た目。1人しかいなければ「不明」',
+      optionsFrom: 'figure_main',
+    },
+    pose: {
+      type: 'choice',
+      instructions: '中心人物のいまの姿勢・動作',
+      options: [
+        { id: 'stand', label: '立っている', desc: '立っている・佇む' },
+        { id: 'sit', label: '座っている', desc: '座る・腰をおろす・正座' },
+        { id: 'walk', label: '歩く・走る', desc: '歩く・走る・駆ける・移動している' },
+        { id: 'lie', label: '倒れる・横たわる', desc: '倒れる・横になる・眠っている' },
+        { id: 'talk', label: '向き合って話す', desc: '相手と向き合って会話している' },
+      ],
+    },
+    mood: {
+      type: 'score',
+      instructions: '現在の段落(current)の場面の緊張感',
+      levels: [
+        '穏やか：日常的で落ち着いた場面',
+        '物寂しい：寂しさ・哀しさ・不安がにじむ場面',
+        '緊迫：恐怖・危険・争い・強い動揺のある場面',
+      ],
+    },
+  },
+
+  options(group, key) {
+    const q = this[group][key];
+    return q.options || this[group][q.optionsFrom].options;
+  },
+  byLabel(group, key, label) { return this.options(group, key).find((o) => o.label === label); },
+  byId(group, key, id) { return this.options(group, key).find((o) => o.id === id); },
+
+  /** TypeSafe 形式の questions を組み立てる（asciiKeys なら criteria のキーを英字IDにする） */
+  toQuestions(group, { asciiKeys = false } = {}) {
+    const out = {};
+    for (const [key, q] of Object.entries(this[group])) {
+      if (q.type === 'noul') out[key] = { type: 'noul', instructions: q.instructions };
+      else if (q.type === 'score') out[key] = { type: 'score', instructions: q.instructions, criteria: q.levels.slice() };
+      else {
+        const criteria = {};
+        for (const o of this.options(group, key)) criteria[asciiKeys ? o.id : o.label] = asciiKeys ? `${o.label}：${o.desc}` : o.desc;
+        out[key] = { type: 'choice', instructions: q.instructions, criteria };
+      }
+    }
+    return out;
+  },
+};
+
+/* =====================================================================
+ * 判定部：差し替え可能なアダプタ  judge(state, questions, { signal }) → answers
+ * answers は TypeSafe と同じ形：
+ *   choice → { choice, probabilities: {label: p}, confidence }
+ *   score  → { score（0〜段階数-1の期待値）, probabilities, confidence }
+ *   noul   → { noul（0〜1） }
+ * ===================================================================== */
+JV.Adapters = {};
+
+/** モック判定器：キーワード一致で答えを返す偽の判定器。API なしで画面と演出を確認するため */
+JV.Adapters.mock = {
+  name: 'mock',
+  latency: [60, 220],
+
+  KEYWORDS: {
+    era: {
+      '近代日本': ['汽車', '停車場', '人力車', '着物', '書生', '下駄', '外套', '硝子', 'ランプ', '候', 'ござい', '座敷', '襖', '障子', '箪笥'],
+      '現代日本': ['スマホ', '携帯', 'コンビニ', 'テレビ', 'パソコン', 'メール', 'エアコン', '自動車', 'レコード', 'カウンター', '停電'],
+      '西洋風': ['伯爵', '馬車', '教会', '城館', '貴族', 'ドレス', '紳士', '淑女', '執事'],
+      'ファンタジー': ['魔法', '竜', '魔王', '精霊', 'エルフ', '王国', '勇者', '呪文'],
+    },
+    location: {
+      '和室': ['座敷', '畳', '襖', '障子', '床の間', '掛軸', '茶の間', '箪笥', '抽斗'],
+      '洋室': ['応接間', '書斎', 'ソファ', '暖炉', '洋間', '寝台', 'ベッド'],
+      '台所': ['台所', '竈', 'かまど', '流し', '厨房', 'お勝手'],
+      '廊下・玄関': ['廊下', '玄関', '上がり框', '戸口', '階段'],
+      '教室': ['教室', '黒板', '教壇', '講堂'],
+      '店・酒場': ['喫茶店', '店の扉', '店の中', 'カウンター', '酒場', 'カフェ', '珈琲', '帳場', '古本屋', '店先', '店'],
+      '駅・車内': ['停車場', '駅', 'プラットフォーム', 'ホーム', '待合室', '車内', '汽車', '電車', '座席', '車掌', '汽笛'],
+      '街路': ['大通り', '往来', '通り', '街角', '町の', '荷車', '軒を並べ'],
+      '路地': ['路地', '横丁', '裏通り'],
+      '庭': ['庭', '植木', '縁側', '垣根'],
+      '田畑・野原': ['野原', '草原', '田圃', '田んぼ', '畑', '原っぱ'],
+      '森・山道': ['森', '林', '山道', '峠', '木々', '山あい', '獣', '木の陰'],
+      '川・水辺': ['川', '土手', '岸', '橋', '柳', '池', '小川', 'せせらぎ', '水の音'],
+      '海辺': ['海', '浜', '砂浜', '波打ち際', '波', '港', '潮'],
+      '夜空の見える屋外': ['星空', '夜空', '天の川', '満天', '月を見上げ'],
+    },
+    time: {
+      '朝': ['朝', '夜明け', '早朝', '朝日', '朝御飯', '明けかけ', '目を覚ま'],
+      '昼': ['昼', '正午', '日中', '真昼', '昼過ぎ', '昼下がり', '日の光'],
+      '夕方': ['夕方', '夕暮れ', '夕日', '黄昏', '日暮れ', '日が暮れ', '日が沈'],
+      '夜': ['夜', '夜更け', '深夜', '闇', '月明', '灯', '蝋燭', '真っ暗', '暗くなっ'],
+    },
+    weather: {
+      '曇り': ['曇り空', 'どんより', '雲が低', '曇天'],
+      '雨': [/雨(?!上)/, '傘', '濡れ', '雨音', '嵐', '夕立', '雷'],
+      '雪': ['雪', '吹雪'],
+      '霧': ['霧', '靄', 'もや', '霞'],
+    },
+    people: {
+      '誰もいない': ['誰もいな', '人影はな', '人影もな', '人っ子ひとり'],
+      '1人': ['私は', '僕は', 'ひとり', '一人', '彼は', '女は', '老人は'],
+      '2人': ['ふたり', '二人', '一緒', '妹', '向かい合', '少女と'],
+      '3人以上': ['大勢', '人々', '群衆', '人だかり', '一同', '皆', '人いきれ'],
+    },
+    figure: {
+      '成人男性': [/(?<![少])男(?!の子)/, '兄', '父', '紳士', '商人', '車掌', /彼(?!女)/, '私', '僕'],
+      '成人女性': [/(?<![少])女(?!の子)/, '妻', '母', '妹', '娘', '婦人', '彼女'],
+      '少年': ['少年', '男の子', '坊'],
+      '少女': ['少女', '女の子'],
+      '老人': ['老人', '老婆', '爺', '婆', '白髪', '年老い'],
+    },
+    pose: {
+      '立っている': ['立っ', '佇', 'たたず', '見下ろ', '立ち'],
+      '座っている': ['座', '坐', '腰をおろ', '腰掛', '正座', '座席'],
+      '歩く・走る': ['歩', '走', '駆', '急い', '下りきった', '向かっ'],
+      '倒れる・横たわる': ['倒れ', '横たわ', '寝', '眠'],
+      '向き合って話す': ['振り向', '向き合', '話しかけ', '声をかけ', '語り'],
+    },
+    mood: [
+      ['穏やか', '微笑', '静か', '温か', 'のどか', '光って', '好きな', 'いらっしゃい', '弁当'],
+      ['寂し', '哀し', '悲し', '涙', '独り', 'ひとりきり', '遠ざか', '形見', '思い出', '昔', '見当らな', '不安'],
+      ['叫', '震', '恐', '血', '逃げ', '怖', '悲鳴', '嵐', '雷', '激し', '黒い影', '背筋が寒', '顔色が悪'],
+    ],
+    transition: ['翌朝', 'その夜', '日が暮れ', '昼過ぎ', '夜更け', 'やがて', '着いた', '出た', '乗り込', 'しばらくして', '夕方になる', 'になると', '目が覚め', 'ようやく'],
+  },
+
+  count(text, kws) {
+    let n = 0;
+    for (const k of kws) {
+      if (k instanceof RegExp) n += (text.match(new RegExp(k.source, 'g')) || []).length;
+      else if (text.includes(k)) n += text.split(k).length - 1;
+    }
+    return n;
+  },
+
+  /** 各選択肢の得点 → 確率。fallback（不明・記述なし）には下駄をはかせる */
+  choice(labels, scores, fallback, base = 0.05, fallbackBase = 0.6) {
+    const w = labels.map((l) => (scores[l] || 0) + (l === fallback ? fallbackBase : base));
+    const sum = w.reduce((a, b) => a + b, 0);
+    const probabilities = {};
+    labels.forEach((l, i) => { probabilities[l] = w[i] / sum; });
+    let best = labels[0];
+    for (const l of labels) if (probabilities[l] > probabilities[best]) best = l;
+    return { choice: best, probabilities, confidence: probabilities[best] };
+  },
+
+  scoreFor(table, cur, ctx) {
+    const s = {};
+    for (const [label, kws] of Object.entries(table)) s[label] = this.count(cur, kws) + 0.35 * this.count(ctx, kws);
+    return s;
+  },
+
+  async judge(state, questions, { signal } = {}) {
+    const [lo, hi] = this.latency;
+    await JV.util.sleep(lo + Math.random() * (hi - lo), signal);
+    const st = typeof state === 'string' ? { current: state } : state;
+    const cur = st.current || '';
+    const ctx = st.context_before || '';
+    const prev = st.previous_scene || {};
+    const K = this.KEYWORDS;
+    const labelsOf = (key) => Object.keys(questions[key].criteria);
+    // criteria のキーが英字IDでも動くように、表示名 ↔ キーを対応づける
+    const answers = {};
+    const dialogues = (cur.match(/^[「『]/gm) || []).length;
+
+    for (const key of Object.keys(questions)) {
+      const q = questions[key];
+      if (q.type === 'choice') {
+        const keys = labelsOf(key);
+        const group = key in JV.Schema.work ? 'work' : 'scene';
+        const toLabel = (k) => (JV.Schema.byLabel(group, key, k) ? k : (JV.Schema.byId(group, key, k) || { label: k }).label);
+        const labels = keys.map(toLabel);
+        let table = K[key];
+        if (key === 'figure_main' || key === 'figure_sub') table = K.figure;
+        const narrOnly = key === 'location' || key === 'time' || key === 'weather';
+        const strip = (t) => t.replace(/「[^」]*」|『[^』]*』/g, '');
+        let scores = table ? this.scoreFor(table, narrOnly ? strip(cur) : cur, key === 'era' || key === 'narration' ? '' : (narrOnly ? strip(ctx) : ctx)) : {};
+        let fallback = labels.find((l) => l === '不明' || l === '記述なし');
+
+        if (key === 'narration') {
+          const narr = cur.replace(/「[^」]*」/g, '');
+          const first = this.count(narr, ['私', '僕', '俺', 'わたし', 'あたし']);
+          scores = { '一人称': first, '三人称': Math.max(0.5, narr.length / 400 - first) };
+        }
+        if (key === 'people') {
+          if (dialogues >= 2) scores['2人'] = (scores['2人'] || 0) + 1.2;
+          fallback = '1人';
+        }
+        if (key === 'pose' && dialogues >= 2) scores['向き合って話す'] = (scores['向き合って話す'] || 0) + 0.8;
+        if (key === 'pose') fallback = '立っている';
+        if (key === 'figure_sub') {
+          // 主人物に選ばれたものを除いた2番手
+          const main = answers.figure_main ? toLabel(answers.figure_main.choice) : null;
+          if (main && main !== '不明') scores[main] = Math.max(0, (scores[main] || 0) - 1.5);
+          if (dialogues < 2 && !(scores['成人女性'] || scores['少女'] || scores['老人'])) scores = {};
+        }
+        const fbBase = fallback === '1人' || fallback === '立っている' ? 0.4 : key === 'weather' ? 0.45 : 0.6;
+        const r = this.choice(labels, scores, fallback || labels[0], 0.05, fbBase);
+        // 返すときは元のキーに戻す
+        const back = (l) => keys[labels.indexOf(l)];
+        const probabilities = {};
+        for (const l of labels) probabilities[back(l)] = r.probabilities[l];
+        answers[key] = { type: 'choice', choice: back(r.choice), probabilities, confidence: r.confidence };
+      } else if (q.type === 'score') {
+        const n = q.criteria.length;
+        const raw = K.mood.slice(0, n).map((kws) => this.count(cur, kws) + 0.35 * this.count(ctx, kws));
+        raw[0] += 0.5;
+        const sum = raw.reduce((a, b) => a + b, 0);
+        const probabilities = {};
+        raw.forEach((v, i) => { probabilities[i] = v / sum; });
+        const score = raw.reduce((a, v, i) => a + i * (v / sum), 0);
+        answers[key] = { type: 'score', score, probabilities, confidence: Math.max(...Object.values(probabilities)) };
+      } else if (q.type === 'noul') {
+        answers[key] = { type: 'noul', noul: 0 }; // 他の答えを見てから下で決める
+      }
+    }
+
+    if (questions.scene_changed) {
+      const labelOf = (key) => {
+        const a = answers[key];
+        if (!a) return null;
+        return JV.Schema.byLabel('scene', key, a.choice) ? a.choice : (JV.Schema.byId('scene', key, a.choice) || {}).label;
+      };
+      let p = 0.12 + 0.12 * Math.min(2, this.count(cur, K.transition));
+      const loc = labelOf('location');
+      const time = labelOf('time');
+      if (loc && loc !== '不明' && prev.location && loc !== prev.location && answers.location.confidence > 0.3) p += 0.5;
+      if (time && time !== '不明' && prev.time && time !== prev.time && answers.time.confidence > 0.35) p += 0.3;
+      if (!prev.location) p += 0.3;
+      answers.scene_changed = { type: 'noul', noul: Math.min(0.97, p) };
+    }
+    return answers;
+  },
+};
+
+JV.util = {
+  sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+      const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+      const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); };
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    });
+  },
+  isAbort(err) { return err && (err.name === 'AbortError' || err.name === 'APIUserAbortError'); },
+};
+
+/* =====================================================================
+ * 素材ライブラリ
+ * 実素材がない組み合わせは仮素材（場所名入りのグラデーション・図形のシルエット）で代用する
+ * ===================================================================== */
+JV.Assets = {
+  manifest: { bg: {}, sil: {}, crowd: [] }, // ステップ6で assets/manifest.json から読む
+
+  // 仮背景の色（上・下）。低彩度で、白文字が乗っても読める明度に揃える
+  PALETTE: {
+    washitsu: ['#8d8068', '#5e5340'], yoshitsu: ['#86766b', '#56493f'], kitchen: ['#847d69', '#565040'],
+    genkan: ['#7d776c', '#514c43'], classroom: ['#8a9078', '#5b604b'], shop: ['#8e7258', '#5d4735'],
+    station: ['#79828c', '#4d545b'], street: ['#8c9296', '#5f6466'], alley: ['#6f6c66', '#46443f'],
+    garden: ['#7f9272', '#50603f'], field: ['#a1a370', '#6d7550'], forest: ['#61786a', '#35463a'],
+    river: ['#84a0ab', '#4f6a73'], seaside: ['#8fb0bd', '#c9bb98'], nightsky: ['#2a3558', '#10152a'],
+    none: ['#2b2e36', '#15171c'],
+  },
+
+  bgKey(eraId, locId, timeId) { return `${eraId}_${locId}_${timeId}`; },
+
+  /** 背景：era×location×time の絵 → なければ昼の絵＋色調 → なければ仮素材 */
+  background(eraId, locId, timeId) {
+    const bg = this.manifest.bg || {};
+    const exact = bg[this.bgKey(eraId, locId, timeId)];
+    if (exact) return { kind: 'image', url: exact, ownTime: true, key: this.bgKey(eraId, locId, timeId) };
+    const day = bg[this.bgKey(eraId, locId, 'day')];
+    if (day) return { kind: 'image', url: day, ownTime: false, key: this.bgKey(eraId, locId, 'day') };
+    return { kind: 'placeholder', key: `ph_${locId}`, locId };
+  },
+
+  silhouette(figId, poseId) {
+    const own = (this.manifest.sil || {})[`${figId}_${poseId}`];
+    return own || this.svgUrl(this.svgFigure(figId, poseId));
+  },
+
+  crowd(k = 0) {
+    const list = this.manifest.crowd || [];
+    if (list.length) return list[k % list.length];
+    return this.svgUrl(this.svgCrowd(k));
+  },
+
+  svgUrl(svg) { return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; },
+
+  /* ---------- 仮シルエット（SVG）：体型6種 × ポーズ5種 ---------- */
+  BODY: {
+    man:     { h: 1.00, sh: 13.5, hip: 10, head: 7.0 },
+    woman:   { h: 0.93, sh: 11.5, hip: 10, head: 6.8, hair: 'long', skirt: true },
+    boy:     { h: 0.70, sh: 10.5, hip: 8, head: 7.4 },
+    girl:    { h: 0.68, sh: 10.0, hip: 8, head: 7.4, hair: 'twin', skirt: true },
+    old:     { h: 0.88, sh: 12.5, hip: 10, head: 6.8, hunch: 14, cane: true },
+    unknown: { h: 0.95, sh: 12.5, hip: 11, head: 7.0, cloak: true },
+  },
+
+  /** 身長100の座標系で立ち姿を描く（足元 y=100） */
+  svgBody(b, pose) {
+    const P = [];
+    const walk = pose === 'walk', talk = pose === 'talk', sit = pose === 'sit';
+    const legA = walk ? 16 : 0;
+    const hipY = 52;
+    // 脚
+    if (sit) {
+      P.push(`<path d="M${-b.hip} ${hipY - 2} h${b.hip * 2} v8 h24 v36 h-8 v-28 h${-(b.hip * 2 + 16)} z"/>`);
+      P.push(`<rect x="-4" y="${hipY + 6}" width="${b.hip * 2 + 12}" height="4" opacity=".55"/>`); // 腰掛け
+    } else if (!b.cloak) {
+      P.push(`<g transform="rotate(${legA} -4 ${hipY})"><rect x="-9" y="${hipY - 2}" width="8.5" height="${100 - hipY + 2}" rx="3"/></g>`);
+      P.push(`<g transform="rotate(${-legA} 4 ${hipY})"><rect x="0.5" y="${hipY - 2}" width="8.5" height="${100 - hipY + 2}" rx="3"/></g>`);
+    }
+    // 胴（老人は前かがみ）
+    const torso = [];
+    torso.push(`<path d="M${-b.sh} 17 Q0 13 ${b.sh} 17 L${b.hip + 1} ${hipY + 2} L${-b.hip - 1} ${hipY + 2} Z"/>`);
+    if (b.skirt) torso.push(`<path d="M${-b.hip} ${hipY - 6} L${b.hip} ${hipY - 6} L${b.hip + (sit ? 14 : 9)} ${sit ? hipY + 12 : 80} L${-b.hip - (sit ? 2 : 9)} ${sit ? hipY + 12 : 80} Z"/>`);
+    if (b.cloak) torso.push(`<path d="M${-b.sh} 17 Q0 11 ${b.sh} 17 L${b.sh + 8} ${sit ? hipY + 14 : 100} L${-b.sh - 8} ${sit ? hipY + 14 : 100} Z"/>`);
+    // 腕
+    const armR = walk ? -24 : talk ? -70 : 6;
+    const armL = walk ? 24 : -6;
+    torso.push(`<g transform="rotate(${armL} ${-b.sh + 2} 19)"><rect x="${-b.sh - 2}" y="17" width="5.5" height="33" rx="2.7"/></g>`);
+    torso.push(`<g transform="rotate(${armR} ${b.sh - 2} 19)"><rect x="${b.sh - 3.5}" y="17" width="5.5" height="${talk ? 26 : 33}" rx="2.7"/></g>`);
+    // 首・頭・髪
+    torso.push(`<rect x="-3" y="11" width="6" height="8"/>`);
+    torso.push(`<circle cx="0" cy="${9 - b.head + 7}" r="${b.head}"/>`);
+    if (b.cloak) torso.push(`<path d="M${-b.head - 3} ${9} Q0 ${-4} ${b.head + 3} 9 L${b.head + 4} 20 L${-b.head - 4} 20 Z"/>`);
+    if (b.hair === 'long') torso.push(`<path d="M${-b.head - 1} 6 Q0 -3 ${b.head + 1} 6 L${b.head + 2} 26 L${-b.head - 2} 26 Z"/>`);
+    if (b.hair === 'twin') torso.push(`<circle cx="${-b.head - 2}" cy="12" r="3.4"/><circle cx="${b.head + 2}" cy="12" r="3.4"/>`);
+    const hunch = b.hunch || 0;
+    P.push(`<g transform="rotate(${hunch} 0 ${hipY})">${torso.join('')}</g>`);
+    if (b.cane) P.push(`<rect x="${b.sh + 8}" y="${hipY - 4}" width="2.2" height="${100 - hipY + 4}"/>`);
+    return P.join('');
+  },
+
+  svgFigure(figId, poseId) {
+    const b = this.BODY[figId] || this.BODY.unknown;
+    const sit = poseId === 'sit';
+    let g;
+    if (poseId === 'lie') {
+      // 横たわる：立ち姿を倒して足元に寝かせる
+      g = `<g transform="translate(${-50 * b.h} ${100 - 15 * b.h}) rotate(-90) scale(${b.h})">${this.svgBody(b, 'stand')}</g>`;
+    } else {
+      const drop = sit ? 16 : 0; // 座ると頭の位置が下がる
+      g = `<g transform="translate(0 ${100 - 100 * b.h + drop * b.h}) scale(${b.h})">${this.svgBody(b, poseId)}</g>`;
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -2 120 104" preserveAspectRatio="xMidYMax meet"><g fill="#07080b" fill-opacity=".92">${g}</g></svg>`;
+  },
+
+  svgCrowd(k) {
+    const kinds = k % 2 ? ['woman', 'man', 'old', 'man', 'woman', 'boy', 'man'] : ['man', 'woman', 'man', 'girl', 'man', 'woman', 'old'];
+    const parts = kinds.map((f, i) => {
+      const b = this.BODY[f];
+      const x = -150 + i * 50 + (i % 2 ? 8 : -6);
+      const s = b.h * (0.86 + ((i * 37) % 10) / 70);
+      return `<g transform="translate(${x} ${100 - 100 * s}) scale(${s})">${this.svgBody(b, i % 3 === 1 ? 'walk' : 'stand')}</g>`;
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-180 -2 360 104" preserveAspectRatio="xMidYMax meet"><g fill="#07080b" fill-opacity=".85">${parts.join('')}</g></svg>`;
+  },
+};
+
+/* =====================================================================
+ * 天候レイヤー：canvas の雨・雪パーティクル
+ * ===================================================================== */
+JV.Weather = {
+  canvas: null, ctx: null, type: 'none', level: 0, targetType: 'none', targetLevel: 0,
+  fadeMs: 1200, parts: [], raf: 0, last: 0,
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    const resize = () => {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(canvas.clientWidth * dpr) || 1;
+      canvas.height = Math.round(canvas.clientHeight * dpr) || 1;
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    window.addEventListener('resize', resize);
+    resize();
+  },
+
+  /** type: 'rain' | 'snow' | 'none'、level: 0〜1 */
+  set(type, level, fadeMs) {
+    this.targetType = type;
+    this.targetLevel = type === 'none' ? 0 : level;
+    this.fadeMs = Math.max(1, fadeMs);
+    if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame((t) => this.frame(t)); }
+  },
+
+  instant(type, level) {
+    this.type = this.targetType = type;
+    this.level = this.targetLevel = type === 'none' ? 0 : level;
+    if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame((t) => this.frame(t)); }
+  },
+
+  spawn(w, h, anywhere) {
+    const snow = this.type === 'snow';
+    return {
+      x: Math.random() * (w + 200) - 100,
+      y: anywhere ? Math.random() * h : -20 - Math.random() * 60,
+      v: snow ? 30 + Math.random() * 50 : 700 + Math.random() * 500,
+      r: snow ? 1.2 + Math.random() * 2.6 : 10 + Math.random() * 14,
+      ph: Math.random() * Math.PI * 2,
+    };
+  },
+
+  frame(t) {
+    const dt = Math.min(0.05, (t - this.last) / 1000);
+    this.last = t;
+    const step = (dt * 1000) / this.fadeMs;
+    if (this.type !== this.targetType) {
+      this.level -= step;
+      if (this.level <= 0) { this.level = 0; this.type = this.targetType; this.parts = []; }
+    } else if (this.level < this.targetLevel) this.level = Math.min(this.targetLevel, this.level + step);
+    else if (this.level > this.targetLevel) this.level = Math.max(this.targetLevel, this.level - step);
+
+    const c = this.canvas;
+    const w = c.clientWidth, h = c.clientHeight, ctx = this.ctx;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr) || 1;
+      c.height = Math.round(h * dpr) || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    ctx.clearRect(0, 0, w, h);
+    if (this.type === 'none' || (this.level <= 0 && this.targetLevel <= 0 && this.type === this.targetType)) {
+      this.parts = [];
+      this.raf = 0;
+      return;
+    }
+    const max = this.type === 'snow' ? 140 : 220;
+    const want = Math.round(max * Math.min(1, w / 1000 + 0.3) * this.level);
+    while (this.parts.length < want) this.parts.push(this.spawn(w, h, this.parts.length < want / 2));
+    if (this.parts.length > want) this.parts.length = want;
+
+    ctx.globalAlpha = Math.min(1, 0.25 + this.level);
+    if (this.type === 'rain') {
+      ctx.strokeStyle = 'rgba(200, 215, 235, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const p of this.parts) {
+        p.y += p.v * dt; p.x -= p.v * dt * 0.18;
+        if (p.y > h + 20) Object.assign(p, this.spawn(w, h, false));
+        ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.r * 0.18, p.y - p.r);
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      for (const p of this.parts) {
+        p.y += p.v * dt; p.ph += dt; p.x += Math.sin(p.ph) * 18 * dt;
+        if (p.y > h + 10) Object.assign(p, this.spawn(w, h, false));
+        ctx.moveTo(p.x + p.r, p.y); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    this.raf = requestAnimationFrame((tt) => this.frame(tt));
+  },
+};
+
+/* =====================================================================
+ * 合成部：5枚のレイヤー（背景・色調・天候・人物・空気）と章替わりの暗転
+ * ===================================================================== */
+JV.Stage = {
+  el: null, bgEls: [], bgFront: 0, figs: null, gen: 0,
+  shown: null,     // いま表示している場面
+  figKey: '',
+
+  INDOOR: new Set(['washitsu', 'yoshitsu', 'kitchen', 'genkan', 'classroom', 'shop']),
+
+  init() {
+    const st = document.getElementById('stage');
+    st.innerHTML = `
+      <div class="scene layer">
+        <div class="layer bgs" data-layer="bg">
+          <div class="layer bg"><div class="bg-label"></div></div>
+          <div class="layer bg"><div class="bg-label"></div></div>
+        </div>
+        <div class="layer tint tint-morning"></div>
+        <div class="layer tint tint-evening"></div>
+        <div class="layer tint tint-night"></div>
+        <div class="layer tint tint-night-dim"></div>
+        <div class="layer cloudy"></div>
+        <div class="layer figures" data-layer="figures">
+          <div class="fig crowd"><img alt=""></div>
+          <div class="fig sub"><img alt=""></div>
+          <div class="fig main"><img alt=""></div>
+        </div>
+      </div>
+      <canvas class="layer weather" data-layer="weather"></canvas>
+      <div class="layer fog"></div>
+      <div class="layer vignette" data-layer="mood"></div>
+      <div class="layer blackout"></div>`;
+    this.el = st;
+    this.bgEls = Array.from(st.querySelectorAll('.bg'));
+    this.figs = st.querySelector('.figures');
+    JV.Weather.init(st.querySelector('canvas.weather'));
+    this.reset();
+  },
+
+  reset() {
+    this.gen++;
+    this.shown = null;
+    this.figKey = '';
+    this.bgEls.forEach((b) => { b.style.transition = 'none'; b.style.opacity = '0'; b.dataset.key = ''; });
+    this.figs.style.transition = 'none';
+    this.figs.style.opacity = '0';
+    this.figs.querySelectorAll('.fig').forEach((f) => { f.style.display = 'none'; });
+    this.el.querySelectorAll('.tint, .cloudy, .fog').forEach((t) => { t.style.transition = 'none'; t.style.opacity = '0'; });
+    this.setMood(0, 0);
+    this.el.querySelector('.blackout').style.opacity = '0';
+    JV.Weather.instant('none', 0);
+  },
+
+  fade() { return Number(JV.Settings.get('fadeScale')) || 1; },
+
+  /* ---------- 各レイヤー ---------- */
+  setBackground(scene, ms) {
+    const era = scene.era || 'modern';
+    const loc = scene.location;
+    const spec = JV.Assets.background(era, loc, scene.time);
+    const next = this.bgEls[this.bgFront ^ 1];
+    const cur = this.bgEls[this.bgFront];
+    next.dataset.key = spec.key;
+    next.dataset.loc = loc;
+    const label = next.querySelector('.bg-label');
+    if (spec.kind === 'image') {
+      next.style.background = `#222 url("${spec.url}") center / cover no-repeat`;
+      label.textContent = '';
+    } else {
+      const [top, bottom] = JV.Assets.PALETTE[loc] || JV.Assets.PALETTE.none;
+      next.style.background = `linear-gradient(to bottom, ${top}, ${bottom})`;
+      const o = JV.Schema.byId('scene', 'location', loc);
+      label.textContent = o ? o.label : '';
+    }
+    next.style.transition = 'none';
+    next.style.opacity = '0';
+    next.style.zIndex = '2';
+    cur.style.zIndex = '1';
+    void next.offsetWidth;
+    next.style.transition = `opacity ${ms}ms ease`;
+    next.style.opacity = '1';
+    this.bgFront ^= 1;
+    const gen = this.gen;
+    setTimeout(() => { if (gen === this.gen && this.bgEls[this.bgFront] === next) { cur.style.transition = 'none'; cur.style.opacity = '0'; } }, ms + 50);
+    // 背景画像が時間帯専用の絵なら、色調レイヤーは弱める
+    this.ownTime = spec.kind === 'image' && spec.ownTime;
+  },
+
+  setTone(scene, ms) {
+    const q = (sel) => this.el.querySelector(sel);
+    const own = this.ownTime ? 0.35 : 1;
+    const t = scene.time;
+    const val = { morning: [1, 0, 0, 0], evening: [0, 1, 0, 0], night: [0, 0, 1, 1] }[t] || [0, 0, 0, 0];
+    ['.tint-morning', '.tint-evening', '.tint-night', '.tint-night-dim'].forEach((sel, i) => {
+      const e = q(sel);
+      e.style.transition = `opacity ${ms}ms ease`;
+      e.style.opacity = String(val[i] * own);
+    });
+    const w = scene.weather;
+    const indoor = this.INDOOR.has(scene.location);
+    const cl = q('.cloudy');
+    cl.style.transition = `opacity ${ms}ms ease`;
+    cl.style.opacity = w === 'cloudy' || w === 'rain' || w === 'snow' ? (w === 'cloudy' ? '1' : '0.6') : '0';
+    const fog = q('.fog');
+    fog.style.transition = `opacity ${ms}ms ease`;
+    fog.style.opacity = w === 'fog' ? (indoor ? '0.3' : '1') : '0';
+    const particles = (w === 'rain' || w === 'snow') && !indoor ? w : 'none';
+    JV.Weather.set(particles, 1, ms);
+  },
+
+  setMood(m, ms) {
+    const v = this.el.querySelector('.vignette');
+    const scene = this.el.querySelector('.scene');
+    v.style.transition = `opacity ${ms}ms ease`;
+    v.style.opacity = String(0.2 + 0.75 * m);
+    scene.style.transition = `filter ${ms}ms ease`;
+    scene.style.filter = `saturate(${(1 - 0.6 * m).toFixed(3)}) brightness(${(1 - 0.18 * m).toFixed(3)})`;
+  },
+
+  figuresKey(s) { return s.figures ? `${s.figures.layout}|${s.figures.main || ''}|${s.figures.sub || ''}|${s.figures.pose}` : ''; },
+
+  /** 人物の配置：1人＝中央やや右、2人＝左右に向かい合わせ（主人物が右）、3人以上＝群衆＋手前に主人物 */
+  placeFigures(s) {
+    const f = s.figures;
+    const [crowd, sub, main] = ['crowd', 'sub', 'main'].map((c) => this.figs.querySelector(`.fig.${c}`));
+    [crowd, sub, main].forEach((e) => { e.className = e.className.replace(/\s*pos-\S+/g, ''); e.style.display = 'none'; });
+    if (!f || f.layout === 'none') return;
+    const show = (el, url, pos) => { el.querySelector('img').src = url; el.classList.add(pos); el.style.display = ''; };
+    const pose = f.pose;
+    if (f.layout === 'one' && f.main) show(main, JV.Assets.silhouette(f.main, pose), 'pos-solo');
+    if (f.layout === 'two') {
+      if (f.main) show(main, JV.Assets.silhouette(f.main, pose), 'pos-right');
+      if (f.sub) show(sub, JV.Assets.silhouette(f.sub, pose === 'talk' || pose === 'lie' ? (pose === 'lie' ? 'stand' : 'talk') : pose), 'pos-left');
+    }
+    if (f.layout === 'many') {
+      show(crowd, JV.Assets.crowd(s.crowdVariant || 0), 'pos-crowd');
+      if (f.main) show(main, JV.Assets.silhouette(f.main, pose), 'pos-front');
+    }
+  },
+
+  async fadeFigures(to, ms) {
+    this.figs.style.transition = `opacity ${ms}ms ease`;
+    this.figs.style.opacity = String(to);
+    await JV.util.sleep(ms);
+  },
+
+  /** 判定結果から決まった「次の場面」を、変化の種類に応じた演出で見せる */
+  async show(plan) {
+    const gen = ++this.gen;
+    const k = this.fade();
+    const s = plan.scene;
+    const alive = () => gen === this.gen;
+    const newFigKey = this.figuresKey(s);
+    const figsChanged = newFigKey !== this.figKey;
+
+    if (plan.chapter) {
+      // 章が変わる：一度黒に落としてから新しい場面（1,000ms）
+      const bo = this.el.querySelector('.blackout');
+      bo.style.transition = `opacity ${450 * k}ms ease`;
+      bo.style.opacity = '1';
+      await JV.util.sleep(500 * k);
+      if (!alive()) return;
+      this.setBackground(s, 0);
+      this.setTone(s, 0);
+      JV.Weather.instant((s.weather === 'rain' || s.weather === 'snow') && !this.INDOOR.has(s.location) ? s.weather : 'none', 1);
+      this.setMood(s.mood, 0);
+      this.placeFigures(s);
+      this.figKey = newFigKey;
+      this.figs.style.transition = 'none';
+      this.figs.style.opacity = s.figures && s.figures.layout !== 'none' ? '1' : '0';
+      bo.style.transition = `opacity ${500 * k}ms ease`;
+      bo.style.opacity = '0';
+      this.shown = s;
+      return;
+    }
+
+    if (plan.bg) {
+      // 場所が変わる：背景をクロスフェード、人物は一度消してから出す（800ms）
+      const hadFigs = this.figs.style.opacity !== '0';
+      if (hadFigs) this.fadeFigures(0, 200 * k);
+      this.setBackground(s, 800 * k);
+      this.setTone(s, 800 * k);
+      this.setMood(s.mood, 1200 * k);
+      this.shown = s;
+      await JV.util.sleep(800 * k);
+      if (!alive()) return;
+      this.placeFigures(s);
+      this.figKey = newFigKey;
+      if (s.figures && s.figures.layout !== 'none') await this.fadeFigures(1, 400 * k);
+      return;
+    }
+
+    // 時間帯・天候だけ変わる：色調・天候レイヤーだけゆっくり（1,200ms）
+    if (plan.tone) this.setTone(s, 1200 * k);
+    this.setMood(s.mood, 1200 * k);
+    this.shown = s;
+
+    // 人物だけ変わる：シルエットだけフェード（400ms）
+    if (figsChanged) {
+      const visible = this.figs.style.opacity !== '0';
+      if (visible) { await this.fadeFigures(0, 200 * k); if (!alive()) return; }
+      this.placeFigures(s);
+      this.figKey = newFigKey;
+      if (s.figures && s.figures.layout !== 'none') await this.fadeFigures(1, (visible ? 200 : 400) * k);
+    }
+  },
+};
+
+/* =====================================================================
+ * 演出の発火ロジック：判定結果 → 次の場面（絵を替えるかどうかはすべてここで決める）
+ * ===================================================================== */
+JV.Director = {
+  scene: null,        // いま表示している（表示が決まった）場面。値は英字ID
+  lastBgAt: -Infinity,
+  lastChapter: null,
+  MIN_BG_MS: 5000,    // 一度替えた背景は最短5秒は替えない
+
+  reset() { this.scene = null; this.lastBgAt = -Infinity; this.lastChapter = null; },
+
+  thresholds() {
+    const th = Number(JV.Settings.get('sensitivity')) || 0.6;
+    return { th, loc: Math.max(0.2, th - 0.1) };
+  },
+
+  /** 判定器の答え（キーが表示名でも英字IDでもよい）を {key: {id, label, p, top}} に揃える */
+  normalize(answers) {
+    const out = {};
+    for (const [key, a] of Object.entries(answers || {})) {
+      if (!(key in JV.Schema.scene)) continue;
+      if (a.type === 'noul' || 'noul' in a) { out[key] = { p: Number(a.noul) }; continue; }
+      if (a.type === 'score' || ('score' in a && !('choice' in a))) {
+        const n = JV.Schema.scene[key].levels.length;
+        let v = Number(a.score);
+        if (v > n - 1) v = n - 1;
+        out[key] = { value: Math.max(0, v) / (n - 1), confidence: a.confidence };
+        continue;
+      }
+      const opt = JV.Schema.byLabel('scene', key, a.choice) || JV.Schema.byId('scene', key, a.choice);
+      if (!opt) continue; // スキーマ外の値は使わない
+      const probs = a.probabilities || {};
+      const p = probs[a.choice] != null ? Number(probs[a.choice]) : Number(a.confidence || 0);
+      out[key] = { id: opt.id, label: opt.label, p, confidence: a.confidence != null ? Number(a.confidence) : p, probabilities: probs };
+    }
+    return out;
+  },
+
+  /**
+   * ルール（仕様 7章）
+   * 1. scene_changed ≥ しきい値、または location が前と違い confidence ≥ 0.5 → 背景を替える
+   * 2. time・weather はしきい値以上の選択肢だけ反映。それ未満は前の値を引き継ぐ
+   * 3. 人物レイヤーは背景と独立。people が「誰もいない」なら人物を消す
+   * 4. location が「不明」なら背景は前のまま
+   * 5. 一度替えた背景は最短5秒は替えない（章替わりは除く）
+   */
+  decide(answers, { chapter, era = 'modern', hideNarrator = false, now = performance.now() } = {}) {
+    const a = this.normalize(answers);
+    const { th, loc: locTh } = this.thresholds();
+    const prev = this.scene;
+    const s = prev ? { ...prev, figures: prev.figures && { ...prev.figures } } : { location: null, time: 'day', weather: 'none', mood: 0, figures: null };
+    s.era = era;
+    const why = [];
+    const isChapter = this.lastChapter !== null && chapter !== this.lastChapter;
+    let bg = false;
+
+    // 背景
+    const L = a.location, sc = a.scene_changed ? a.scene_changed.p : 0;
+    if (!L) why.push('背景：判定なし');
+    else if (L.id === 'unknown') why.push('背景維持（場所が不明）');
+    else if (L.id !== s.location) {
+      const byScene = sc >= th && L.confidence >= 0.25;
+      const byLoc = L.confidence >= locTh;
+      const first = !s.location && (L.confidence >= 0.3 || sc >= th);
+      if (!(byScene || byLoc || first)) why.push(`背景維持（確信度不足 ${L.confidence.toFixed(2)}）`);
+      else if (s.location && !isChapter && now - this.lastBgAt < this.MIN_BG_MS) why.push('背景維持（最短表示5秒）');
+      else { s.location = L.id; bg = true; why.push(`背景 → ${L.label}${byScene ? '（場面転換）' : ''}`); }
+    }
+    if (!s.location) { why.push('まだ場所が決まらない'); }
+
+    // 時間帯・天候
+    const T = a.time;
+    if (T && T.id !== 'unknown' && T.p >= th) s.time = T.id;
+    const W = a.weather;
+    if (bg && !(W && W.p >= th && W.id !== 'none')) s.weather = 'none'; // 場所が変われば天候は書かれ直すまで晴れ
+    if (W && W.p >= th && W.id !== 'none') s.weather = W.id;
+
+    // 空気（緊張感）
+    if (a.mood) s.mood = a.mood.value;
+
+    // 人物
+    const P = a.people, M = a.figure_main, S = a.figure_sub, Po = a.pose;
+    const f = s.figures ? { ...s.figures } : { layout: 'one', main: null, sub: null, pose: 'stand' };
+    if (P && P.confidence >= locTh) f.layout = P.id;
+    if (M && M.id !== 'unknown' && M.confidence >= 0.35) f.main = M.id;
+    if (!f.main) f.main = 'unknown';
+    if (f.layout === 'two' || f.layout === 'many') {
+      if (S && S.id !== 'unknown' && S.confidence >= 0.35) f.sub = S.id;
+      if (!f.sub) f.sub = 'unknown';
+    }
+    if (Po && Po.confidence >= 0.4) f.pose = Po.id;
+    if (f.pose === 'talk' && f.layout === 'one') f.pose = 'stand';
+    // 一人称の作品で「主人物を出さない」設定：相手だけを描く
+    if (hideNarrator) {
+      if (f.layout === 'one') f.main = null;
+      if (f.layout === 'two') { f.main = f.sub; f.sub = null; f.layout = 'one'; }
+      if (f.layout === 'many') f.main = null;
+    }
+    s.figures = f;
+    if (!s.location) s.figures = { ...f, layout: 'none' };
+
+    const tone = !prev || s.time !== prev.time || s.weather !== prev.weather;
+    const chapterFlag = isChapter && !!s.location;
+    this.lastChapter = chapter;
+    if (bg) this.lastBgAt = now;
+    if (chapterFlag && !bg && prev) this.lastBgAt = now;
+    this.scene = s;
+    const figures = JV.Stage.figuresKey(s) !== (prev ? JV.Stage.figuresKey(prev) : '');
+    return { scene: s, bg: bg || (chapterFlag && !!s.location), tone, figures, chapter: chapterFlag && !!prev, why };
+  },
+};
+
+/* =====================================================================
+ * 判定の呼び出し：作品判定（1回）と場面判定（停止ごと）
+ * ===================================================================== */
+JV.Judge = {
+  adapter() { return JV.Adapters.mock; },
+
+  /** 作品判定：冒頭約3,000字 */
+  async judgeWork(doc, { signal } = {}) {
+    const head = doc.paragraphs.map((p) => p.text.replace(/^[\s　]+/, '')).join('\n').slice(0, 3000);
+    const answers = await this.adapter().judge(head, JV.Schema.toQuestions('work'), { signal });
+    const pick = (key, fallback) => {
+      const a = answers[key];
+      const o = a && (JV.Schema.byLabel('work', key, a.choice) || JV.Schema.byId('work', key, a.choice));
+      return o ? o.id : fallback;
+    };
+    return { era: pick('era', 'modern'), narration: pick('narration', 'third'), raw: answers };
+  },
+
+  /** 場面判定の state：時代・前の場面・直前2段落・現段落 */
+  sceneState(doc, unit, work, prevScene) {
+    const lab = (key, id) => { const o = id && JV.Schema.byId('scene', key, id); return o ? o.label : '不明'; };
+    const era = JV.Schema.byId('work', 'era', work.era);
+    return {
+      era: era ? era.label : '近代日本',
+      previous_scene: { location: lab('location', prevScene && prevScene.location), time: lab('time', prevScene && prevScene.time) },
+      context_before: JV.Reader.contextBefore(unit),
+      current: doc.units[unit].text,
+    };
+  },
+
+  async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
+    const state = this.sceneState(doc, unit, work, prevScene);
+    const t0 = performance.now();
+    const answers = await this.adapter().judge(state, JV.Schema.toQuestions('scene'), { signal });
+    return { answers, ms: Math.round(performance.now() - t0), source: this.adapter().name };
+  },
+
+  /** デバッグ表示用：判定結果と確率を短く */
+  describe(answers) {
+    const lines = [];
+    for (const [key, a] of Object.entries(answers || {})) {
+      if (a.type === 'noul' || 'noul' in a) { lines.push(`${key}: ${Number(a.noul).toFixed(2)}`); continue; }
+      if (a.type === 'score' || !('choice' in a)) { lines.push(`${key}: ${Number(a.score).toFixed(2)}`); continue; }
+      const top = Object.entries(a.probabilities || {}).sort((x, y) => y[1] - x[1]).slice(0, 3)
+        .map(([k, p]) => `${k} ${p.toFixed(2)}`).join('  ');
+      lines.push(`${key}: ${top}`);
+    }
+    return lines.join('\n');
+  },
+};
+
+/* =====================================================================
  * 読書画面：本文の描画
  * ===================================================================== */
 JV.Reader = {
@@ -872,6 +1844,7 @@ JV.App = {
   init() {
     JV.Settings.load();
     document.body.classList.add('novel');
+    JV.Stage.init();
     this.applyEffects();
     this.renderSamples();
     this.setupDrop();
@@ -889,11 +1862,19 @@ JV.App = {
   toggleEffects() {
     JV.Settings.set('effects', !JV.Settings.get('effects'));
     this.applyEffects();
+    if (!this.doc || document.getElementById('reader').classList.contains('hidden')) return;
+    if (JV.Settings.get('effects')) {
+      // オフの間の場面は見ていないので、いまの位置から組み立て直す
+      JV.Director.reset();
+      JV.Stage.reset();
+      JV.StopDetector.fire(true);
+    } else if (this.inflight) this.inflight.abort();
   },
 
   applyEffects() {
     const on = JV.Settings.get('effects');
     document.body.classList.toggle('effects-off', !on);
+    document.body.classList.toggle('no-silhouettes', !JV.Settings.get('silhouettes'));
     const b = document.getElementById('effects-toggle');
     b.setAttribute('aria-pressed', String(on));
     b.textContent = on ? '演出 オン' : '演出 オフ';
@@ -903,9 +1884,55 @@ JV.App = {
   onStop({ unit }) {
     const doc = this.doc;
     const u = doc.units[unit];
+    this.currentUnit = unit;
     JV.Reader.markCurrent(unit);
     JV.Reader.setChapterName(u.chapter);
     JV.Debug.set('unit', `単位 #${unit}（段落 ${u.paraStart}${u.paraEnd !== u.paraStart ? `〜${u.paraEnd}` : ''}・${u.text.length}字・章 ${u.chapter}）\n${u.text.slice(0, 60).replace(/\n/g, ' / ')}${u.text.length > 60 ? '…' : ''}`);
+    if (JV.Settings.get('effects')) this.judgeAndShow(unit);
+  },
+
+  /** 作品を開いたときに1回だけ：時代と語りの人称 */
+  startWorkJudgment() {
+    const doc = this.doc;
+    this.work = { era: 'modern', narration: 'third' };
+    this.workReady = JV.Judge.judgeWork(doc)
+      .then((w) => {
+        if (this.doc !== doc) return;
+        this.work = w;
+        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}`);
+      })
+      .catch((err) => { JV.Debug.set('work', `作品判定エラー: ${err.message || err}`); });
+  },
+
+  async judgeAndShow(unit) {
+    if (this.inflight) this.inflight.abort();
+    const ctl = new AbortController();
+    this.inflight = ctl;
+    const doc = this.doc;
+    try {
+      await this.workReady;
+      const r = await JV.Judge.judgeScene(doc, unit, this.work, JV.Director.scene, { signal: ctl.signal });
+      if (ctl.signal.aborted || this.doc !== doc || this.currentUnit !== unit) return;
+      this.present(unit, r);
+    } catch (err) {
+      if (JV.util.isAbort(err)) return;
+      JV.Debug.set('judge', `判定エラー: ${err.message || err}（前の絵を維持）`);
+    } finally {
+      if (this.inflight === ctl) this.inflight = null;
+    }
+  },
+
+  /** 判定結果 → 場面を決めて演出 */
+  present(unit, r) {
+    const u = this.doc.units[unit];
+    const plan = JV.Director.decide(r.answers, {
+      chapter: u.chapter,
+      era: this.work.era,
+      hideNarrator: this.work.narration === 'first' && JV.Settings.get('hideNarrator'),
+    });
+    if (JV.Settings.get('effects')) JV.Stage.show(plan);
+    const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物'].filter(Boolean);
+    JV.Debug.set('judge', `判定 #${unit}（${r.source}${r.cached ? '・キャッシュ' : ''}・${r.ms}ms）\n${JV.Judge.describe(r.answers)}\n→ ${[...plan.why, ...changes].join(' / ') || '変化なし'}`);
   },
 
   renderSamples() {
@@ -971,6 +1998,9 @@ JV.App = {
     this.hideError();
     JV.Reader.render(doc);
     JV.Debug.clear();
+    JV.Director.reset();
+    JV.Stage.reset();
+    this.startWorkJudgment();
     this.showReader();
     JV.StopDetector.attach(document.getElementById('text'), (e) => this.onStop(e));
   },
