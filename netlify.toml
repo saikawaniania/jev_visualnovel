@@ -11,6 +11,11 @@
   # テスト・説明文だけの変更ではデプロイしない。終了コード 0 ＝ スキップ
   ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- viewer netlify netlify.toml package.json package-lock.json ':(exclude)viewer/tests' ':(exclude)viewer/README.md' ':(exclude)viewer/assets/README.md' ':(exclude)viewer/assets/PROMPTS.md'"
 
+# 秘密情報スキャン：公開期間（日付）と上限回数（数字）は秘密ではなく、同じ文字列がコードや説明にも出てくるので対象から外す。
+# APIキー（TYPESAFE_API_KEY）と合言葉（RELAY_PASSPHRASE）は引き続きスキャンされる
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "RELAY_PUBLIC_UNTIL,RELAY_DAILY_LIMIT"
+
 # 素材はめったに変わらないので、ブラウザに1日置いて再転送を減らす
 [[headers]]
   for = "/assets/bg/*"
