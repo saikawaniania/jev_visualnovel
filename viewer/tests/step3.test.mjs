@@ -3,6 +3,9 @@ import { openApp, check, done } from './harness.mjs';
 
 const app = await openApp({ viewport: { width: 1000, height: 800 } });
 const { page } = app;
+// このステップは仮素材の確認なので、assets/ に実素材があっても空の manifest を読ませる
+await page.route('**/assets/manifest.json', (route) => route.fulfill({ contentType: 'application/json', body: '{"bg":[],"sil":[],"crowd":[]}' }));
+await page.reload();
 
 console.log('質問定義');
 const q = await page.evaluate(() => {

@@ -1869,7 +1869,7 @@ JV.Assets = {
   cutout: new Map(),
   cutoutPending: new Map(),
 
-  prepareSilhouette(url) {
+  prepareSilhouette(url, { trimX = false } = {}) {
     if (!url || url.startsWith('data:') || url.startsWith('blob:') || this.cutout.has(url)) return Promise.resolve();
     if (this.cutoutPending.has(url)) return this.cutoutPending.get(url);
     const job = new Promise((resolve) => {
@@ -1886,17 +1886,35 @@ JV.Assets = {
           const at = (x, y) => (y * w + x) * 4;
           const corners = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)];
           const whiteGround = corners.every((i) => px[i + 3] > 250 && (px[i] + px[i + 1] + px[i + 2]) / 3 > 200);
-          if (!whiteGround) { this.cutout.set(url, url); resolve(); return; }
-          // 地の明るさを基準にして、それより暗いほど不透明にする（JPG のにじみや薄いグレーの地も消える）
-          const ground = corners.reduce((a, i) => a + (px[i] + px[i + 1] + px[i + 2]) / 3, 0) / 4;
-          const hi = ground - 18, lo = 60;
-          for (let i = 0; i < px.length; i += 4) {
-            const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-            const a = lum >= hi ? 0 : lum <= lo ? 255 : Math.round(255 * (hi - lum) / (hi - lo));
-            px[i] = 7; px[i + 1] = 8; px[i + 2] = 11; px[i + 3] = a;
+          if (whiteGround) {
+            // 地の明るさを基準にして、それより暗いほど不透明にする（JPG のにじみや薄いグレーの地も消える）
+            const ground = corners.reduce((a, i) => a + (px[i] + px[i + 1] + px[i + 2]) / 3, 0) / 4;
+            const hi = ground - 18, lo = 60;
+            for (let i = 0; i < px.length; i += 4) {
+              const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+              const a = lum >= hi ? 0 : lum <= lo ? 255 : Math.round(255 * (hi - lum) / (hi - lo));
+              px[i] = 7; px[i + 1] = 8; px[i + 2] = 11; px[i + 3] = a;
+            }
+            ctx.putImageData(d, 0, 0);
           }
-          ctx.putImageData(d, 0, 0);
-          c.toBlob((blob) => {
+          // 群衆は左右の余白を切り落とす（横長のキャンバスの片側に寄って描かれていても中央に置けるように）。
+          // 高さは変えないので、足元の位置と背丈の比率はそのまま
+          let out = c;
+          if (trimX) {
+            let left = w, right = -1;
+            for (let x = 0; x < w; x++) {
+              for (let y = 0; y < h; y += 2) if (px[(y * w + x) * 4 + 3] > 16) { if (x < left) left = x; right = x; break; }
+            }
+            if (right >= left && (left > w * 0.03 || right < w * 0.97)) {
+              const pad = Math.round(w * 0.02);
+              const x0 = Math.max(0, left - pad), x1 = Math.min(w, right + 1 + pad);
+              out = document.createElement('canvas');
+              out.width = x1 - x0; out.height = h;
+              out.getContext('2d').drawImage(c, x0, 0, x1 - x0, h, 0, 0, x1 - x0, h);
+            }
+          }
+          if (!whiteGround && out === c) { this.cutout.set(url, url); resolve(); return; }
+          out.toBlob((blob) => {
             this.cutout.set(url, blob ? URL.createObjectURL(blob) : url);
             resolve();
           }, 'image/png');
@@ -1919,8 +1937,8 @@ JV.Assets = {
     const urls = [];
     const own = (fig, pose) => fig && (this.manifest.sil || {})[`${fig}_${pose}`];
     urls.push(own(f.main, f.pose), own(f.sub, f.pose === 'lie' ? 'stand' : f.pose));
-    if (f.layout === 'many') urls.push(...(this.manifest.crowd || []));
     const jobs = urls.filter(Boolean).map((u) => this.prepareSilhouette(u));
+    if (f.layout === 'many') jobs.push(...(this.manifest.crowd || []).map((u) => this.prepareSilhouette(u, { trimX: true })));
     // 遅くても表示は止めない（最大 1.5 秒待つ）
     return Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 1500))]);
   },
