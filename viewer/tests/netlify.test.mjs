@@ -37,12 +37,16 @@ const upstream = createServer((req, res) => {
 });
 await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
 
+// Netlify Blobs の代わり（一般公開の設定はしない＝合言葉のない人は断る）
+const blobs = new Map();
+globalThis.__jevRelayStore = { get: async (k) => (blobs.has(k) ? blobs.get(k) : null), set: async (k, v) => { blobs.set(k, v); } };
+delete process.env.RELAY_PUBLIC_UNTIL;
 const fn = await import('../../netlify/functions/systemone.mjs');
 const call = (init = {}) => fn.default(new Request('https://site.example/v1/systemone', { method: 'POST', ...init }));
 const body = JSON.stringify({ model: 'jev-1.13', state: '汽車が着いた', questions: { era: { type: 'choice', criteria: { '近代日本': null, '現代日本': null } } }, extra: 'drop me' });
 
 console.log('関数の単体確認');
-check(JSON.stringify(fn.config.path) === '["/v1/systemone","/v1/models"]', 'パスは /v1/systemone と /v1/models');
+check(['/v1/systemone', '/v1/models'].every((p) => fn.config.path.includes(p)), 'パスに /v1/systemone と /v1/models');
 delete process.env.TYPESAFE_API_KEY; delete process.env.RELAY_PASSPHRASE;
 let r = await call({ body, headers: { 'X-Relay-Passphrase': 'x' } });
 check(r.status === 500 && (await r.json()).error.includes('not configured'), '環境変数が未設定なら 500 で案内');
@@ -98,7 +102,7 @@ check(await page.isVisible('#settings [data-key="relayPass"]') && !(await page.i
 await page.click('#conn-test');
 await page.waitForFunction(() => !document.getElementById('conn-test').disabled);
 let msg = await page.textContent('#conn-result');
-check(msg.includes('合言葉が違います'), `合言葉なしを案内 (${msg})`);
+check(msg.includes('持ち主は合言葉を入れて'), `合言葉なしを案内 (${msg})`);
 
 await page.fill('#settings [data-key="relayPass"]', 'hanabi-2026');
 await page.dispatchEvent('#settings [data-key="relayPass"]', 'change');

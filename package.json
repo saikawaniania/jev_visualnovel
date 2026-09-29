@@ -1,0 +1,9 @@
+{
+  "name": "jev-visualnovel-netlify",
+  "private": true,
+  "description": "Netlify の中継関数（netlify/functions）が使う依存関係。ビューア本体（viewer/）は依存なしの単一HTML",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^11.1.1"
+  }
+}
