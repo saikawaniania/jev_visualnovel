@@ -183,7 +183,7 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 /* 4 人物シルエット */
 #stage .figures { opacity: 0; }
 body.no-silhouettes #stage .figures { display: none; }
-#stage .fig { position: absolute; bottom: 0; height: 72vh; transform: translateX(-50%); }
+#stage .fig { position: absolute; bottom: 0; height: 72%; transform: translateX(-50%); }
 #stage .fig img { height: 100%; width: auto; display: block; }
 #stage .fig.pos-solo { left: 60%; }
 #stage .fig.pos-right { left: 70%; }
@@ -192,8 +192,8 @@ body.no-silhouettes #stage .figures { display: none; }
 #stage .fig.pos-left img { transform: scaleX(-1); }
 #stage .figures.face-right .fig img { transform: scaleX(-1); }
 #stage .figures.face-right .fig.pos-left img, #stage .figures.face-right .fig.pos-crowd img { transform: none; }
-#stage .fig.pos-front { left: 62%; height: 76vh; }
-#stage .fig.pos-crowd { left: 45%; bottom: 7vh; height: 46vh; opacity: 0.6; filter: blur(0.6px); }
+#stage .fig.pos-front { left: 62%; height: 76%; }
+#stage .fig.pos-crowd { left: 45%; bottom: 7%; height: 46%; opacity: 0.6; filter: blur(0.6px); }
 /* 5 空気（周辺減光。彩度は .scene の filter） */
 #stage .vignette { opacity: 0.15; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.9) 100%); }
 #stage .blackout { background: #000; opacity: 0; }
@@ -206,6 +206,17 @@ body.novel #text-column {
   body.novel #text-column { background: rgba(8, 10, 14, 0.5); }
 }
 body.effects-off #stage { display: none; }
+
+/* 挿絵モード：縦持ちのスマホは上4割に絵・下に本文。横向きやPCは左に絵・右に本文 */
+body.illust #stage { bottom: auto; height: 40vh; height: 40svh; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); z-index: 15; }
+body.illust #text-column { padding-top: calc(40svh + 20px); background: none; box-shadow: none; }
+body.illust #reader-top { z-index: 25; }
+@media (orientation: landscape) {
+  body.illust #stage { right: auto; width: 50vw; height: 100vh; height: 100svh; box-shadow: 6px 0 18px rgba(0, 0, 0, 0.45); }
+  body.illust #text-column { margin-left: 50vw; max-width: none; padding: 64px 24px 60vh; }
+}
+body.illust.effects-off #text-column { padding-top: 64px; margin-left: auto; }
+@media (orientation: landscape) { body.illust.effects-off #text-column { margin-left: auto; max-width: 760px; } }
 body.effects-off #text-column { background: transparent; box-shadow: none; }
 
 #effects-toggle {
@@ -389,6 +400,14 @@ body.debug #center-line {
       <p class="note" id="route-note"></p>
     </fieldset>
 
+    <fieldset id="work-settings" class="hidden">
+      <legend>この作品</legend>
+      <label>主人公
+        <select id="protagonist-select" onchange="JV.SettingsUI.changeProtagonist(this)"></select>
+        <small>冒頭を読んで自動で判定します（途中から読んでも変わりません）。違っていたらここで直せます。作品ごとに保存されます。</small>
+      </label>
+    </fieldset>
+
     <fieldset>
       <legend>演出</legend>
       <label>停止判定の待ち時間（ms）
@@ -419,7 +438,7 @@ body.debug #center-line {
       <label>表示モード
         <select data-key="displayMode" onchange="JV.SettingsUI.change(this)">
           <option value="novel">ノベル（絵を全画面、本文を半透明の帯に）</option>
-          <option value="illust" disabled>挿絵（拡張予定）</option>
+          <option value="illust">挿絵（スマホ縦：上に絵・下に本文／横向き・PC：左に絵・右に本文）</option>
         </select>
       </label>
       <label>書字方向
@@ -594,7 +613,9 @@ JV.Aozora = {
  * ===================================================================== */
 JV.Parser = {
   LONG_PARAGRAPH: 400,   // これを超える段落は句点で分けて判定する
-  MAX_UNIT_CHARS: 800,   // 会話を束ねた判定単位の上限
+  UNIT_MIN: 160,         // 判定単位の目安の下限（短い段落は束ねる）
+  UNIT_MAX: 400,         // 判定単位の目安の上限
+  CONTEXT_CHARS: 300,    // 場面判定に添える「直前の文脈」の字数
 
   /** 場面区切りの記号だけの行か */
   isSeparator(line) {
@@ -899,10 +920,12 @@ JV.Parser = {
   splitLong(text) {
     if (text.length <= this.LONG_PARAGRAPH) return [text];
     const sentences = text.match(/[^。！？!?]*[。！？!?]+[」』）)]*|[^。！？!?]+$/g) || [text];
+    // 均等な長さに分ける（400字＋少し、のように極端に短い切れ端を作らない）
+    const target = text.length / Math.ceil(text.length / this.LONG_PARAGRAPH);
     const chunks = [];
     let cur = '';
     for (const s of sentences) {
-      if (cur && cur.length + s.length > this.LONG_PARAGRAPH) { chunks.push(cur); cur = ''; }
+      if (cur && (cur.length >= target || cur.length + s.length > this.LONG_PARAGRAPH)) { chunks.push(cur); cur = ''; }
       cur += s;
     }
     if (cur) chunks.push(cur);
@@ -911,7 +934,10 @@ JV.Parser = {
 
   /**
    * 段落 → 表示用の断片（segment）→ 判定単位（unit）
-   * 会話文だけの段落は直前の地の文と束ねる（段の先頭なら直後の地の文と）。
+   * Jev に渡す長さをそろえるため、判定単位はおおむね UNIT_MIN〜UNIT_MAX 字にまとめる。
+   * - 短い段落は後ろとつなげて UNIT_MIN 字に届くまで束ねる
+   * - 会話文は直前の地の文と同じ単位に入れる（会話だけの単位をなるべく作らない）
+   * - 章と場面区切りはまたがない
    */
   buildUnits(doc) {
     const segments = [];
@@ -919,63 +945,60 @@ JV.Parser = {
       const parts = this.splitLong(p.text);
       p.segs = [];
       for (const part of parts) {
-        const seg = { i: segments.length, para: p.i, text: part, dialogue: parts.length === 1 && this.isDialogue(part) };
+        const seg = { i: segments.length, para: p.i, text: part, len: part.replace(/^[\s\u3000]+/, '').length, dialogue: parts.length === 1 && this.isDialogue(part) };
         p.segs.push(seg.i);
         segments.push(seg);
       }
     }
     doc.segments = segments;
 
-    const units = [];
-    let cur = null;
-    let pendingDialogue = [];
-    const boundary = (seg) => {
-      const p = doc.paragraphs[seg.para];
-      return !cur || cur.chapter !== p.chapter || (p.breakBefore && p.segs[0] === seg.i);
-    };
-    const newUnit = (seg) => {
-      cur = { i: units.length, segs: [], chapter: doc.paragraphs[seg.para].chapter, len: 0 };
-      units.push(cur);
-    };
-    const add = (seg) => { cur.segs.push(seg.i); cur.len += seg.text.length; seg.unit = cur.i; };
-
+    // 章・場面区切りで区切った「段」ごとにまとめる
+    const groups = [];
     for (const seg of segments) {
-      const isBoundary = boundary(seg);
-      if (isBoundary && pendingDialogue.length) {
-        // 段の終わりまで会話だけだった → 会話だけで1単位
-        newUnit(pendingDialogue[0]);
-        pendingDialogue.forEach(add);
-        pendingDialogue = [];
-      }
-      if (seg.dialogue) {
-        if (!isBoundary && cur && cur.len + seg.text.length <= this.MAX_UNIT_CHARS) { add(seg); continue; }
-        if (!isBoundary && cur) { newUnit(seg); add(seg); continue; }
-        // 段の先頭の会話は、直後の地の文とまとめるため保留
-        pendingDialogue.push(seg);
-        if (pendingDialogue.reduce((n, s) => n + s.text.length, 0) > this.MAX_UNIT_CHARS) {
-          newUnit(pendingDialogue[0]);
-          pendingDialogue.forEach(add);
-          pendingDialogue = [];
-        }
-        continue;
-      }
-      if (pendingDialogue.length) {
-        newUnit(pendingDialogue[0]);
-        pendingDialogue.forEach(add);
-        pendingDialogue = [];
-        add(seg);
-        continue;
-      }
-      newUnit(seg);
-      add(seg);
+      const p = doc.paragraphs[seg.para];
+      const last = groups[groups.length - 1];
+      const startsNew = !last || last.chapter !== p.chapter || (p.breakBefore && p.segs[0] === seg.i);
+      if (startsNew) groups.push({ chapter: p.chapter, segs: [seg] });
+      else last.segs.push(seg);
     }
-    if (pendingDialogue.length) { newUnit(pendingDialogue[0]); pendingDialogue.forEach(add); }
+
+    const MIN = this.UNIT_MIN, MAX = this.UNIT_MAX;
+    const units = [];
+    for (const g of groups) {
+      const local = [];
+      let cur = null;
+      for (const seg of g.segs) {
+        const fits = cur && cur.len + seg.len <= MAX;
+        const join = cur && (
+          (cur.len < MIN && fits) ||                         // まだ短い
+          (seg.dialogue && fits) ||                          // 会話は直前と一緒に
+          (cur.dialogueOnly && cur.len + seg.len <= MAX * 1.5) // 会話だけの単位を残さない
+        );
+        if (join) {
+          cur.segs.push(seg); cur.len += seg.len; cur.dialogueOnly = cur.dialogueOnly && seg.dialogue;
+        } else {
+          cur = { segs: [seg], len: seg.len, dialogueOnly: seg.dialogue, chapter: g.chapter };
+          local.push(cur);
+        }
+      }
+      // 段の最後が短すぎる、または会話だけなら、一つ前にまとめる
+      const tail = local[local.length - 1];
+      const prev = local[local.length - 2];
+      if (tail && prev && (tail.len < MIN / 2 || tail.dialogueOnly) && prev.len + tail.len <= MAX + MIN / 2) {
+        prev.segs.push(...tail.segs); prev.len += tail.len;
+        local.pop();
+      }
+      for (const u of local) {
+        const unit = { i: units.length, segs: u.segs.map((x) => x.i), chapter: u.chapter };
+        u.segs.forEach((x) => { x.unit = unit.i; });
+        units.push(unit);
+      }
+    }
 
     for (const u of units) {
       u.text = u.segs.map((s) => segments[s].text.replace(/^[\s　]+/, '')).join('\n');
       u.paraStart = segments[u.segs[0]].para;
       u.paraEnd = segments[u.segs[u.segs.length - 1]].para;
-      delete u.len;
     }
     return units;
   },
@@ -1042,10 +1065,32 @@ JV.SettingsUI = {
     document.getElementById('settings').classList.add('hidden');
     document.getElementById('conn-result').textContent = '';
     document.getElementById('data-result').textContent = '';
-    JV.App.onSettingsClosed(this.dirtyJudge);
+    JV.App.onSettingsClosed(this.dirtyJudge, this.dirtyScene);
+    this.dirtyScene = false;
+  },
+
+  /** 読書中なら「この作品」の欄（主人公）を出す */
+  fillWork() {
+    const app = JV.App;
+    const reading = app.doc && !document.getElementById('reader').classList.contains('hidden');
+    document.getElementById('work-settings').classList.toggle('hidden', !reading);
+    if (!reading) return;
+    const sel = document.getElementById('protagonist-select');
+    const judged = JV.Schema.byId('work', 'protagonist', app.work && app.work.protagonist);
+    sel.textContent = '';
+    const add = (value, label) => { const o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o); };
+    add('', `自動（判定：${judged ? judged.label : '判定中'}）`);
+    for (const o of JV.Schema.options('work', 'protagonist')) if (o.id !== 'unknown') add(o.id, o.label);
+    sel.value = app.protagonistOverride || '';
+  },
+
+  async changeProtagonist(el) {
+    await JV.App.setProtagonist(el.value);
+    this.dirtyScene = true;
   },
 
   fill() {
+    this.fillWork();
     for (const el of document.querySelectorAll('#settings [data-key]')) {
       const v = JV.Settings.get(el.dataset.key);
       if (el.type === 'checkbox') el.checked = !!v;
@@ -1218,19 +1263,48 @@ JV.StopDetector = {
     this.detach();
     this.onStop = onStop;
     this.segEls = Array.from(root.querySelectorAll('.seg'));
-    // 高さ0の「中央線」に交差している断片を常に把握しておく
+    this.ratio = null;
+    this.refresh();
+    this.onScrollBound = () => this.arm();
+    this.onResizeBound = () => { this.refresh(); this.arm(); };
+    window.addEventListener('scroll', this.onScrollBound, { passive: true });
+    window.addEventListener('scrollend', this.onScrollBound);
+    window.addEventListener('resize', this.onResizeBound);
+    this.arm();
+  },
+
+  /**
+   * 本文が見えている範囲の縦中央（px）。ノベルモードは画面の中央、
+   * 挿絵モードの縦持ちは「絵の下端〜画面の下端」の中央
+   */
+  centerY() {
+    const h = window.innerHeight;
+    const b = document.body;
+    if (b.classList.contains('illust') && !b.classList.contains('effects-off') && h > window.innerWidth) {
+      const stageBottom = document.getElementById('stage').getBoundingClientRect().bottom;
+      return (stageBottom + h) / 2;
+    }
+    return h / 2;
+  },
+
+  /** 高さ0の「中央線」に交差している断片を常に把握しておく（中央線の位置が変わったら作り直す） */
+  refresh() {
+    if (!this.segEls.length) return;
+    const ratio = Math.min(0.95, Math.max(0.05, this.centerY() / window.innerHeight));
+    const line = document.getElementById('center-line');
+    if (line) line.style.top = `${(ratio * 100).toFixed(2)}%`;
+    if (this.io && Math.abs(ratio - this.ratio) < 0.005) return;
+    if (this.io) this.io.disconnect();
+    this.atCenter.clear();
+    this.ratio = ratio;
+    const top = (ratio * 100).toFixed(2), bottom = ((1 - ratio) * 100).toFixed(2);
     this.io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (e.isIntersecting) this.atCenter.add(e.target);
         else this.atCenter.delete(e.target);
       }
-    }, { rootMargin: '-50% 0px -50% 0px', threshold: 0 });
+    }, { rootMargin: `-${top}% 0px -${bottom}% 0px`, threshold: 0 });
     this.segEls.forEach((el) => this.io.observe(el));
-    this.onScrollBound = () => this.arm();
-    window.addEventListener('scroll', this.onScrollBound, { passive: true });
-    window.addEventListener('scrollend', this.onScrollBound);
-    window.addEventListener('resize', this.onScrollBound);
-    this.arm();
   },
 
   detach() {
@@ -1241,8 +1315,9 @@ JV.StopDetector = {
     if (this.onScrollBound) {
       window.removeEventListener('scroll', this.onScrollBound);
       window.removeEventListener('scrollend', this.onScrollBound);
-      window.removeEventListener('resize', this.onScrollBound);
+      window.removeEventListener('resize', this.onResizeBound);
     }
+    this.segEls = [];
     this.onScrollBound = null;
     this.lastUnit = null;
   },
@@ -1263,7 +1338,7 @@ JV.StopDetector = {
   },
 
   centerSegment() {
-    const cy = window.innerHeight / 2;
+    const cy = this.centerY();
     let best = null, bestD = Infinity;
     for (const el of this.atCenter) {
       const r = el.getBoundingClientRect();
@@ -1334,6 +1409,11 @@ JV.Schema = {
         { id: 'first', label: '一人称', desc: '地の文で語り手が「私」「僕」「俺」などとして自分の行動を語る' },
         { id: 'third', label: '三人称', desc: '地の文が登場人物を名前や「彼」「彼女」で外から語る' },
       ],
+    },
+    protagonist: {
+      type: 'choice',
+      instructions: '物語の主人公（一人称なら語り手の「私」「僕」）の見た目。性別や年齢の手がかり（呼び名・服装・言葉づかい・周りからの呼ばれ方）から選ぶ。手がかりがなければ「不明」',
+      optionsFrom: 'scene.figure_main',
     },
   },
 
@@ -1437,7 +1517,9 @@ JV.Schema = {
 
   options(group, key) {
     const q = this[group][key];
-    return q.options || this[group][q.optionsFrom].options;
+    if (q.options) return q.options;
+    const [g, k] = q.optionsFrom.includes('.') ? q.optionsFrom.split('.') : [group, q.optionsFrom];
+    return this[g][k].options;
   },
   byLabel(group, key, label) { return this.options(group, key).find((o) => o.label === label); },
   byId(group, key, id) { return this.options(group, key).find((o) => o.id === id); },
@@ -1583,12 +1665,20 @@ JV.Adapters.mock = {
         const toLabel = (k) => (JV.Schema.byLabel(group, key, k) ? k : (JV.Schema.byId(group, key, k) || { label: k }).label);
         const labels = keys.map(toLabel);
         let table = K[key];
-        if (key === 'figure_main' || key === 'figure_sub') table = K.figure;
+        if (key === 'figure_main' || key === 'figure_sub' || key === 'protagonist') table = K.figure;
         const narrOnly = key === 'location' || key === 'time' || key === 'weather';
         const strip = (t) => t.replace(/「[^」]*」|『[^』]*』/g, '');
         let scores = table ? this.scoreFor(table, narrOnly ? strip(cur) : cur, key === 'era' || key === 'narration' ? '' : (narrOnly ? strip(ctx) : ctx)) : {};
         let fallback = labels.find((l) => l === '不明' || l === '記述なし');
 
+        if (key === 'protagonist') {
+          const narr = cur.replace(/「[^」]*」|『[^』]*』/g, '');
+          scores = this.scoreFor(K.figure, narr, '');
+          // 一人称の自称は性別の手がかりになる
+          if (/僕|俺/.test(narr)) scores['成人男性'] = (scores['成人男性'] || 0) + 2;
+          if (/あたし/.test(narr)) scores['成人女性'] = (scores['成人女性'] || 0) + 2;
+          fallback = '不明';
+        }
         if (key === 'narration') {
           const narr = cur.replace(/「[^」]*」/g, '');
           const first = this.count(narr, ['私', '僕', '俺', 'わたし', 'あたし']);
@@ -2410,7 +2500,7 @@ JV.Director = {
    * 4. location が「不明」なら背景は前のまま
    * 5. 一度替えた背景は最短5秒は替えない（章替わりは除く）
    */
-  decide(answers, { chapter, era = 'modern', hideNarrator = false, now = performance.now() } = {}) {
+  decide(answers, { chapter, era = 'modern', hideNarrator = false, protagonist = 'unknown', narration = 'third', now = performance.now() } = {}) {
     const a = this.normalize(answers);
     const { th, loc: locTh } = this.thresholds();
     const prev = this.scene;
@@ -2448,18 +2538,28 @@ JV.Director = {
     const P = a.people, M = a.figure_main, S = a.figure_sub, Po = a.pose;
     const f = s.figures ? { ...s.figures } : { layout: 'one', main: null, sub: null, pose: 'stand' };
     if (P && P.confidence >= locTh) f.layout = P.id;
-    if (M && M.id !== 'unknown' && M.confidence >= 0.35) f.main = M.id;
+    // 主人公（作品判定で冒頭から決めた見た目）。途中から読んでも変わらない
+    const pro = protagonist && protagonist !== 'unknown' ? protagonist : null;
+    const first = narration === 'first';
+    const mainSure = M && M.id !== 'unknown' && M.confidence >= 0.35;
+    if (mainSure && !(first && f.layout === 'one' && M.confidence < 0.6 && pro)) f.main = M.id;
+    else if (pro && (first || !f.main || f.main === 'unknown')) f.main = pro;
     if (!f.main) f.main = 'unknown';
     if (f.layout === 'two' || f.layout === 'many') {
       if (S && S.id !== 'unknown' && S.confidence >= 0.35) f.sub = S.id;
+      // 一人称で2人なら、片方は語り手のはず
+      if (first && pro && f.layout === 'two' && f.main !== pro) f.sub = pro;
       if (!f.sub) f.sub = 'unknown';
     }
     if (Po && Po.confidence >= 0.4) f.pose = Po.id;
     if (f.pose === 'talk' && f.layout === 'one') f.pose = 'stand';
-    // 一人称の作品で「主人物を出さない」設定：相手だけを描く
+    // 一人称の作品で「主人物を出さない」設定：語り手を描かず、相手だけを描く
     if (hideNarrator) {
       if (f.layout === 'one') f.main = null;
-      if (f.layout === 'two') { f.main = f.sub; f.sub = null; f.layout = 'one'; }
+      if (f.layout === 'two') {
+        const other = pro && f.main === pro ? f.sub : (pro && f.sub === pro ? f.main : f.sub);
+        f.main = other; f.sub = null; f.layout = 'one';
+      }
       if (f.layout === 'many') f.main = null;
     }
     s.figures = f;
@@ -2567,7 +2667,7 @@ JV.Store = {
  * キャッシュ：メモリ → IndexedDB → 判定器。キーは「作品ハッシュ｜判定器｜判定単位」
  * ===================================================================== */
 JV.Judge = {
-  SCHEMA_VERSION: 1,     // 質問の文言を変えたら上げる（古いキャッシュを使わないため）
+  SCHEMA_VERSION: 2,     // 質問・state・判定単位の作り方を変えたら上げる（古いキャッシュを使わないため）
   PREFETCH: 3,           // 停止した段落の後ろを何単位先読みするか
   memory: new Map(),
   inflight: new Map(),   // key → { promise, ctl, unit }
@@ -2637,7 +2737,7 @@ JV.Judge = {
     const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
     if (saved && saved.work) return { ...saved.work, cached: true };
     const w = await this.judgeWork(doc);
-    if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit: -1, work: { era: w.era, narration: w.narration, raw: w.raw }, at: Date.now() });
+    if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit: -1, work: { era: w.era, narration: w.narration, protagonist: w.protagonist, raw: w.raw }, at: Date.now() });
     return w;
   },
 
@@ -2650,15 +2750,19 @@ JV.Judge = {
       const o = a && (JV.Schema.byLabel('work', key, a.choice) || JV.Schema.byId('work', key, a.choice));
       return o ? o.id : fallback;
     };
-    return { era: pick('era', 'modern'), narration: pick('narration', 'third'), raw: answers };
+    return { era: pick('era', 'modern'), narration: pick('narration', 'third'), protagonist: pick('protagonist', 'unknown'), raw: answers };
   },
 
   /** 場面判定の state：時代・前の場面・直前2段落・現段落 */
   sceneState(doc, unit, work, prevScene) {
     const lab = (key, id) => { const o = id && JV.Schema.byId('scene', key, id); return o ? o.label : '不明'; };
     const era = JV.Schema.byId('work', 'era', work.era);
+    const pro = JV.Schema.byId('work', 'protagonist', work.protagonist);
+    const narr = JV.Schema.byId('work', 'narration', work.narration);
     return {
       era: era ? era.label : '近代日本',
+      // 作品判定（冒頭から）で分かった主人公。一人称の「私」が誰かを場面判定に伝える
+      protagonist: `${pro ? pro.label : '不明'}（${narr && narr.id === 'first' ? '一人称の語り手' : '三人称の中心人物'}）`,
       previous_scene: { location: lab('location', prevScene && prevScene.location), time: lab('time', prevScene && prevScene.time) },
       context_before: JV.Reader.contextBefore(unit),
       current: doc.units[unit].text,
@@ -2751,11 +2855,30 @@ JV.Reader = {
     document.querySelectorAll(`#text .seg[data-u="${u}"]`).forEach((el) => el.classList.add('current'));
   },
 
-  /** 判定単位 u の直前2段落（場面判定の context_before 用） */
-  contextBefore(u, n = 2) {
-    const unit = this.doc.units[u];
-    const start = Math.max(0, unit.paraStart - n);
-    return this.doc.paragraphs.slice(start, unit.paraStart).map((p) => p.text.replace(/^[\s　]+/, '')).join('\n');
+  /**
+   * 判定単位 u の直前の文脈（場面判定の context_before 用）。長さをそろえるため字数で区切る
+   * （約 CONTEXT_CHARS 字。章はまたがない。文の途中から始まらないよう、なるべく文頭で切る）
+   */
+  contextBefore(u, chars = JV.Parser.CONTEXT_CHARS) {
+    const doc = this.doc;
+    const unit = doc.units[u];
+    const first = unit.segs[0];
+    const parts = [];
+    let len = 0;
+    for (let i = first - 1; i >= 0 && len < chars; i--) {
+      const seg = doc.segments[i];
+      if (doc.paragraphs[seg.para].chapter !== unit.chapter) break;
+      const t = seg.text.replace(/^[\s　]+/, '');
+      parts.unshift(t);
+      len += t.length + 1;
+    }
+    let text = parts.join('\n');
+    if (text.length > chars) {
+      text = text.slice(text.length - chars);
+      const cut = text.search(/[。！？」』\n]/);
+      if (cut >= 0 && cut < chars * 0.3) text = text.slice(cut + 1);
+    }
+    return text.replace(/^\n+/, '');
   },
 };
 
@@ -2771,7 +2894,6 @@ JV.App = {
 
   init() {
     JV.Settings.load();
-    document.body.classList.add('novel');
     JV.Stage.init();
     this.applySettings();
     JV.Assets.loadManifest().then((ok) => {
@@ -2810,20 +2932,30 @@ JV.App = {
   /** 設定を画面に反映（文字サイズ・シルエット・デバッグなど） */
   applySettings() {
     document.documentElement.style.setProperty('--font-size', `${Number(JV.Settings.get('fontSize')) || 18}px`);
+    const illust = JV.Settings.get('displayMode') === 'illust';
+    document.body.classList.toggle('illust', illust);
+    document.body.classList.toggle('novel', !illust);
+    JV.StopDetector.refresh();
     this.applyEffects();
     JV.Debug.render();
     const a = JV.Judge.adapter();
     const route = JV.Settings.get('route');
-    const status = a === JV.Adapters.mock
-      ? (route === 'mock' ? '判定：モック' : `判定：モック（${JV.Adapters.remote.ROUTES[route].label} は未設定）`)
-      : `判定：${JV.Adapters.remote.ROUTES[route].label}・${JV.Settings.get('model')}`;
+    const r = JV.Adapters.remote.ROUTES[route];
+    const status = a !== JV.Adapters.remote || !r
+      ? (route === 'mock' || !r ? '判定：モック' : `判定：モック（${r.label} は未設定）`)
+      : `判定：${r.label}・${JV.Settings.get('model')}`;
     const el = document.getElementById('route-status');
     if (el) el.textContent = status;
   },
 
   /** 判定器に関わる設定が変わったら、作品判定からやり直す */
-  onSettingsClosed(judgeChanged) {
+  onSettingsClosed(judgeChanged, sceneChanged) {
     if (!this.doc || document.getElementById('reader').classList.contains('hidden')) return;
+    if (sceneChanged && !judgeChanged) {
+      // 主人公を直した：判定はそのまま、絵だけ組み立て直す
+      JV.Director.reset();
+      JV.Stage.reset();
+    }
     if (judgeChanged) {
       JV.Judge.abortExcept(new Set());
       JV.Judge.memory.clear();
@@ -2836,6 +2968,7 @@ JV.App = {
     const on = JV.Settings.get('effects');
     document.body.classList.toggle('effects-off', !on);
     document.body.classList.toggle('no-silhouettes', !JV.Settings.get('silhouettes'));
+    JV.StopDetector.refresh(); // 挿絵モードでは演出の有無で本文の中央が変わる
     const b = document.getElementById('effects-toggle');
     b.setAttribute('aria-pressed', String(on));
     b.textContent = on ? '演出 オン' : '演出 オフ';
@@ -2853,16 +2986,31 @@ JV.App = {
     if (JV.Settings.get('effects')) this.judgeAndShow(unit);
   },
 
-  /** 作品を開いたときに1回だけ：時代と語りの人称 */
+  /** 主人公の見た目：作品ごとの手動指定 → 作品判定 → 不明 */
+  protagonist() {
+    return this.protagonistOverride || (this.work && this.work.protagonist) || 'unknown';
+  },
+
+  /** 設定画面から主人公を手動で指定（'' で自動に戻す）。作品ごとに保存 */
+  async setProtagonist(id) {
+    this.protagonistOverride = id || '';
+    if (this.hash) {
+      const rec = await JV.Store.get('works', this.hash);
+      if (rec) { rec.protagonist = this.protagonistOverride; JV.Store.put('works', rec); }
+    }
+  },
+
+  /** 作品を開いたときに1回だけ：時代・語りの人称・主人公 */
   startWorkJudgment() {
     const doc = this.doc;
-    this.work = { era: 'modern', narration: 'third' };
+    this.work = { era: 'modern', narration: 'third', protagonist: 'unknown' };
     this.workReady = this.hashReady
       .then(() => JV.Judge.work(doc))
       .then((w) => {
         if (this.doc !== doc) return;
         this.work = w;
-        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}${w.cached ? '（キャッシュ）' : ''}`);
+        const pro = JV.Schema.byId('work', 'protagonist', this.protagonist());
+        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}`);
       })
       .catch((err) => { JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱う）`); });
   },
@@ -2902,6 +3050,8 @@ JV.App = {
       chapter: u.chapter,
       era: this.work.era,
       hideNarrator: this.work.narration === 'first' && JV.Settings.get('hideNarrator'),
+      protagonist: this.protagonist(),
+      narration: this.work.narration,
     });
     if (JV.Settings.get('effects')) JV.Stage.show(plan);
     const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物'].filter(Boolean);
@@ -3052,9 +3202,11 @@ JV.App = {
       this.hash = hash;
       JV.Judge.setWork(hash);
       const old = await JV.Store.get('works', hash);
+      this.protagonistOverride = (old && old.protagonist) || '';
       await JV.Store.put('works', {
         hash, name, text, title: doc.title, author: doc.author, format: doc.format,
         unitCount: doc.units.length, lastUnit: old ? old.lastUnit : 0, updatedAt: Date.now(),
+        protagonist: this.protagonistOverride,
       });
     });
     this.startWorkJudgment();

@@ -116,7 +116,7 @@ check(keys.length >= 2 && keys.some((k) => k.startsWith('typesafe:jev-latest')),
 console.log('エラー時は前の絵を維持');
 mode = '401';
 await page.evaluate(() => { JV.Judge.memory.clear(); return JV.Store.clearJudgments(); });
-await page.evaluate(() => { const el = document.querySelector('.seg[data-u="12"]'); window.scrollTo(0, el.getBoundingClientRect().top + scrollY - innerHeight / 2 + 6); });
+await page.evaluate(() => { const el = [...document.querySelectorAll('.seg')].find((e) => e.textContent.includes('夜更けの停車場')); window.scrollTo(0, el.getBoundingClientRect().top + scrollY - innerHeight / 2 + 6); });
 await page.waitForTimeout(1200);
 const err = await page.evaluate(() => JV.Debug.lines.judge || '');
 check(/判定エラー: HTTP 401/.test(err) && err.includes('前の絵を維持'), `401 はエラー表示のみ (${err})`);

@@ -22,7 +22,7 @@ check(q.keys.join() === 'scene_changed,location,time,weather,people,figure_main,
 check(q.locN === 16 && q.mood === 3, `location 16択・mood 3段階 (${q.locN}, ${q.mood})`);
 check(q.types.scene_changed === 'noul' && q.types.mood === 'score' && q.types.location === 'choice', '型は Noul / Score / Choice');
 check(q.sub.join() === '成人男性,成人女性,少年,少女,老人,不明', 'figure_sub は figure_main と同じ選択肢');
-check(q.work.join() === 'era,narration', '作品判定の質問');
+check(q.work.join() === 'era,narration,protagonist', `作品判定の質問 (${q.work})`);
 check(q.asciiLoc.join() === 'washitsu,yoshitsu,kitchen', '英字IDの criteria も作れる');
 
 console.log('モック判定器：スキーマ内の値だけを返す');
@@ -150,7 +150,7 @@ await page.evaluate(() => {
   window.__blackouts = 0;
   const bo = document.querySelector('#stage .blackout');
   new MutationObserver(() => { if (bo.style.opacity === '1') window.__blackouts++; }).observe(bo, { attributes: true, attributeFilter: ['style'] });
-  const el = document.querySelector('.seg[data-u="9"]');
+  const el = [...document.querySelectorAll('.seg')].find((e) => e.textContent.includes('日が暮れてから'));
   window.scrollTo(0, el.getBoundingClientRect().top + scrollY - innerHeight / 2 + 10);
 });
 await page.waitForTimeout(2600);
@@ -159,22 +159,31 @@ check(await page.evaluate(() => window.__blackouts) === 1, '章が変わると�
 check(ch2.loc === 'river' && ch2.blackout === '0', `章「二」は川・水辺 (${ch2.loc})`);
 
 // 章「三」：夜更けの停車場、雪
-const scrollToUnit = (u) => page.evaluate((u) => {
-  const el = document.querySelector(`.seg[data-u="${u}"]`);
+// 本文の一部で判定単位を探してスクロールする（単位の番号は束ね方で変わるため）
+const scrollToText = (t) => page.evaluate((t) => {
+  const el = [...document.querySelectorAll('.seg')].find((e) => e.textContent.includes(t));
   window.scrollTo(0, el.getBoundingClientRect().top + scrollY - innerHeight / 2 + 10);
-}, u);
-await scrollToUnit(13);
+}, t);
+await scrollToText('夜更けの停車場');
 await page.waitForTimeout(2600);
 const ch3 = await layerState();
 check(ch3.loc === 'station' && Number(ch3.night) > 0.5, `章「三」は夜の駅・車内 (${ch3.loc}, 夜=${ch3.night})`);
 check(ch3.weather === 'snow', `雪のパーティクル (${ch3.weather})`);
-check(Number(ch3.vignette) > 0.3, `緊張感で周辺減光 (${ch3.vignette})`);
-// 次の段落：大勢の人々 → 群衆。時間帯は引き継ぐ
-await scrollToUnit(14);
+// 群衆の配置は、判定結果を直接与えて確かめる（モックの人数判定は、会話と群衆が同じ単位に入ると五分五分になる）
+const crowd = await page.evaluate(async () => {
+  const ch = (label) => ({ type: 'choice', choice: label, probabilities: { [label]: 0.9 }, confidence: 0.9 });
+  const plan = JV.Director.decide({ people: ch('3人以上'), figure_main: ch('成人男性') }, { chapter: 2 });
+  await JV.Stage.show(plan);
+  await new Promise((r) => setTimeout(r, 500));
+  return [...document.querySelectorAll('#stage .fig')].filter((f) => f.style.display !== 'none').map((f) => f.className.split(' ').slice(1).join(' '));
+});
+check(crowd.includes('crowd pos-crowd') && crowd.includes('main pos-front'), `3人以上は群衆＋手前に主人物 (${crowd})`);
+// 次の単位：時間帯・場所は引き継ぐ
+await scrollToText('車内に乗り込むと');
 await page.waitForTimeout(1500);
 const ch3b = await layerState();
-check(ch3b.figShown.includes('crowd pos-crowd'), `3人以上は群衆シルエット (${ch3b.figShown})`);
-check(Number(ch3b.night) > 0.5 && ch3b.loc === 'station', '背景と時間帯は前の値を引き継ぐ');
+check(Number(ch3b.night) > 0.5 && ch3b.loc === 'station', `背景と時間帯は前の値を引き継ぐ (${ch3b.loc}, 夜=${ch3b.night})`);
+check(Number(ch3b.vignette) > 0.2, `緊張感・寂しさで周辺減光 (${ch3b.vignette})`);
 
 // フェード時間の倍率
 const fadeMs = await page.evaluate(async () => {

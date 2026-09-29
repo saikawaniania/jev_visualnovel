@@ -25,11 +25,22 @@ const scrollToUnit = (u) => page.evaluate((u) => {
   window.scrollTo(0, el.getBoundingClientRect().top + scrollY - innerHeight / 2 + 6);
 }, u);
 const log = () => page.evaluate(() => window.__log);
+// 先読み・中断を確かめるには単位が多い方がよいので、1段落 ≒ 1判定単位（約200字）の40段落の文書を使う
+const openLong = () => page.evaluate(() => {
+  const places = ['座敷', '大通り', '川の土手', '停車場', '森の山道', '砂浜', '台所', '教室'];
+  const paras = [];
+  for (let i = 0; i < 40; i++) {
+    const p = places[i % places.length];
+    paras.push(`　第${i + 1}段。私は${p}にいた。` + 'あたりは静かで、遠くで鳥の声がしていた。私はしばらくそこに立ち止まり、昔のことを思い出していた。'.repeat(4));
+  }
+  JV.App.openText(`長い試験文\n試作\n\n${paras.join('\n')}\n`, 'long.txt');
+});
 const reset = () => page.evaluate(() => { window.__log.calls = []; window.__log.aborted = []; });
 
 await instrument();
-await page.click('#sample-list li:first-child button');
+await openLong();
 await page.waitForTimeout(1500);
+check(await page.evaluate(() => JV.App.doc.units.length) === 40, '試験用の文書は40単位');
 
 console.log('先読み');
 let L = await log();
@@ -103,8 +114,9 @@ console.log('IndexedDB（再読込後）');
 const hash = await page.evaluate(() => JV.App.hash);
 await page.reload();
 await instrument();
-await page.click('#sample-list li:first-child button');
+await openLong();
 await page.waitForTimeout(1500);
+check(await page.evaluate(() => JV.App.doc.units.length) === 40, '試験用の文書は40単位');
 L = await log();
 const stats = await page.evaluate(() => JV.Judge.stats);
 check(!L.calls.includes('work'), `作品判定もキャッシュから (${L.calls})`);
@@ -118,7 +130,7 @@ await page.click('#reader-top button');
 await page.waitForSelector('#home:not(.hidden)');
 await page.waitForTimeout(300);
 const recent = await page.evaluate(() => [...document.querySelectorAll('#recent-list .name')].map((e) => e.textContent));
-check(recent.length === 1 && recent[0].includes('雨の停車場'), `起動画面に表示 (${recent})`);
+check(recent.length === 1 && recent[0].includes('長い試験文'), `起動画面に表示 (${recent})`);
 await page.click('#recent-list .recent-item button');
 await page.waitForTimeout(900);
 const resumed = await page.evaluate(() => JV.App.currentUnit);
