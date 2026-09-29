@@ -1,0 +1,3102 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev サウンドノベル・ビューア</title>
+<style>
+:root {
+  --bg: #0d0f14;
+  --fg: #e8e6e1;
+  --muted: #9a978f;
+  --accent: #c9a86a;
+  --panel: rgba(16, 18, 24, 0.92);
+  --line: rgba(255, 255, 255, 0.12);
+  --font-size: 18px;
+  --serif: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", "Noto Serif CJK JP", serif;
+  --sans: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+button, input, select { font: inherit; color: inherit; }
+button {
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+button:hover { background: rgba(255, 255, 255, 0.12); }
+.hidden { display: none !important; }
+
+/* ---------- 起動画面 ---------- */
+#home {
+  min-height: 100vh;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 16px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+#home h1 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+#home .lead { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 8px 0 0; }
+#drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 180px;
+  border: 2px dashed rgba(201, 168, 106, 0.5);
+  border-radius: 12px;
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+#drop-zone.dragover { background: rgba(201, 168, 106, 0.08); border-color: var(--accent); }
+#drop-zone .big { font-size: 17px; }
+#drop-zone .small { font-size: 13px; color: var(--muted); }
+#file-input { display: none; }
+#home section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  margin: 0 0 10px;
+}
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.list button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.list .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+#home-error { color: #f0a0a0; font-size: 14px; }
+#url-form { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+#url-form .url-row { display: flex; gap: 8px; }
+#url-form input { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--line); background: #0f1115; }
+#url-form small { color: var(--muted); font-size: 12px; }
+.recent-item { display: flex; gap: 6px; }
+.recent-item > button:first-child { flex: 1; min-width: 0; }
+.recent-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-item .del { width: auto; flex: none; padding: 0 14px; color: var(--muted); }
+#home-footer { display: flex; gap: 12px; align-items: center; }
+#home-footer .meta { color: var(--muted); font-size: 12px; }
+
+/* ---------- 読書画面 ---------- */
+#reader { position: relative; min-height: 100vh; }
+#reader-top {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+  font-size: 13px;
+  pointer-events: none;
+}
+#reader-top > * { pointer-events: auto; }
+#reader-top .titles { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#reader-top .work-title { font-family: var(--serif); font-size: 15px; }
+#reader-top .chapter-name { color: var(--muted); margin-left: 10px; }
+#reader-top button { padding: 4px 10px; font-size: 12px; background: rgba(0, 0, 0, 0.4); }
+
+#text-column {
+  position: relative;
+  z-index: 10;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 64px 16px 60vh;
+}
+#text {
+  font-family: var(--serif);
+  font-size: var(--font-size);
+  line-height: 1.95;
+  letter-spacing: 0.03em;
+}
+#text p { margin: 0 0 0.35em; }
+#text .chapter-title {
+  font-size: 1.25em;
+  font-weight: 500;
+  margin: 2.4em 0 1.2em;
+  letter-spacing: 0.12em;
+}
+#text .chapter-title:first-child { margin-top: 0.6em; }
+#text .scene-break { text-align: center; color: var(--muted); margin: 1.6em 0; letter-spacing: 1em; }
+#text .end-mark { text-align: center; color: var(--muted); margin: 3em 0 0; font-size: 0.85em; }
+
+/* ノベルモード：絵を全画面に固定し、本文は半透明の暗い帯の上に流す */
+#stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #1b1d22;
+}
+#stage .layer { position: absolute; inset: 0; pointer-events: none; }
+#stage canvas.layer { width: 100%; height: 100%; }
+/* 1 背景（2枚でクロスフェード）。仮素材は場所名入りのグラデーション */
+#stage .bgs { z-index: 0; }  /* クロスフェード用の z-index を背景の中に閉じ込める */
+#stage .bg { opacity: 0; background-size: cover; background-position: center; }
+#stage .bg-label {
+  position: absolute; left: 50%; top: 18%; transform: translateX(-50%);
+  font-family: var(--serif); font-size: clamp(28px, 9vw, 72px); letter-spacing: 0.3em;
+  color: rgba(255, 255, 255, 0.10); white-space: nowrap;
+}
+/* 2 色調（時間帯） */
+#stage .tint { opacity: 0; }
+#stage .tint-morning { background: rgba(150, 190, 255, 0.28); mix-blend-mode: soft-light; }
+#stage .tint-evening { background: linear-gradient(to bottom, rgba(255, 120, 40, 0.55), rgba(190, 70, 60, 0.35)); mix-blend-mode: multiply; }
+/* 夜：真っ黒にしない。紺で沈めつつ、空を月明かりで少し明るく残し、黒いシルエットが空に浮かぶようにする */
+#stage .tint-night { background: rgb(88, 108, 178); mix-blend-mode: multiply; }
+#stage .tint-night-dim {
+  background:
+    radial-gradient(ellipse 120% 70% at 50% 0%, rgba(150, 170, 230, 0.38), rgba(150, 170, 230, 0) 70%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 16, 0.18));
+  mix-blend-mode: screen;
+}
+/* 夜はシルエットに細い縁の光を付けて、暗い背景でも輪郭が見えるようにする */
+#stage.is-night .fig img { filter: drop-shadow(0 0 1.5px rgba(200, 212, 255, 0.6)) drop-shadow(0 0 12px rgba(150, 170, 240, 0.35)); }
+#stage.is-night .fig.pos-left img, #stage.is-night .figures.face-right .fig img { filter: drop-shadow(0 0 1.5px rgba(200, 212, 255, 0.6)) drop-shadow(0 0 12px rgba(150, 170, 240, 0.35)); }
+/* 3 天候（曇り・霧。雨雪は canvas） */
+#stage .cloudy { opacity: 0; background: rgba(110, 115, 125, 0.30); mix-blend-mode: multiply; }
+#stage .fog { opacity: 0; background: linear-gradient(to top, rgba(225, 228, 232, 0.75), rgba(220, 224, 230, 0.35) 55%, rgba(220, 224, 230, 0.15)); }
+/* 4 人物シルエット */
+#stage .figures { opacity: 0; }
+body.no-silhouettes #stage .figures { display: none; }
+#stage .fig { position: absolute; bottom: 0; height: 72vh; transform: translateX(-50%); }
+#stage .fig img { height: 100%; width: auto; display: block; }
+#stage .fig.pos-solo { left: 60%; }
+#stage .fig.pos-right { left: 70%; }
+#stage .fig.pos-left { left: 30%; }
+/* シルエットは画面左向きに描く前提（manifest の silFacing: "right" なら逆）。主人物と向かい合わせる */
+#stage .fig.pos-left img { transform: scaleX(-1); }
+#stage .figures.face-right .fig img { transform: scaleX(-1); }
+#stage .figures.face-right .fig.pos-left img, #stage .figures.face-right .fig.pos-crowd img { transform: none; }
+#stage .fig.pos-front { left: 62%; height: 76vh; }
+#stage .fig.pos-crowd { left: 45%; bottom: 7vh; height: 46vh; opacity: 0.6; filter: blur(0.6px); }
+/* 5 空気（周辺減光。彩度は .scene の filter） */
+#stage .vignette { opacity: 0.15; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.9) 100%); }
+#stage .blackout { background: #000; opacity: 0; }
+body.novel #text-column {
+  background: linear-gradient(to right, rgba(8, 10, 14, 0) 0, rgba(8, 10, 14, 0.5) 32px, rgba(8, 10, 14, 0.5) calc(100% - 32px), rgba(8, 10, 14, 0) 100%);
+  color: #f3f1ec;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.9);
+}
+@media (max-width: 700px) {
+  body.novel #text-column { background: rgba(8, 10, 14, 0.5); }
+}
+body.effects-off #stage { display: none; }
+body.effects-off #text-column { background: transparent; box-shadow: none; }
+
+#effects-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+#effects-toggle[aria-pressed="false"] { color: var(--muted); }
+
+/* デバッグ表示 */
+#debug {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 40;
+  max-width: min(360px, calc(100vw - 120px));
+  max-height: 45vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #cfe8cf;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+body.debug #text .seg.current { outline: 1px dashed rgba(160, 230, 160, 0.7); outline-offset: 2px; }
+body.debug #center-line {
+  position: fixed; left: 0; right: 0; top: 50%; height: 0; z-index: 35;
+  border-top: 1px dashed rgba(160, 230, 160, 0.35); pointer-events: none;
+}
+
+/* 設定画面 */
+#settings {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; justify-content: center; align-items: flex-start;
+  overflow-y: auto; padding: 24px 16px;
+}
+#settings .sheet {
+  width: 100%; max-width: 560px;
+  background: #16181e; border: 1px solid var(--line); border-radius: 12px;
+  padding: 16px 18px 20px;
+}
+#settings header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+#settings h2 { margin: 0; font-size: 18px; font-weight: 600; }
+#settings fieldset { border: 0; border-top: 1px solid var(--line); margin: 12px 0 0; padding: 12px 0 0; display: flex; flex-direction: column; gap: 12px; }
+#settings legend { color: var(--accent); font-size: 13px; letter-spacing: 0.1em; padding: 0 8px 0 0; }
+#settings label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+#settings label.check { flex-direction: row; align-items: center; gap: 8px; }
+#settings input[type="text"], #settings input[type="url"], #settings input[type="password"], #settings input[type="number"], #settings select {
+  width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: #0f1115;
+}
+#settings small, #settings .note { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
+#settings .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#settings .result { font-size: 13px; line-height: 1.6; }
+#settings .result.ok { color: #9fd89f; }
+#settings .result.ng { color: #f0a0a0; }
+#settings [data-show].off { display: none; }
+#settings .model-list { display: flex; flex-direction: column; gap: 6px; }
+#settings .model-list:empty { display: none; }
+#settings .model-list button { text-align: left; font-size: 13px; line-height: 1.5; }
+#settings .model-list button.current { border-color: var(--accent); }
+#settings .model-list .desc { display: block; color: var(--muted); font-size: 12px; }
+#reader-top .settings-btn { margin-left: auto; }
+</style>
+</head>
+<body>
+
+<!-- 起動画面 -->
+<main id="home">
+  <header>
+    <h1>サウンドノベル・ビューア</h1>
+    <p class="lead">青空文庫形式・テキスト・Markdown のファイルを開くと、スクロールを止めた箇所の場面に合わせて背景と人物シルエットが切り替わります。</p>
+  </header>
+
+  <label id="drop-zone" for="file-input">
+    <span class="big">ファイルをここにドロップ</span>
+    <span class="small">またはタップして選択（.txt ／ .md ／ 青空文庫の .zip、Shift_JIS・UTF-8 対応）</span>
+    <input id="file-input" type="file" accept=".txt,.md,.markdown,.zip,text/plain,text/markdown,application/zip" onchange="JV.App.onFileInput(this)">
+  </label>
+
+  <form id="url-form" onsubmit="JV.App.onUrlSubmit(event)">
+    <label for="url-input">青空文庫のURLから読む</label>
+    <div class="url-row">
+      <input id="url-input" type="url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://www.aozora.gr.jp/cards/…/card….html">
+      <button type="submit" id="url-submit">読み込む</button>
+    </div>
+    <small>作品の図書カードのURLを貼り付けてください。</small>
+  </form>
+  <div id="home-error" class="hidden"></div>
+
+  <section id="recent-section" class="hidden">
+    <h2>最近読んだ作品</h2>
+    <ul class="list" id="recent-list"></ul>
+  </section>
+
+  <section id="samples-section">
+    <h2>サンプル</h2>
+    <ul class="list" id="sample-list"></ul>
+  </section>
+
+  <footer id="home-footer">
+    <button type="button" onclick="JV.SettingsUI.open()">設定</button>
+    <span id="route-status" class="meta"></span>
+  </footer>
+</main>
+
+<!-- 読書画面 -->
+<div id="reader" class="hidden">
+  <div id="stage" aria-hidden="true"></div>
+  <header id="reader-top">
+    <button type="button" onclick="JV.App.goHome()">← 戻る</button>
+    <div class="titles"><span class="work-title" id="work-title"></span><span class="chapter-name" id="chapter-name"></span></div>
+    <button type="button" class="settings-btn" onclick="JV.SettingsUI.open()">設定</button>
+  </header>
+  <div id="text-column">
+    <article id="text"></article>
+  </div>
+  <button id="effects-toggle" type="button" aria-pressed="true" onclick="JV.App.toggleEffects()">演出 オン</button>
+  <div id="center-line"></div>
+  <div id="debug" class="hidden"></div>
+</div>
+
+
+<!-- 設定画面 -->
+<div id="settings" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="sheet">
+    <header>
+      <h2 id="settings-title">設定</h2>
+      <button type="button" onclick="JV.SettingsUI.close()">閉じる</button>
+    </header>
+
+    <fieldset>
+      <legend>判定（Jev）</legend>
+      <label>呼び出し経路
+        <select data-key="route" onchange="JV.SettingsUI.change(this)">
+          <option value="mock">モック（APIなし・キーワード判定）</option>
+          <option value="openrouter">OpenRouter 経由</option>
+          <option value="typesafe">TypeSafe 直接</option>
+          <option value="relay">中継サーバー（Cloudflare Workers 等）</option>
+        </select>
+      </label>
+      <label data-show="relay">合言葉
+        <input data-key="relayPass" type="password" autocomplete="off" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small>中継サーバー（Netlify など）に設定した合言葉。PC の local_server.py で合言葉を設定していなければ空でかまいません。</small>
+      </label>
+      <label data-show="direct">APIキー
+        <input data-key="apiKey" type="password" autocomplete="off" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small>この端末のブラウザ（localStorage）にだけ保存されます。ページを見られる人にはキーが見えるため、共用の端末では使わないでください。</small>
+      </label>
+      <label data-show="remote">接続先URL
+        <input data-key="endpoint" type="text" inputmode="url" autocapitalize="off" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small id="endpoint-hint"></small>
+      </label>
+      <label data-show="remote">モデル版
+        <input data-key="model" type="text" spellcheck="false" onchange="JV.SettingsUI.change(this)">
+        <small>現在 TypeSafe で使えるのは jev-latest です。判定傾向はしきい値に影響するので、版の付いた名前が一覧に出たらそちらに固定してください。</small>
+      </label>
+      <div class="row" data-show="remote">
+        <button type="button" id="models-btn" onclick="JV.SettingsUI.listModels()">使えるモデルを確認</button>
+        <span id="models-result" class="result"></span>
+      </div>
+      <div class="model-list" id="model-list" data-show="remote"></div>
+      <label data-show="remote">選択肢のキー
+        <select data-key="asciiKeys" onchange="JV.SettingsUI.change(this)">
+          <option value="false">日本語（和室・夜 など）</option>
+          <option value="true">英字ID（washitsu・night など）</option>
+        </select>
+      </label>
+      <div class="row" data-show="remote">
+        <button type="button" id="conn-test" onclick="JV.SettingsUI.test()">接続テスト</button>
+        <span id="conn-result" class="result"></span>
+      </div>
+      <p class="note" id="route-note"></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>演出</legend>
+      <label>停止判定の待ち時間（ms）
+        <input data-key="stopDelay" type="number" min="150" max="2000" step="50" onchange="JV.SettingsUI.change(this)">
+      </label>
+      <label>絵を替える感度
+        <select data-key="sensitivity" onchange="JV.SettingsUI.change(this)">
+          <option value="0.75">低い（しきい値 0.75）</option>
+          <option value="0.6">普通（しきい値 0.6）</option>
+          <option value="0.45">高い（しきい値 0.45）</option>
+        </select>
+      </label>
+      <label>フェード時間の倍率
+        <select data-key="fadeScale" onchange="JV.SettingsUI.change(this)">
+          <option value="0.5">0.5</option>
+          <option value="0.75">0.75</option>
+          <option value="1">1.0</option>
+          <option value="1.5">1.5</option>
+          <option value="2">2.0</option>
+        </select>
+      </label>
+      <label class="check"><input data-key="silhouettes" type="checkbox" onchange="JV.SettingsUI.change(this)"> 人物シルエットを表示</label>
+      <label class="check"><input data-key="hideNarrator" type="checkbox" onchange="JV.SettingsUI.change(this)"> 一人称の作品では語り手を描かず、相手だけを描く</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>表示</legend>
+      <label>表示モード
+        <select data-key="displayMode" onchange="JV.SettingsUI.change(this)">
+          <option value="novel">ノベル（絵を全画面、本文を半透明の帯に）</option>
+          <option value="illust" disabled>挿絵（拡張予定）</option>
+        </select>
+      </label>
+      <label>書字方向
+        <select data-key="writingMode" onchange="JV.SettingsUI.change(this)">
+          <option value="horizontal">横書き</option>
+          <option value="vertical" disabled>縦書き（拡張予定）</option>
+        </select>
+      </label>
+      <label>文字サイズ（px）
+        <input data-key="fontSize" type="number" min="12" max="32" step="1" onchange="JV.SettingsUI.change(this)">
+      </label>
+      <label class="check"><input data-key="debug" type="checkbox" onchange="JV.SettingsUI.change(this)"> デバッグ表示（判定結果と確率）</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>データ</legend>
+      <div class="row">
+        <button type="button" onclick="JV.SettingsUI.clearCache()">判定キャッシュを消去</button>
+        <button type="button" onclick="JV.SettingsUI.resetAll()">設定を既定に戻す</button>
+        <span id="data-result" class="result"></span>
+      </div>
+    </fieldset>
+  </div>
+</div>
+
+<script>
+'use strict';
+const JV = (window.JV = {});
+
+/* =====================================================================
+ * 読込部：文字コード判定
+ * ===================================================================== */
+JV.Encoding = {
+  /** ArrayBuffer を文字列に。BOM → UTF-8(厳密) → Shift_JIS / EUC-JP の順に試す */
+  decode(buffer) {
+    const u8 = new Uint8Array(buffer);
+    if (u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return new TextDecoder('utf-8').decode(u8.subarray(3));
+    if (u8[0] === 0xFF && u8[1] === 0xFE) return new TextDecoder('utf-16le').decode(u8.subarray(2));
+    if (u8[0] === 0xFE && u8[1] === 0xFF) return new TextDecoder('utf-16be').decode(u8.subarray(2));
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(u8);
+    } catch (_) { /* UTF-8 ではない */ }
+    const sjis = new TextDecoder('shift_jis').decode(u8);
+    const euc = new TextDecoder('euc-jp').decode(u8);
+    const bad = (s) => (s.match(/�/g) || []).length;
+    return bad(euc) < bad(sjis) ? euc : sjis;
+  },
+};
+
+/* =====================================================================
+ * 読込部：zip（青空文庫の配布形式）から .txt を取り出す
+ * ===================================================================== */
+JV.Zip = {
+  isZip(buffer) {
+    const u8 = new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength));
+    return u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04;
+  },
+
+  /** 中央ディレクトリを読み、最初の .txt を展開して { name, bytes } を返す */
+  async extractText(buffer) {
+    const dv = new DataView(buffer);
+    // 末尾の「中央ディレクトリ終端」を探す（コメント最大 64KB）
+    let eocd = -1;
+    for (let i = buffer.byteLength - 22; i >= Math.max(0, buffer.byteLength - 22 - 65535); i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('zip ファイルとして読めません');
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const entries = [];
+    for (let n = 0; n < count; n++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('zip の目次が壊れています');
+      const method = dv.getUint16(p + 10, true);
+      const csize = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true);
+      const extraLen = dv.getUint16(p + 30, true);
+      const commentLen = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const nameBytes = new Uint8Array(buffer, p + 46, nameLen);
+      entries.push({ method, csize, local, name: JV.Encoding.decode(nameBytes.slice().buffer) });
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+    const e = entries.find((x) => /\.txt$/i.test(x.name));
+    if (!e) throw new Error('zip の中にテキストファイル（.txt）がありません');
+    const lnameLen = dv.getUint16(e.local + 26, true);
+    const lextraLen = dv.getUint16(e.local + 28, true);
+    const data = new Uint8Array(buffer, e.local + 30 + lnameLen + lextraLen, e.csize);
+    if (e.method === 0) return { name: e.name.split('/').pop(), bytes: data.slice().buffer };
+    if (e.method !== 8) throw new Error(`この圧縮方式（${e.method}）の zip には対応していません`);
+    if (typeof DecompressionStream === 'undefined') throw new Error('このブラウザは zip の展開に対応していません。展開した .txt を選んでください');
+    const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return { name: e.name.split('/').pop(), bytes: await new Response(stream).arrayBuffer() };
+  },
+};
+
+/* =====================================================================
+ * 読込部：青空文庫のURLから読む（同じサイトの /aozora 経由。Netlify の関数か local_server.py）
+ * ===================================================================== */
+JV.Aozora = {
+  /**
+   * 受け付けるURL：
+   *   図書カード   https://www.aozora.gr.jp/cards/000879/card92.html
+   *   zip          https://www.aozora.gr.jp/cards/000879/files/92_ruby_164.zip
+   *   XHTML 本文   https://www.aozora.gr.jp/cards/000879/files/92_14545.html（図書カードに読み替える）
+   */
+  parse(input) {
+    const s = String(input || '').trim();
+    const m = s.match(/^(?:https?:\/\/)?(?:www\.)?aozora\.gr\.jp\/(cards\/\d{6})\/(card\d+\.html|files\/[A-Za-z0-9_.-]+)(?:[?#].*)?$/i);
+    if (!m) return null;
+    const [, dir, rest] = m;
+    if (/^card\d+\.html$/i.test(rest)) return { card: `${dir}/${rest.toLowerCase()}` };
+    if (/\.zip$/i.test(rest)) return { zip: `${dir}/${rest}` };
+    const work = rest.match(/^files\/(\d+)_/);
+    if (work) return { card: `${dir}/card${work[1]}.html` };
+    return null;
+  },
+
+  async get(path) {
+    let res;
+    try {
+      res = await fetch(`aozora?path=${encodeURIComponent(path)}`);
+    } catch (err) {
+      throw new Error('読み込み用の中継に接続できません');
+    }
+    if (res.status === 404 && !(res.headers.get('Content-Type') || '').includes('json')) {
+      throw new Error('URLからの読み込みは、Netlify に置いたページ（または relay/local_server.py）でだけ使えます');
+    }
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { msg = (await res.json()).error || msg; } catch (_) { /* そのまま */ }
+      throw new Error(res.status === 404 ? `青空文庫にそのファイルがありません（${msg}）` : msg);
+    }
+    return res.arrayBuffer();
+  },
+
+  /** 図書カードから、ルビ付きテキストの zip の場所を探す */
+  findZip(cardHtml, cardPath) {
+    const dir = cardPath.replace(/[^/]+$/, '');
+    const links = [...cardHtml.matchAll(/href\s*=\s*["']([^"']+\.zip)["']/gi)].map((m) => m[1]);
+    if (!links.length) return null;
+    const pick = links.find((l) => /ruby/i.test(l)) || links[0];
+    // ./files/xxx.zip → cards/NNNNNN/files/xxx.zip
+    const abs = pick.replace(/^https?:\/\/(www\.)?aozora\.gr\.jp\//, '');
+    if (/^cards\//.test(abs)) return abs;
+    return (dir + pick.replace(/^\.\//, '')).replace(/[^/]+\/\.\.\//g, '');
+  },
+
+  /** URL → { text, name } */
+  async load(url) {
+    const t = this.parse(url);
+    if (!t) throw new Error('青空文庫の図書カードのURLを入れてください（例 https://www.aozora.gr.jp/cards/000879/card92.html）');
+    let zipPath = t.zip;
+    if (!zipPath) {
+      const html = JV.Encoding.decode(await this.get(t.card));
+      zipPath = this.findZip(html, t.card);
+      if (!zipPath) throw new Error('図書カードにテキストファイル（zip）が見つかりません。まだテキスト版が公開されていない作品かもしれません');
+    }
+    const zip = await this.get(zipPath);
+    const { name, bytes } = await JV.Zip.extractText(zip);
+    return { text: JV.Encoding.decode(bytes), name };
+  },
+};
+
+/* =====================================================================
+ * 正規化部：3形式を「段落の配列＋章の区切り」に揃える
+ *
+ * 中間表現は行トークンの配列：
+ *   { t: 'text', s }   本文の行
+ *   { t: 'blank' }     空行
+ *   { t: 'heading', s } 章見出し
+ *   { t: 'break' }     場面区切り（◇・＊・水平線など）
+ * ===================================================================== */
+JV.Parser = {
+  LONG_PARAGRAPH: 400,   // これを超える段落は句点で分けて判定する
+  MAX_UNIT_CHARS: 800,   // 会話を束ねた判定単位の上限
+
+  /** 場面区切りの記号だけの行か */
+  isSeparator(line) {
+    const s = line.replace(/[\s　]/g, '');
+    if (!s || s.length > 20) return false;
+    if (!/^[◇◆＊*※☆★○●□■×・\-─―—〜~＃#]+$/.test(s)) return false;
+    // 「・・・」や短いダッシュだけの行は本文（沈黙の表現など）とみなす
+    return !/^・+$/.test(s) && !/^[―—─-]{1,2}$/.test(s);
+  },
+
+  /** 青空文庫・Web小説で共通に使われるルビ記法を外す（親文字だけ残す） */
+  stripRuby(s) {
+    return s.replace(/《[^》\n]*》/g, '').replace(/｜/g, '');
+  },
+
+  detectFormat(name, text) {
+    if (/\.(md|markdown)$/i.test(name)) return 'md';
+    if (/^-{20,}\s*$/m.test(text) && /《[^》\n]+》|［＃/.test(text)) return 'aozora';
+    if (/［＃[^］\n]*］/.test(text) || /^底本：/m.test(text)) return 'aozora';
+    return 'txt';
+  },
+
+  parse(rawText, fileName = '') {
+    const text = rawText.replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n');
+    const format = this.detectFormat(fileName, text);
+    const base = fileName.replace(/\.[^.]+$/, '');
+    let r;
+    if (format === 'aozora') r = this.tokensAozora(text);
+    else if (format === 'md') r = this.tokensMarkdown(text);
+    else r = this.tokensTxt(text);
+    const doc = this.build(r.tokens, r.mode);
+    doc.format = format;
+    doc.title = r.title || base || '無題';
+    doc.author = r.author || '';
+    doc.units = this.buildUnits(doc);
+    return doc;
+  },
+
+  /* ---------- 青空文庫 ---------- */
+  tokensAozora(text) {
+    let lines = text.split('\n');
+    let title = '', author = '';
+
+    // 冒頭の凡例（------- で囲まれた部分）と、その前の作品名・著者名
+    const d1 = lines.findIndex((l) => /^-{20,}\s*$/.test(l));
+    if (d1 >= 0) {
+      const d2 = lines.findIndex((l, i) => i > d1 && /^-{20,}\s*$/.test(l));
+      const head = lines.slice(0, d1).map((l) => l.trim()).filter(Boolean);
+      title = head[0] || '';
+      if (head.length > 1) author = head[head.length - 1];
+      lines = lines.slice((d2 >= 0 ? d2 : d1) + 1);
+    }
+    // 末尾の「底本：」以降
+    const tail = lines.findIndex((l) => /^底本[：:]/.test(l));
+    if (tail >= 0) lines = lines.slice(0, tail);
+
+    const tokens = [];
+    let inHeadingBlock = false;
+    let headingBuf = [];
+    for (const raw of lines) {
+      let line = raw.replace(/\s+$/, '');
+
+      // ［＃ここから中見出し］ … ［＃ここで中見出し終わり］
+      if (/［＃ここから[^］]*見出し］/.test(line)) { inHeadingBlock = true; headingBuf = []; continue; }
+      if (inHeadingBlock) {
+        if (/［＃ここで[^］]*見出し終わり］/.test(line)) {
+          inHeadingBlock = false;
+          tokens.push({ t: 'heading', s: this.cleanAozoraLine(headingBuf.join('　')).trim() });
+          continue;
+        }
+        headingBuf.push(line);
+        continue;
+      }
+
+      // 改ページは場面区切りとして扱う
+      if (/［＃改(ページ|丁|段|見開き)］/.test(line) && !this.cleanAozoraLine(line).trim()) {
+        tokens.push({ t: 'break' });
+        continue;
+      }
+
+      // 見出し：「○○」は中見出し ／ ［＃中見出し］○○［＃中見出し終わり］
+      let heading = null;
+      let m = line.match(/［＃「([^」]+)」は[^］]*見出し］/);
+      if (m) heading = m[1];
+      m = line.match(/［＃(?:同行|窓)?([大中小])見出し］(.+?)［＃(?:同行|窓)?\1見出し終わり］/);
+      if (m) heading = m[2];
+      if (heading !== null) {
+        tokens.push({ t: 'heading', s: this.cleanAozoraLine(heading).trim() });
+        continue;
+      }
+
+      const hadContent = line.trim() !== '';
+      line = this.cleanAozoraLine(line);
+      if (line.replace(/[\s　]/g, '') === '') {
+        // 注記だけの行は何もない行として捨てる。元から空の行は空行
+        if (!hadContent) tokens.push({ t: 'blank' });
+        continue;
+      }
+      if (this.isSeparator(line)) { tokens.push({ t: 'break' }); continue; }
+      tokens.push({ t: 'text', s: line });
+    }
+    return { tokens, mode: 'line', title, author };
+  },
+
+  /** 外字注記・ルビ・その他の［＃…］注記を除く */
+  cleanAozoraLine(line) {
+    let s = line;
+    // 外字：Unicode が書かれていればその字に、なければ〓
+    s = s.replace(/※［＃[^］]*］/g, (a) => {
+      const u = a.match(/U\+([0-9A-Fa-f]{4,6})/);
+      return u ? String.fromCodePoint(parseInt(u[1], 16)) : '〓';
+    });
+    s = this.stripRuby(s);
+    s = s.replace(/［＃[^］]*］/g, '');
+    // アクセント分解記法〔…〕は括弧だけ外す
+    s = s.replace(/〔([^〕]*)〕/g, (a, inner) => (/[A-Za-z]/.test(inner) ? inner : a));
+    return s;
+  },
+
+  /* ---------- プレーンテキスト ---------- */
+  tokensTxt(text) {
+    let lines = text.split('\n').map((l) => l.replace(/\s+$/, ''));
+    let title = '', author = '';
+
+    // 冒頭の短い1〜2行＋空行 は作品名・著者名とみなす
+    const firstBlank = lines.findIndex((l, i) => i > 0 && l.trim() === '');
+    if (firstBlank > 0 && firstBlank <= 2) {
+      const head = lines.slice(0, firstBlank).map((l) => l.trim());
+      if (head.every((h) => h.length > 0 && h.length <= 30 && !/[。「」]/.test(h))) {
+        title = head[0];
+        if (head[1]) author = head[1];
+        lines = lines.slice(firstBlank);
+      }
+    }
+
+    // 1行1段落の書き方か、途中で折り返して空行で段落を区切る書き方かを判定する。
+    // 空行を挟まずに続く行の多くが字下げ・かぎ括弧で始まるなら、それぞれが段落の頭（1行1段落）
+    let cont = 0, heads = 0;
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim() || !lines[i - 1].trim()) continue;
+      cont++;
+      if (/^[\s　「『（(【〈《]/.test(lines[i])) heads++;
+    }
+    const mode = cont > 0 && heads / cont < 0.5 ? 'block' : 'line';
+
+    const tokens = [];
+    for (const raw of lines) {
+      const line = this.stripRuby(raw);
+      if (line.trim() === '') { tokens.push({ t: 'blank' }); continue; }
+      if (this.isSeparator(line)) { tokens.push({ t: 'break' }); continue; }
+      if (this.isTxtHeading(line)) { tokens.push({ t: 'heading', s: line.trim().replace(/^[　]+/, '') }); continue; }
+      tokens.push({ t: 'text', s: line });
+    }
+    return { tokens, mode, title, author };
+  },
+
+  isTxtHeading(line) {
+    const s = line.trim().replace(/^[　]+/, '');
+    if (s.length > 40 || /[。、「」]$/.test(s)) return false;
+    return /^(第[一二三四五六七八九十百千〇零0-9０-９]+[章話節部回幕編]|序章|終章|序幕|終幕|プロローグ|エピローグ|Prologue|Epilogue|Chapter\s*\d+)([\s　:：].*)?$/i.test(s);
+  },
+
+  /* ---------- Markdown ---------- */
+  tokensMarkdown(text) {
+    let lines = text.split('\n');
+    let title = '', author = '';
+
+    // YAML front matter
+    if (/^---\s*$/.test(lines[0] || '')) {
+      const end = lines.findIndex((l, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(l));
+      if (end > 0) {
+        for (const l of lines.slice(1, end)) {
+          const m = l.match(/^(title|author)\s*:\s*["']?(.*?)["']?\s*$/);
+          if (m && m[1] === 'title') title = m[2];
+          if (m && m[1] === 'author') author = m[2];
+        }
+        lines = lines.slice(end + 1);
+      }
+    }
+
+    const tokens = [];
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i].replace(/\s+$/, '');
+      if (/^\s*(```|~~~)/.test(raw)) { inFence = !inFence; continue; }
+      if (inFence) { if (raw.trim()) tokens.push({ t: 'text', s: raw }); else tokens.push({ t: 'blank' }); continue; }
+      if (raw.trim() === '') { tokens.push({ t: 'blank' }); continue; }
+      if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(raw)) { tokens.push({ t: 'break' }); continue; }
+      const h = raw.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/);
+      if (h) { tokens.push({ t: 'heading', s: this.mdInline(h[2]), level: h[1].length }); continue; }
+      // Setext 見出し（=== のみ。--- は水平線として扱う）
+      if (/^=+\s*$/.test(raw) && tokens.length && tokens[tokens.length - 1].t === 'text') {
+        const prev = tokens.pop();
+        tokens.push({ t: 'heading', s: prev.s.trim(), level: 1 });
+        continue;
+      }
+      if (/^\s*<!--.*-->\s*$/.test(raw)) continue;
+      let s = raw
+        .replace(/^\s{0,3}>\s?/, '')                 // 引用
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '');     // 箇条書き
+      s = this.mdInline(s);
+      if (s.trim() === '') continue;
+      if (this.isSeparator(s)) { tokens.push({ t: 'break' }); continue; }
+      tokens.push({ t: 'text', s });
+    }
+
+    // 先頭の # 見出しが1つだけで作品名と同じ（または作品名がない）なら作品名として扱う
+    const h1s = tokens.filter((t) => t.t === 'heading' && t.level === 1);
+    const firstContent = tokens.find((t) => t.t !== 'blank');
+    if (h1s.length === 1 && firstContent === h1s[0] && (!title || title === h1s[0].s)) {
+      title = h1s[0].s;
+      tokens.splice(tokens.indexOf(h1s[0]), 1);
+    }
+    return { tokens, mode: 'block', title, author };
+  },
+
+  mdInline(s) {
+    return this.stripRuby(s)
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')                 // 画像
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')               // リンク
+      .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')              // 参照リンク
+      .replace(/<\/?[A-Za-z][^>]*>/g, '')                    // HTMLタグ
+      .replace(/(\*\*|__)(.+?)\1/g, '$2')                    // 強調
+      .replace(/(\*|_)(?=\S)(.+?)(?<=\S)\1/g, '$2')
+      .replace(/~~(.+?)~~/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, '$1')
+      .replace(/^\s+(?=\S)/, (sp) => (sp.includes('　') ? sp : ''));
+  },
+
+  /* ---------- 行トークン → 段落・章 ---------- */
+  build(tokens, mode) {
+    const paragraphs = [];
+    const chapters = [];
+    let blankRun = 0;
+    let pendingBreak = false;
+    let buf = [];
+    let chapter = -1;
+
+    const ensureChapter = () => {
+      if (chapter < 0) { chapters.push({ title: '', start: paragraphs.length }); chapter = 0; }
+    };
+    const pushPara = (s) => {
+      ensureChapter();
+      const firstInChapter = chapters[chapter].start === paragraphs.length;
+      paragraphs.push({ i: paragraphs.length, text: s, chapter, breakBefore: pendingBreak && !firstInChapter });
+      pendingBreak = false;
+    };
+    const flush = () => {
+      if (!buf.length) return;
+      // 行末が英数字なら空白で、和文ならそのまま繋ぐ
+      let s = buf[0];
+      for (let k = 1; k < buf.length; k++) s += (/[A-Za-z0-9,.;:!?]$/.test(s) ? ' ' : '') + buf[k].replace(/^\s+/, '');
+      pushPara(s);
+      buf = [];
+    };
+
+    for (const tk of tokens) {
+      if (tk.t === 'blank') {
+        blankRun++;
+        if (mode === 'block') flush();
+        if (blankRun >= 2 && paragraphs.length) pendingBreak = true;
+        continue;
+      }
+      blankRun = 0;
+      if (tk.t === 'break') { flush(); if (paragraphs.length) pendingBreak = true; continue; }
+      if (tk.t === 'heading') {
+        flush();
+        chapters.push({ title: tk.s, start: paragraphs.length });
+        chapter = chapters.length - 1;
+        pendingBreak = false;
+        continue;
+      }
+      if (mode === 'block') buf.push(tk.s);
+      else pushPara(tk.s);
+    }
+    flush();
+    // 段落を持たない章（見出しが連続した場合など）は、次の章の見出しと統合する
+    const merged = [];
+    for (let c = 0; c < chapters.length; c++) {
+      const ch = chapters[c];
+      const next = chapters[c + 1];
+      const end = next ? next.start : paragraphs.length;
+      if (end === ch.start && next) { next.title = ch.title && next.title ? `${ch.title}　${next.title}` : (ch.title || next.title); continue; }
+      if (end === ch.start) continue;
+      merged.push(ch);
+    }
+    const remap = new Map();
+    merged.forEach((ch, idx) => remap.set(chapters.indexOf(ch), idx));
+    for (const p of paragraphs) p.chapter = remap.has(p.chapter) ? remap.get(p.chapter) : p.chapter;
+    merged.forEach((ch, idx) => { ch.i = idx; });
+    return { paragraphs, chapters: merged };
+  },
+
+  /* ---------- 判定単位 ---------- */
+  isDialogue(s) {
+    const t = s.replace(/^[\s　]+/, '').replace(/[\s　]+$/, '');
+    return /^[「『（(]/.test(t) && /[」』）)]$/.test(t);
+  },
+
+  /** 長い段落を句点で分ける（表示は段落のまま、判定だけ細かくする） */
+  splitLong(text) {
+    if (text.length <= this.LONG_PARAGRAPH) return [text];
+    const sentences = text.match(/[^。！？!?]*[。！？!?]+[」』）)]*|[^。！？!?]+$/g) || [text];
+    const chunks = [];
+    let cur = '';
+    for (const s of sentences) {
+      if (cur && cur.length + s.length > this.LONG_PARAGRAPH) { chunks.push(cur); cur = ''; }
+      cur += s;
+    }
+    if (cur) chunks.push(cur);
+    return chunks;
+  },
+
+  /**
+   * 段落 → 表示用の断片（segment）→ 判定単位（unit）
+   * 会話文だけの段落は直前の地の文と束ねる（段の先頭なら直後の地の文と）。
+   */
+  buildUnits(doc) {
+    const segments = [];
+    for (const p of doc.paragraphs) {
+      const parts = this.splitLong(p.text);
+      p.segs = [];
+      for (const part of parts) {
+        const seg = { i: segments.length, para: p.i, text: part, dialogue: parts.length === 1 && this.isDialogue(part) };
+        p.segs.push(seg.i);
+        segments.push(seg);
+      }
+    }
+    doc.segments = segments;
+
+    const units = [];
+    let cur = null;
+    let pendingDialogue = [];
+    const boundary = (seg) => {
+      const p = doc.paragraphs[seg.para];
+      return !cur || cur.chapter !== p.chapter || (p.breakBefore && p.segs[0] === seg.i);
+    };
+    const newUnit = (seg) => {
+      cur = { i: units.length, segs: [], chapter: doc.paragraphs[seg.para].chapter, len: 0 };
+      units.push(cur);
+    };
+    const add = (seg) => { cur.segs.push(seg.i); cur.len += seg.text.length; seg.unit = cur.i; };
+
+    for (const seg of segments) {
+      const isBoundary = boundary(seg);
+      if (isBoundary && pendingDialogue.length) {
+        // 段の終わりまで会話だけだった → 会話だけで1単位
+        newUnit(pendingDialogue[0]);
+        pendingDialogue.forEach(add);
+        pendingDialogue = [];
+      }
+      if (seg.dialogue) {
+        if (!isBoundary && cur && cur.len + seg.text.length <= this.MAX_UNIT_CHARS) { add(seg); continue; }
+        if (!isBoundary && cur) { newUnit(seg); add(seg); continue; }
+        // 段の先頭の会話は、直後の地の文とまとめるため保留
+        pendingDialogue.push(seg);
+        if (pendingDialogue.reduce((n, s) => n + s.text.length, 0) > this.MAX_UNIT_CHARS) {
+          newUnit(pendingDialogue[0]);
+          pendingDialogue.forEach(add);
+          pendingDialogue = [];
+        }
+        continue;
+      }
+      if (pendingDialogue.length) {
+        newUnit(pendingDialogue[0]);
+        pendingDialogue.forEach(add);
+        pendingDialogue = [];
+        add(seg);
+        continue;
+      }
+      newUnit(seg);
+      add(seg);
+    }
+    if (pendingDialogue.length) { newUnit(pendingDialogue[0]); pendingDialogue.forEach(add); }
+
+    for (const u of units) {
+      u.text = u.segs.map((s) => segments[s].text.replace(/^[\s　]+/, '')).join('\n');
+      u.paraStart = segments[u.segs[0]].para;
+      u.paraEnd = segments[u.segs[u.segs.length - 1]].para;
+      delete u.len;
+    }
+    return units;
+  },
+};
+
+/* =====================================================================
+ * 設定（localStorage に保存。画面はステップ5）
+ * ===================================================================== */
+JV.Settings = {
+  KEY: 'jev-viewer-settings',
+  DEFAULTS: {
+    route: 'mock',         // 呼び出し経路：mock | typesafe | openrouter | relay
+    apiKey: '',            // APIキー（この端末の localStorage にだけ保存）
+    relayPass: '',         // 中継サーバーの合言葉（Netlify の RELAY_PASSPHRASE と同じもの）
+    endpoint: '',          // 接続先URLの上書き（空なら経路ごとの既定）
+    model: 'jev-latest',   // モデル版。TypeSafe で使えるのは現状 jev-latest のみ（版付きの名前が出たら固定する）
+    asciiKeys: false,      // 選択肢のキーを英字IDで送る（日本語キーが通らない場合）
+    stopDelay: 400,        // 停止判定の待ち時間(ms)
+    sensitivity: 0.6,      // 絵を替える感度（しきい値）。普通=0.6
+    fadeScale: 1.0,        // フェード時間の倍率
+    silhouettes: true,     // 人物シルエット表示
+    hideNarrator: false,   // 一人称の作品で主人物（語り手）を出さず相手だけを描く
+    effects: true,         // 演出オン／オフ
+    debug: false,          // デバッグ表示
+    displayMode: 'novel',  // 表示モード：novel（挿絵モードは拡張）
+    writingMode: 'horizontal', // 横書き（縦書きは拡張）
+    fontSize: 18,          // 文字サイズ(px)
+  },
+  values: null,
+
+  load() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(this.KEY) || '{}') || {}; } catch (_) { saved = {}; }
+    this.values = { ...this.DEFAULTS, ...saved };
+    // 以前の既定 jev-1.13 は TypeSafe では使えない名前だった（Unknown model）
+    if (this.values.model === 'jev-1.13') this.values.model = this.DEFAULTS.model;
+    const q = new URLSearchParams(location.search);
+    if (q.has('debug')) this.values.debug = q.get('debug') !== '0';
+    return this.values;
+  },
+  get(k) { if (!this.values) this.load(); return this.values[k]; },
+  set(k, v) {
+    if (!this.values) this.load();
+    this.values[k] = v;
+    try { localStorage.setItem(this.KEY, JSON.stringify(this.values)); } catch (_) { /* 保存できなくても動かす */ }
+  },
+};
+
+/* =====================================================================
+ * 設定画面
+ * ===================================================================== */
+JV.SettingsUI = {
+  // 変えたら判定をやり直す項目
+  JUDGE_KEYS: new Set(['route', 'apiKey', 'relayPass', 'endpoint', 'model', 'asciiKeys']),
+  dirtyJudge: false,
+
+  open() {
+    this.dirtyJudge = false;
+    this.fill();
+    document.getElementById('settings').classList.remove('hidden');
+  },
+
+  close() {
+    document.getElementById('settings').classList.add('hidden');
+    document.getElementById('conn-result').textContent = '';
+    document.getElementById('data-result').textContent = '';
+    JV.App.onSettingsClosed(this.dirtyJudge);
+  },
+
+  fill() {
+    for (const el of document.querySelectorAll('#settings [data-key]')) {
+      const v = JV.Settings.get(el.dataset.key);
+      if (el.type === 'checkbox') el.checked = !!v;
+      else if (el.tagName === 'SELECT') {
+        el.value = String(v);
+        if (el.selectedIndex < 0) el.value = el.options[0].value;
+      } else el.value = v == null ? '' : v;
+    }
+    this.refreshRoute();
+  },
+
+  change(el) {
+    const key = el.dataset.key;
+    let v;
+    if (el.type === 'checkbox') v = el.checked;
+    else if (el.type === 'number') {
+      v = Number(el.value);
+      const min = Number(el.min), max = Number(el.max);
+      if (!Number.isFinite(v)) v = JV.Settings.DEFAULTS[key];
+      v = Math.min(max, Math.max(min, v));
+      el.value = v;
+    } else if (key === 'sensitivity' || key === 'fadeScale') v = Number(el.value);
+    else if (key === 'asciiKeys') v = el.value === 'true';
+    else v = el.value.trim();
+    JV.Settings.set(key, v);
+    if (this.JUDGE_KEYS.has(key)) { this.dirtyJudge = true; document.getElementById('conn-result').textContent = ''; }
+    if (key === 'route') this.refreshRoute();
+    JV.App.applySettings();
+  },
+
+  refreshRoute() {
+    const route = JV.Settings.get('route');
+    const remote = route !== 'mock';
+    document.querySelectorAll('#settings [data-show="remote"]').forEach((e) => e.classList.toggle('off', !remote));
+    document.querySelectorAll('#settings [data-show="direct"]').forEach((e) => e.classList.toggle('off', !remote || route === 'relay'));
+    document.querySelectorAll('#settings [data-show="relay"]').forEach((e) => e.classList.toggle('off', route !== 'relay'));
+    const def = (JV.Adapters.remote.ROUTES[route] || {}).url;
+    const ep = document.querySelector('#settings [data-key="endpoint"]');
+    ep.placeholder = def;
+    document.getElementById('endpoint-hint').textContent = route === 'relay'
+      ? '空欄なら、このページを配信しているサーバーの /v1/systemone（Netlify の関数や relay/local_server.py）。別の場所の中継（Cloudflare Workers など）を使うときだけURLを入れます。'
+      : `空欄なら既定${route === 'openrouter' ? '（仮・要確認）' : ''}：${def}`;
+    const notes = {
+      mock: 'APIを呼ばず、キーワード一致の偽の判定で動きます。画面と演出の確認用です。',
+      openrouter: 'OpenRouter での Jev の指定方法とブラウザからの直接呼び出し（CORS）は未確認です。まず「接続テスト」で確かめてください。通らない場合は中継サーバーを使います。',
+      typesafe: 'TypeSafe の API（/v1/systemone）を直接呼びます。新規登録は停止中のため既存アカウント向けです。',
+      relay: '中継サーバー経由で呼びます。APIキーは中継側に置きます。Netlify に置いたこのページなら、合言葉を入れるだけで使えます（PC で動かすなら relay/local_server.py）。',
+    };
+    document.getElementById('route-note').textContent = notes[route] || '';
+  },
+
+  /** 小さな作品判定を1回送って、届くか・形式が合うかを確かめる */
+  async test() {
+    const out = document.getElementById('conn-result');
+    const btn = document.getElementById('conn-test');
+    const route = JV.Settings.get('route');
+    if (route === 'mock') { out.className = 'result'; out.textContent = 'モックでは不要です。'; return; }
+    if (JV.Judge.adapter() !== JV.Adapters.remote) {
+      out.className = 'result ng';
+      out.textContent = 'APIキーを入力してください。';
+      return;
+    }
+    btn.disabled = true;
+    out.className = 'result';
+    out.textContent = '送信中…';
+    const t0 = performance.now();
+    try {
+      const qs = JV.Judge.questions('work');
+      const ans = await JV.Adapters.remote.judge('汽車が停車場に着いた。私は外套の襟を立てて、雪の降る往来へ出た。', qs);
+      const ms = Math.round(performance.now() - t0);
+      const era = ans.era, bad = [];
+      for (const k of Object.keys(qs)) if (!ans[k] || !(ans[k].choice in qs[k].criteria)) bad.push(k);
+      if (bad.length) throw new JV.Adapters.RemoteError(`応答は届きましたが、形式が想定と違います（${bad.join(', ')}）`, 'format', ans);
+      out.className = 'result ok';
+      out.textContent = `接続できました（${ms}ms）。era = ${era.choice}（${Number(era.confidence).toFixed(2)}）`;
+    } catch (err) {
+      const hint = {
+        network: '→ CORS で拒否されている場合は、中継サーバー経由に切り替えてください。',
+        auth: '→ APIキーと経路の組み合わせを確認してください。',
+        notfound: '→ 接続先URLまたはこの経路での Jev の呼び方が違う可能性があります。',
+        format: '→ 経路の応答形式が TypeSafe と違います。デバッグ表示で中身を確認してください。',
+        rate: '→ 少し待ってから再試行してください。',
+      }[err.kind] || '';
+      const msg = err.message || '';
+      let relayHint = '';
+      if (route === 'relay') {
+        if (err.status === 404 || err.status === 405 || err.status === 501) relayHint = '→ このページは中継サーバーから配信されていないようです。Netlify のURL（または local_server.py が表示したURL）で開き直してください。';
+        else if (err.status === 403 && /passphrase/.test(msg)) relayHint = '→ 合言葉が違います。Netlify の RELAY_PASSPHRASE と同じものを入れてください。';
+        else if (err.status === 500 && /not configured/.test(msg)) relayHint = '→ Netlify の環境変数 TYPESAFE_API_KEY と RELAY_PASSPHRASE を設定し、再デプロイしてください。';
+        else if (err.status === 401) relayHint = '→ 中継に設定した TypeSafe の APIキーが通っていません。キーを確認してください。';
+      }
+      if (/unknown model/i.test(msg)) relayHint = '→ このモデル名は使えません。「使えるモデルを確認」を押して、一覧から選んでください。';
+      out.className = 'result ng';
+      out.textContent = `失敗：${err.message} ${relayHint || hint}`;
+      if (err.detail) console.warn('[jev-viewer] connection test', err.detail);
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  async listModels() {
+    const out = document.getElementById('models-result');
+    const box = document.getElementById('model-list');
+    const btn = document.getElementById('models-btn');
+    box.textContent = '';
+    if (JV.Judge.adapter() !== JV.Adapters.remote) { out.className = 'result ng'; out.textContent = 'APIキーを入力してください。'; return; }
+    btn.disabled = true;
+    out.className = 'result';
+    out.textContent = '取得中…';
+    try {
+      const models = await JV.Adapters.remote.listModels();
+      if (!models.length) { out.textContent = '一覧が空でした。'; return; }
+      out.className = 'result ok';
+      out.textContent = `${models.length} 件。押すとモデル版に入ります（版の付いた名前を選ぶのがおすすめ）。`;
+      const current = JV.Settings.get('model');
+      for (const m of models) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = m.name === current ? 'current' : '';
+        b.textContent = m.name + (m.release_date ? `（${m.release_date}）` : '');
+        if (m.description) { const d = document.createElement('span'); d.className = 'desc'; d.textContent = m.description; b.appendChild(d); }
+        b.onclick = () => {
+          const input = document.querySelector('#settings [data-key="model"]');
+          input.value = m.name;
+          this.change(input);
+          box.querySelectorAll('button').forEach((x) => x.classList.toggle('current', x === b));
+          document.getElementById('conn-result').textContent = '';
+        };
+        box.appendChild(b);
+      }
+    } catch (err) {
+      out.className = 'result ng';
+      out.textContent = `失敗：${err.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  async clearCache() {
+    await JV.Store.clearJudgments();
+    JV.Judge.memory.clear();
+    document.getElementById('data-result').textContent = '消去しました。';
+    this.dirtyJudge = true;
+  },
+
+  resetAll() {
+    const keep = { apiKey: JV.Settings.get('apiKey') };
+    JV.Settings.values = { ...JV.Settings.DEFAULTS, ...keep };
+    JV.Settings.set('apiKey', keep.apiKey);
+    this.dirtyJudge = true;
+    this.fill();
+    JV.App.applySettings();
+    document.getElementById('data-result').textContent = '既定に戻しました（APIキーは残しています）。';
+  },
+};
+
+/* =====================================================================
+ * 停止検知部：スクロールが一定時間止まったら、画面の縦中央にかかる断片を特定する
+ * ===================================================================== */
+JV.StopDetector = {
+  io: null,
+  atCenter: new Set(),
+  timer: 0,
+  segEls: [],
+  lastUnit: null,
+  onStop: null,
+  onScrollBound: null,
+
+  attach(root, onStop) {
+    this.detach();
+    this.onStop = onStop;
+    this.segEls = Array.from(root.querySelectorAll('.seg'));
+    // 高さ0の「中央線」に交差している断片を常に把握しておく
+    this.io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) this.atCenter.add(e.target);
+        else this.atCenter.delete(e.target);
+      }
+    }, { rootMargin: '-50% 0px -50% 0px', threshold: 0 });
+    this.segEls.forEach((el) => this.io.observe(el));
+    this.onScrollBound = () => this.arm();
+    window.addEventListener('scroll', this.onScrollBound, { passive: true });
+    window.addEventListener('scrollend', this.onScrollBound);
+    window.addEventListener('resize', this.onScrollBound);
+    this.arm();
+  },
+
+  detach() {
+    if (this.io) this.io.disconnect();
+    this.io = null;
+    this.atCenter.clear();
+    clearTimeout(this.timer);
+    if (this.onScrollBound) {
+      window.removeEventListener('scroll', this.onScrollBound);
+      window.removeEventListener('scrollend', this.onScrollBound);
+      window.removeEventListener('resize', this.onScrollBound);
+    }
+    this.onScrollBound = null;
+    this.lastUnit = null;
+  },
+
+  /** スクロールのたびにタイマーを掛け直す。動いている間は発火しない */
+  arm() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.fire(), JV.Settings.get('stopDelay'));
+  },
+
+  fire(force = false) {
+    const el = this.centerSegment();
+    if (!el) return;
+    const unit = Number(el.dataset.u);
+    if (!force && unit === this.lastUnit) return; // 前回と同じなら何もしない
+    this.lastUnit = unit;
+    if (this.onStop) this.onStop({ unit, seg: Number(el.dataset.s), el });
+  },
+
+  centerSegment() {
+    const cy = window.innerHeight / 2;
+    let best = null, bestD = Infinity;
+    for (const el of this.atCenter) {
+      const r = el.getBoundingClientRect();
+      const d = Math.abs((r.top + r.bottom) / 2 - cy);
+      if (d < bestD) { best = el; bestD = d; }
+    }
+    if (best) return best;
+    // 段落の隙間や見出しに中央線がある場合：文書順の二分探索で最も近い断片
+    const els = this.segEls;
+    if (!els.length) return null;
+    let lo = 0, hi = els.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (els[mid].getBoundingClientRect().bottom < cy) lo = mid + 1; else hi = mid;
+    }
+    const cand = [els[lo], els[lo - 1]].filter(Boolean);
+    cand.sort((a, b) => {
+      const da = Math.min(Math.abs(a.getBoundingClientRect().top - cy), Math.abs(a.getBoundingClientRect().bottom - cy));
+      const db = Math.min(Math.abs(b.getBoundingClientRect().top - cy), Math.abs(b.getBoundingClientRect().bottom - cy));
+      return da - db;
+    });
+    return cand[0];
+  },
+};
+
+/* =====================================================================
+ * デバッグ表示
+ * ===================================================================== */
+JV.Debug = {
+  lines: {},
+  set(key, text) {
+    this.lines[key] = text;
+    this.render();
+  },
+  clear() { this.lines = this.lines.assets ? { assets: this.lines.assets } : {}; this.render(); },
+  render() {
+    const el = document.getElementById('debug');
+    const on = JV.Settings.get('debug');
+    document.body.classList.toggle('debug', on);
+    el.classList.toggle('hidden', !on);
+    if (!on) return;
+    el.textContent = Object.values(this.lines).filter(Boolean).join('\n');
+  },
+};
+
+/* =====================================================================
+ * 判定の質問定義
+ *
+ * 選択肢は { id: 英字ID（素材のファイル名にも使う）, label: 表示名＝APIに送る criteria のキー,
+ * desc: criteria の説明（境界例・言い換えを書く）}。
+ * ===================================================================== */
+JV.Schema = {
+  work: {
+    era: {
+      type: 'choice',
+      instructions: '作品の舞台となる時代・世界。文体や語彙ではなく、登場する事物（乗り物・服装・道具・制度）で判断する',
+      options: [
+        { id: 'modern', label: '近代日本', desc: '明治〜昭和前期の日本。汽車・人力車・着物・書生・下駄・ランプ・停車場・候文など' },
+        { id: 'present', label: '現代日本', desc: '昭和後期以降の日本。携帯電話・スマホ・コンビニ・テレビ・自動車・パソコンなど' },
+        { id: 'western', label: '西洋風', desc: '現実の欧米、またはそれを模した舞台。貴族・馬車・教会・城館・紳士淑女など。魔法はない' },
+        { id: 'fantasy', label: 'ファンタジー', desc: '魔法・竜・精霊・架空の王国など、現実にない要素が物語の前提になっている' },
+      ],
+    },
+    narration: {
+      type: 'choice',
+      instructions: '地の文の語りの人称。会話文の中の「私」「僕」は数えない',
+      options: [
+        { id: 'first', label: '一人称', desc: '地の文で語り手が「私」「僕」「俺」などとして自分の行動を語る' },
+        { id: 'third', label: '三人称', desc: '地の文が登場人物を名前や「彼」「彼女」で外から語る' },
+      ],
+    },
+  },
+
+  scene: {
+    scene_changed: {
+      type: 'noul',
+      instructions: '現在の段落(current)で、前の場面(previous_scene)から場所か時間帯が実際に変わった。回想・夢・会話の中で別の場所や時間が話題に出ただけなら変わっていない',
+    },
+    location: {
+      type: 'choice',
+      instructions: '現在の段落(current)で、視点人物がいま実際に居る場所。回想や会話の中で話題に出ただけの場所は選ばない。場所が読み取れなければ「不明」',
+      options: [
+        { id: 'washitsu', label: '和室', desc: '畳の部屋。座敷・茶の間・居間・床の間・襖・障子・縁側の内側。「座敷＝和室」' },
+        { id: 'yoshitsu', label: '洋室', desc: '洋風の部屋。応接間・書斎・寝室・ホテルの部屋・ソファ・暖炉・椅子とテーブル' },
+        { id: 'kitchen', label: '台所', desc: '台所・勝手・土間の炊事場・厨房。竈・流し・鍋' },
+        { id: 'genkan', label: '廊下・玄関', desc: '廊下・玄関・上がり框・戸口・階段・渡り廊下' },
+        { id: 'classroom', label: '教室', desc: '学校の教室・講堂・黒板・教壇' },
+        { id: 'shop', label: '店・酒場', desc: '商店・喫茶店・カフェ・料理屋・酒場・バー・宿の帳場。店内に居る場合' },
+        { id: 'station', label: '駅・車内', desc: '駅・停車場・プラットフォーム・待合室・汽車や電車やバスの車内' },
+        { id: 'street', label: '街路', desc: '町の通り・大通り・往来・街角・広場・商店街の路上' },
+        { id: 'alley', label: '路地', desc: '狭い路地・横丁・裏通り' },
+        { id: 'garden', label: '庭', desc: '家の庭・中庭・庭園・縁側から見える庭（庭に出ている場合）' },
+        { id: 'field', label: '田畑・野原', desc: '田んぼ・畑・野原・草原・原っぱ・土手（川の見えないもの）' },
+        { id: 'forest', label: '森・山道', desc: '森・林・山・山道・峠・谷' },
+        { id: 'river', label: '川・水辺', desc: '川・川岸・土手（川沿い）・橋・池・湖のほとり' },
+        { id: 'seaside', label: '海辺', desc: '海・浜辺・砂浜・港・岬・波打ち際' },
+        { id: 'nightsky', label: '夜空の見える屋外', desc: '星空・月夜を見上げる屋上・丘・野外など、夜空そのものが主役の屋外' },
+        { id: 'unknown', label: '不明', desc: '場所の手がかりがない。会話だけが続き場所が書かれていない場合もこれ' },
+      ],
+    },
+    time: {
+      type: 'choice',
+      instructions: '現在の段落(current)の時間帯。回想の中の時間は選ばない。手がかりがなければ「不明」',
+      options: [
+        { id: 'morning', label: '朝', desc: '夜明け・早朝・朝日・朝食' },
+        { id: 'day', label: '昼', desc: '日中・昼過ぎ・正午・真昼' },
+        { id: 'evening', label: '夕方', desc: '夕暮れ・夕日・黄昏・日暮れ' },
+        { id: 'night', label: '夜', desc: '夜・夜更け・深夜・月明かり・灯火' },
+        { id: 'unknown', label: '不明', desc: '時間帯の手がかりがない' },
+      ],
+    },
+    weather: {
+      type: 'choice',
+      instructions: '現在の段落(current)の天候。いま降っている・かかっているものだけ。「雨上がり」は雨ではない',
+      options: [
+        { id: 'none', label: '記述なし', desc: '天候の記述がない、または晴れ' },
+        { id: 'cloudy', label: '曇り', desc: '曇り空・どんよりした空' },
+        { id: 'rain', label: '雨', desc: '雨が降っている・嵐・夕立' },
+        { id: 'snow', label: '雪', desc: '雪が降っている・吹雪' },
+        { id: 'fog', label: '霧', desc: '霧・靄・もや・霞' },
+      ],
+    },
+    people: {
+      type: 'choice',
+      instructions: '現在の段落(current)の場面にいま居合わせている人数。語り手も含める。話題に出ただけ・回想の中の人物は数えない',
+      options: [
+        { id: 'none', label: '誰もいない', desc: '人物がいない風景だけの描写' },
+        { id: 'one', label: '1人', desc: '1人だけ（語り手ひとりを含む）' },
+        { id: 'two', label: '2人', desc: '2人。会話している2人など' },
+        { id: 'many', label: '3人以上', desc: '3人以上・大勢・群衆' },
+      ],
+    },
+    figure_main: {
+      type: 'choice',
+      instructions: '場面の中心にいる人物の見た目。語り手が中心なら語り手',
+      options: [
+        { id: 'man', label: '成人男性', desc: '大人の男' },
+        { id: 'woman', label: '成人女性', desc: '大人の女' },
+        { id: 'boy', label: '少年', desc: '男の子・少年' },
+        { id: 'girl', label: '少女', desc: '女の子・少女' },
+        { id: 'old', label: '老人', desc: '老人・老婆・白髪の年寄り' },
+        { id: 'unknown', label: '不明', desc: '見た目の手がかりがない' },
+      ],
+    },
+    figure_sub: {
+      type: 'choice',
+      instructions: '中心人物の相手（2人目）の見た目。1人しかいなければ「不明」',
+      optionsFrom: 'figure_main',
+    },
+    pose: {
+      type: 'choice',
+      instructions: '中心人物のいまの姿勢・動作',
+      options: [
+        { id: 'stand', label: '立っている', desc: '立っている・佇む' },
+        { id: 'sit', label: '座っている', desc: '座る・腰をおろす・正座' },
+        { id: 'walk', label: '歩く・走る', desc: '歩く・走る・駆ける・移動している' },
+        { id: 'lie', label: '倒れる・横たわる', desc: '倒れる・横になる・眠っている' },
+        { id: 'talk', label: '向き合って話す', desc: '相手と向き合って会話している' },
+      ],
+    },
+    mood: {
+      type: 'score',
+      instructions: '現在の段落(current)の場面の緊張感',
+      levels: [
+        '穏やか：日常的で落ち着いた場面',
+        '物寂しい：寂しさ・哀しさ・不安がにじむ場面',
+        '緊迫：恐怖・危険・争い・強い動揺のある場面',
+      ],
+    },
+  },
+
+  options(group, key) {
+    const q = this[group][key];
+    return q.options || this[group][q.optionsFrom].options;
+  },
+  byLabel(group, key, label) { return this.options(group, key).find((o) => o.label === label); },
+  byId(group, key, id) { return this.options(group, key).find((o) => o.id === id); },
+
+  /** TypeSafe 形式の questions を組み立てる（asciiKeys なら criteria のキーを英字IDにする） */
+  toQuestions(group, { asciiKeys = false } = {}) {
+    const out = {};
+    for (const [key, q] of Object.entries(this[group])) {
+      if (q.type === 'noul') out[key] = { type: 'noul', instructions: q.instructions };
+      else if (q.type === 'score') out[key] = { type: 'score', instructions: q.instructions, criteria: q.levels.slice() };
+      else {
+        const criteria = {};
+        for (const o of this.options(group, key)) criteria[asciiKeys ? o.id : o.label] = asciiKeys ? `${o.label}：${o.desc}` : o.desc;
+        out[key] = { type: 'choice', instructions: q.instructions, criteria };
+      }
+    }
+    return out;
+  },
+};
+
+/* =====================================================================
+ * 判定部：差し替え可能なアダプタ  judge(state, questions, { signal }) → answers
+ * answers は TypeSafe と同じ形：
+ *   choice → { choice, probabilities: {label: p}, confidence }
+ *   score  → { score（0〜段階数-1の期待値）, probabilities, confidence }
+ *   noul   → { noul（0〜1） }
+ * ===================================================================== */
+JV.Adapters = {};
+
+/** モック判定器：キーワード一致で答えを返す偽の判定器。API なしで画面と演出を確認するため */
+JV.Adapters.mock = {
+  name: 'mock',
+  latency: [60, 220],
+
+  KEYWORDS: {
+    era: {
+      '近代日本': ['汽車', '停車場', '人力車', '着物', '書生', '下駄', '外套', '硝子', 'ランプ', '候', 'ござい', '座敷', '襖', '障子', '箪笥'],
+      '現代日本': ['スマホ', '携帯', 'コンビニ', 'テレビ', 'パソコン', 'メール', 'エアコン', '自動車', 'レコード', 'カウンター', '停電'],
+      '西洋風': ['伯爵', '馬車', '教会', '城館', '貴族', 'ドレス', '紳士', '淑女', '執事'],
+      'ファンタジー': ['魔法', '竜', '魔王', '精霊', 'エルフ', '王国', '勇者', '呪文'],
+    },
+    location: {
+      '和室': ['座敷', '畳', '襖', '障子', '床の間', '掛軸', '茶の間', '箪笥', '抽斗'],
+      '洋室': ['応接間', '書斎', 'ソファ', '暖炉', '洋間', '寝台', 'ベッド'],
+      '台所': ['台所', '竈', 'かまど', '流し', '厨房', 'お勝手'],
+      '廊下・玄関': ['廊下', '玄関', '上がり框', '戸口', '階段'],
+      '教室': ['教室', '黒板', '教壇', '講堂'],
+      '店・酒場': ['喫茶店', '店の扉', '店の中', 'カウンター', '酒場', 'カフェ', '珈琲', '帳場', '古本屋', '店先', '店'],
+      '駅・車内': ['停車場', '駅', 'プラットフォーム', 'ホーム', '待合室', '車内', '汽車', '電車', '座席', '車掌', '汽笛'],
+      '街路': ['大通り', '往来', '通り', '街角', '町の', '荷車', '軒を並べ'],
+      '路地': ['路地', '横丁', '裏通り'],
+      '庭': ['庭', '植木', '縁側', '垣根'],
+      '田畑・野原': ['野原', '草原', '田圃', '田んぼ', '畑', '原っぱ'],
+      '森・山道': ['森', '林', '山道', '峠', '木々', '山あい', '獣', '木の陰'],
+      '川・水辺': ['川', '土手', '岸', '橋', '柳', '池', '小川', 'せせらぎ', '水の音'],
+      '海辺': ['海', '浜', '砂浜', '波打ち際', '波', '港', '潮'],
+      '夜空の見える屋外': ['星空', '夜空', '天の川', '満天', '月を見上げ'],
+    },
+    time: {
+      '朝': ['朝', '夜明け', '早朝', '朝日', '朝御飯', '明けかけ', '目を覚ま'],
+      '昼': ['昼', '正午', '日中', '真昼', '昼過ぎ', '昼下がり', '日の光'],
+      '夕方': ['夕方', '夕暮れ', '夕日', '黄昏', '日暮れ', '日が暮れ', '日が沈'],
+      '夜': ['夜', '夜更け', '深夜', '闇', '月明', '灯', '蝋燭', '真っ暗', '暗くなっ'],
+    },
+    weather: {
+      '曇り': ['曇り空', 'どんより', '雲が低', '曇天'],
+      '雨': [/雨(?!上)/, '傘', '濡れ', '雨音', '嵐', '夕立', '雷'],
+      '雪': ['雪', '吹雪'],
+      '霧': ['霧', '靄', 'もや', '霞'],
+    },
+    people: {
+      '誰もいない': ['誰もいな', '人影はな', '人影もな', '人っ子ひとり'],
+      '1人': ['私は', '僕は', 'ひとり', '一人', '彼は', '女は', '老人は'],
+      '2人': ['ふたり', '二人', '一緒', '妹', '向かい合', '少女と'],
+      '3人以上': ['大勢', '人々', '群衆', '人だかり', '一同', '皆', '人いきれ'],
+    },
+    figure: {
+      '成人男性': [/(?<![少])男(?!の子)/, '兄', '父', '紳士', '商人', '車掌', /彼(?!女)/, '私', '僕'],
+      '成人女性': [/(?<![少])女(?!の子)/, '妻', '母', '妹', '娘', '婦人', '彼女'],
+      '少年': ['少年', '男の子', '坊'],
+      '少女': ['少女', '女の子'],
+      '老人': ['老人', '老婆', '爺', '婆', '白髪', '年老い'],
+    },
+    pose: {
+      '立っている': ['立っ', '佇', 'たたず', '見下ろ', '立ち'],
+      '座っている': ['座', '坐', '腰をおろ', '腰掛', '正座', '座席'],
+      '歩く・走る': ['歩', '走', '駆', '急い', '下りきった', '向かっ'],
+      '倒れる・横たわる': ['倒れ', '横たわ', '寝', '眠'],
+      '向き合って話す': ['振り向', '向き合', '話しかけ', '声をかけ', '語り'],
+    },
+    mood: [
+      ['穏やか', '微笑', '静か', '温か', 'のどか', '光って', '好きな', 'いらっしゃい', '弁当'],
+      ['寂し', '哀し', '悲し', '涙', '独り', 'ひとりきり', '遠ざか', '形見', '思い出', '昔', '見当らな', '不安'],
+      ['叫', '震', '恐', '血', '逃げ', '怖', '悲鳴', '嵐', '雷', '激し', '黒い影', '背筋が寒', '顔色が悪'],
+    ],
+    transition: ['翌朝', 'その夜', '日が暮れ', '昼過ぎ', '夜更け', 'やがて', '着いた', '出た', '乗り込', 'しばらくして', '夕方になる', 'になると', '目が覚め', 'ようやく'],
+  },
+
+  count(text, kws) {
+    let n = 0;
+    for (const k of kws) {
+      if (k instanceof RegExp) n += (text.match(new RegExp(k.source, 'g')) || []).length;
+      else if (text.includes(k)) n += text.split(k).length - 1;
+    }
+    return n;
+  },
+
+  /** 各選択肢の得点 → 確率。fallback（不明・記述なし）には下駄をはかせる */
+  choice(labels, scores, fallback, base = 0.05, fallbackBase = 0.6) {
+    const w = labels.map((l) => (scores[l] || 0) + (l === fallback ? fallbackBase : base));
+    const sum = w.reduce((a, b) => a + b, 0);
+    const probabilities = {};
+    labels.forEach((l, i) => { probabilities[l] = w[i] / sum; });
+    let best = labels[0];
+    for (const l of labels) if (probabilities[l] > probabilities[best]) best = l;
+    return { choice: best, probabilities, confidence: probabilities[best] };
+  },
+
+  scoreFor(table, cur, ctx) {
+    const s = {};
+    for (const [label, kws] of Object.entries(table)) s[label] = this.count(cur, kws) + 0.35 * this.count(ctx, kws);
+    return s;
+  },
+
+  async judge(state, questions, { signal } = {}) {
+    const [lo, hi] = this.latency;
+    await JV.util.sleep(lo + Math.random() * (hi - lo), signal);
+    const st = typeof state === 'string' ? { current: state } : state;
+    const cur = st.current || '';
+    const ctx = st.context_before || '';
+    const prev = st.previous_scene || {};
+    const K = this.KEYWORDS;
+    const labelsOf = (key) => Object.keys(questions[key].criteria);
+    // criteria のキーが英字IDでも動くように、表示名 ↔ キーを対応づける
+    const answers = {};
+    const dialogues = (cur.match(/^[「『]/gm) || []).length;
+
+    for (const key of Object.keys(questions)) {
+      const q = questions[key];
+      if (q.type === 'choice') {
+        const keys = labelsOf(key);
+        const group = key in JV.Schema.work ? 'work' : 'scene';
+        const toLabel = (k) => (JV.Schema.byLabel(group, key, k) ? k : (JV.Schema.byId(group, key, k) || { label: k }).label);
+        const labels = keys.map(toLabel);
+        let table = K[key];
+        if (key === 'figure_main' || key === 'figure_sub') table = K.figure;
+        const narrOnly = key === 'location' || key === 'time' || key === 'weather';
+        const strip = (t) => t.replace(/「[^」]*」|『[^』]*』/g, '');
+        let scores = table ? this.scoreFor(table, narrOnly ? strip(cur) : cur, key === 'era' || key === 'narration' ? '' : (narrOnly ? strip(ctx) : ctx)) : {};
+        let fallback = labels.find((l) => l === '不明' || l === '記述なし');
+
+        if (key === 'narration') {
+          const narr = cur.replace(/「[^」]*」/g, '');
+          const first = this.count(narr, ['私', '僕', '俺', 'わたし', 'あたし']);
+          scores = { '一人称': first, '三人称': Math.max(0.5, narr.length / 400 - first) };
+        }
+        if (key === 'people') {
+          if (dialogues >= 2) scores['2人'] = (scores['2人'] || 0) + 1.2;
+          fallback = '1人';
+        }
+        if (key === 'pose' && dialogues >= 2) scores['向き合って話す'] = (scores['向き合って話す'] || 0) + 0.8;
+        if (key === 'pose') fallback = '立っている';
+        if (key === 'figure_sub') {
+          // 主人物に選ばれたものを除いた2番手
+          const main = answers.figure_main ? toLabel(answers.figure_main.choice) : null;
+          if (main && main !== '不明') scores[main] = Math.max(0, (scores[main] || 0) - 1.5);
+          if (dialogues < 2 && !(scores['成人女性'] || scores['少女'] || scores['老人'])) scores = {};
+        }
+        const fbBase = fallback === '1人' || fallback === '立っている' ? 0.4 : key === 'weather' ? 0.45 : 0.6;
+        const r = this.choice(labels, scores, fallback || labels[0], 0.05, fbBase);
+        // 返すときは元のキーに戻す
+        const back = (l) => keys[labels.indexOf(l)];
+        const probabilities = {};
+        for (const l of labels) probabilities[back(l)] = r.probabilities[l];
+        answers[key] = { type: 'choice', choice: back(r.choice), probabilities, confidence: r.confidence };
+      } else if (q.type === 'score') {
+        const n = q.criteria.length;
+        const raw = K.mood.slice(0, n).map((kws) => this.count(cur, kws) + 0.35 * this.count(ctx, kws));
+        raw[0] += 0.5;
+        const sum = raw.reduce((a, b) => a + b, 0);
+        const probabilities = {};
+        raw.forEach((v, i) => { probabilities[i] = v / sum; });
+        const score = raw.reduce((a, v, i) => a + i * (v / sum), 0);
+        answers[key] = { type: 'score', score, probabilities, confidence: Math.max(...Object.values(probabilities)) };
+      } else if (q.type === 'noul') {
+        answers[key] = { type: 'noul', noul: 0 }; // 他の答えを見てから下で決める
+      }
+    }
+
+    if (questions.scene_changed) {
+      const labelOf = (key) => {
+        const a = answers[key];
+        if (!a) return null;
+        return JV.Schema.byLabel('scene', key, a.choice) ? a.choice : (JV.Schema.byId('scene', key, a.choice) || {}).label;
+      };
+      let p = 0.12 + 0.12 * Math.min(2, this.count(cur, K.transition));
+      const loc = labelOf('location');
+      const time = labelOf('time');
+      if (loc && loc !== '不明' && prev.location && loc !== prev.location && answers.location.confidence > 0.3) p += 0.5;
+      if (time && time !== '不明' && prev.time && time !== prev.time && answers.time.confidence > 0.35) p += 0.3;
+      if (!prev.location) p += 0.3;
+      answers.scene_changed = { type: 'noul', noul: Math.min(0.97, p) };
+    }
+    return answers;
+  },
+};
+
+/**
+ * 実Jevアダプタ。経路ごとの違い（URL・ヘッダー・応答の包み方）はここに閉じ込める。
+ *   typesafe   : TypeSafe 直接。POST https://api.typesafe.ai/v1/systemone（公式SDKと同じ形式）
+ *   openrouter : OpenRouter 経由。TypeSafe と同じ本文を送る（OpenRouter 側の形式は要確認のため URL は設定で変更可）
+ *   relay      : 任意の中継（Cloudflare Workers 等）。TypeSafe と同じ本文を送り、キーは中継側に置ける
+ */
+JV.Adapters.remote = {
+  TIMEOUT_MS: 8000,
+  ROUTES: {
+    typesafe: { label: 'TypeSafe 直接', url: 'https://api.typesafe.ai/v1/systemone' },
+    openrouter: { label: 'OpenRouter 経由', url: 'https://openrouter.ai/api/v1/systemone' },
+    relay: { label: '中継サーバー', url: '/v1/systemone' }, // 既定はページと同じサーバー（relay/local_server.py）
+  },
+
+  get name() { return JV.Settings.get('route'); },
+  cacheKey() { return `${this.name}:${JV.Settings.get('model')}`; },
+
+  endpoint() {
+    const route = JV.Settings.get('route');
+    const custom = (JV.Settings.get('endpoint') || '').trim();
+    const url = custom || (this.ROUTES[route] || {}).url;
+    const key = (JV.Settings.get('apiKey') || '').trim();
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+    if (route === 'relay') {
+      // 中継にはキーを渡さない（キーは中継側にある）。合言葉だけ送る
+      const pass = (JV.Settings.get('relayPass') || '').trim();
+      if (pass) headers['X-Relay-Passphrase'] = pass;
+    } else if (key) headers.Authorization = `Bearer ${key}`;
+    if (route === 'openrouter') {
+      // OpenRouter がアプリの識別に使うヘッダー（任意）
+      if (/^https?:/.test(location.href)) headers['HTTP-Referer'] = location.origin;
+      headers['X-Title'] = 'Jev Sound Novel Viewer';
+    }
+    return { url, headers };
+  },
+
+  /** 使えるモデルの一覧（GET …/v1/models）。[{ name, description, release_date }] */
+  async listModels() {
+    const { url, headers } = this.endpoint();
+    if (!url) throw new JV.Adapters.RemoteError('接続先URLが設定されていません', 'config');
+    const modelsUrl = url.replace(/\/systemone\/?(\?.*)?$/, '/models');
+    if (modelsUrl === url) throw new JV.Adapters.RemoteError('この接続先からはモデル一覧のURLが分かりません', 'config');
+    delete headers['Content-Type'];
+    let res;
+    try {
+      res = await fetch(modelsUrl, { method: 'GET', headers, mode: 'cors', credentials: 'omit', signal: AbortSignal.timeout ? AbortSignal.timeout(this.TIMEOUT_MS) : undefined });
+    } catch (err) {
+      throw new JV.Adapters.RemoteError('接続できません。ブラウザからの直接呼び出しが CORS で拒否されたか、ネットワークに届いていません', 'network', String(err));
+    }
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) { data = text; }
+    if (!res.ok) {
+      const msg = (data && (data.message || (data.error && (data.error.message || data.error)))) || text.slice(0, 200);
+      throw new JV.Adapters.RemoteError(`HTTP ${res.status}: ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`, res.status === 403 || res.status === 401 ? 'auth' : 'http', data, res.status);
+    }
+    const list = Array.isArray(data) ? data : (data && (data.models || data.data)) || [];
+    return list.map((m) => (typeof m === 'string' ? { name: m } : { name: m.name || m.id, description: m.description || '', release_date: m.release_date || '' })).filter((m) => m.name);
+  },
+
+  /** 応答から answers を取り出す。TypeSafe 形式のほか、OpenAI 互換の包み方にも一応対応 */
+  extractAnswers(data) {
+    if (data && data.answers) return data.answers;
+    const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (typeof content === 'string') {
+      try { const j = JSON.parse(content); if (j.answers) return j.answers; return j; } catch (_) { /* 下へ */ }
+    }
+    throw new JV.Adapters.RemoteError('応答に answers がありません（経路の形式を確認してください）', 'format', data);
+  },
+
+  async judge(state, questions, { signal } = {}) {
+    const { url, headers } = this.endpoint();
+    if (!url) throw new JV.Adapters.RemoteError('接続先URLが設定されていません', 'config');
+    const ctl = new AbortController();
+    const onAbort = () => ctl.abort();
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, this.TIMEOUT_MS);
+    const body = { model: JV.Settings.get('model') || 'jev-latest', state, questions };
+    try {
+      let res;
+      try {
+        res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctl.signal, mode: 'cors', credentials: 'omit' });
+      } catch (err) {
+        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (timedOut) throw new JV.Adapters.RemoteError(`${this.TIMEOUT_MS}ms 以内に応答がありません`, 'timeout');
+        // ブラウザは CORS 拒否とネットワーク断を区別して教えてくれない
+        throw new JV.Adapters.RemoteError('接続できません。ブラウザからの直接呼び出しが CORS で拒否されたか、ネットワークに届いていません', 'network', String(err));
+      }
+      const text = await res.text();
+      let data;
+      try { data = text ? JSON.parse(text) : undefined; } catch (_) { data = text; }
+      if (!res.ok) {
+        const msg = (data && (data.error && (data.error.message || data.error) || data.message || data.detail)) || text.slice(0, 200);
+        const kind = res.status === 401 || res.status === 403 ? 'auth' : res.status === 429 ? 'rate' : res.status === 404 ? 'notfound' : 'http';
+        throw new JV.Adapters.RemoteError(`HTTP ${res.status}: ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`, kind, data, res.status);
+      }
+      return this.extractAnswers(data);
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+  },
+};
+
+JV.Adapters.RemoteError = class extends Error {
+  constructor(message, kind, detail, status) {
+    super(message);
+    this.name = 'RemoteError';
+    this.kind = kind;       // config | network | timeout | auth | rate | notfound | http | format
+    this.detail = detail;
+    this.status = status;
+  }
+};
+
+JV.util = {
+  sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+      const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+      const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); };
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    });
+  },
+  isAbort(err) { return err && (err.name === 'AbortError' || err.name === 'APIUserAbortError'); },
+};
+
+/* =====================================================================
+ * 素材ライブラリ
+ * 実素材がない組み合わせは仮素材（場所名入りのグラデーション・図形のシルエット）で代用する
+ * ===================================================================== */
+JV.Assets = {
+  // assets/manifest.json から読んだ実素材の一覧（キー → URL）。なければ仮素材
+  manifest: { bg: {}, sil: {}, crowd: [], fallbackEra: '', silFacing: 'left' },
+  broken: new Set(),     // 読み込みに失敗したURL（以後は仮素材で代用）
+  BASE: 'assets/',
+
+  // 仮背景の色（上・下）。低彩度で、白文字が乗っても読める明度に揃える
+  PALETTE: {
+    washitsu: ['#8d8068', '#5e5340'], yoshitsu: ['#86766b', '#56493f'], kitchen: ['#847d69', '#565040'],
+    genkan: ['#7d776c', '#514c43'], classroom: ['#8a9078', '#5b604b'], shop: ['#8e7258', '#5d4735'],
+    station: ['#79828c', '#4d545b'], street: ['#8c9296', '#5f6466'], alley: ['#6f6c66', '#46443f'],
+    garden: ['#7f9272', '#50603f'], field: ['#a1a370', '#6d7550'], forest: ['#61786a', '#35463a'],
+    river: ['#84a0ab', '#4f6a73'], seaside: ['#8fb0bd', '#c9bb98'], nightsky: ['#2a3558', '#10152a'],
+    none: ['#2b2e36', '#15171c'],
+  },
+
+  /**
+   * manifest.json を読む。素材はファイル名の規則でキーを決める：
+   *   bg/bg_{era}_{location}_{time}.webp   例 bg/bg_modern_washitsu_day.webp
+   *   sil/sil_{figure}_{pose}.png          例 sil/sil_woman_sit.png
+   *   crowd には群衆シルエットのパスを並べる
+   */
+  async loadManifest(url = `${this.BASE}manifest.json`) {
+    try {
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      this.applyManifest(await res.json(), url);
+      return true;
+    } catch (err) {
+      // file:// で開いた場合など。仮素材だけで動く
+      this.manifestError = String(err.message || err);
+      return false;
+    }
+  },
+
+  applyManifest(m, url = `${this.BASE}manifest.json`) {
+    const base = url.replace(/[^/]*$/, '');
+    const abs = (p) => (/^(https?:|data:|\/)/.test(p) ? p : base + p);
+    const out = { bg: {}, sil: {}, crowd: [], fallbackEra: m.fallbackEra || '', silFacing: m.silFacing === 'right' ? 'right' : 'left' };
+    const skipped = [];
+    for (const p of m.bg || []) {
+      const k = String(p).match(/bg_([a-z0-9]+)_([a-z0-9]+)_([a-z0-9]+)\.[a-z0-9]+$/i);
+      if (k && JV.Schema.byId('scene', 'location', k[2]) && JV.Schema.byId('scene', 'time', k[3])) out.bg[`${k[1]}_${k[2]}_${k[3]}`] = abs(p);
+      else skipped.push(p);
+    }
+    for (const p of m.sil || []) {
+      const k = String(p).match(/sil_([a-z0-9]+)_([a-z0-9]+)\.[a-z0-9]+$/i);
+      if (k && this.BODY[k[1]] && JV.Schema.byId('scene', 'pose', k[2])) out.sil[`${k[1]}_${k[2]}`] = abs(p);
+      else skipped.push(p);
+    }
+    out.crowd = (m.crowd || []).map(abs);
+    this.manifest = out;
+    this.broken.clear();
+    this.manifestSkipped = skipped;
+    return out;
+  },
+
+  bgKey(eraId, locId, timeId) { return `${eraId}_${locId}_${timeId}`; },
+
+  /** 背景：era×location×time の絵 → 昼の絵＋色調 → （fallbackEra で同じ順）→ 仮素材 */
+  background(eraId, locId, timeId) {
+    const bg = this.manifest.bg || {};
+    const eras = [eraId, this.manifest.fallbackEra].filter((e, i, a) => e && a.indexOf(e) === i);
+    for (const era of eras) {
+      for (const [t, ownTime] of [[timeId, true], ['day', timeId === 'day']]) {
+        const k = this.bgKey(era, locId, t);
+        if (bg[k] && !this.broken.has(bg[k])) return { kind: 'image', url: bg[k], ownTime, key: k };
+      }
+    }
+    return { kind: 'placeholder', key: `ph_${locId}`, locId };
+  },
+
+  silhouette(figId, poseId) {
+    const own = (this.manifest.sil || {})[`${figId}_${poseId}`];
+    return own && !this.broken.has(own) ? (this.cutout.get(own) || own) : this.svgUrl(this.svgFigure(figId, poseId));
+  },
+
+  isPlaceholder(url) { return url.startsWith('data:image/svg+xml'); },
+
+  crowd(k = 0) {
+    const list = (this.manifest.crowd || []).filter((u) => !this.broken.has(u));
+    if (list.length) { const u = list[k % list.length]; return this.cutout.get(u) || u; }
+    return this.svgUrl(this.svgCrowd(k));
+  },
+
+  /**
+   * 白地に黒で描いたシルエット（JPG や白背景の PNG）を、読み込み時に透過シルエットへ変換する。
+   * 四隅が不透明な明るい色なら「白地」とみなし、明るさに応じて透明度を付けて黒一色にする。
+   * もともと透過している PNG はそのまま使う。結果は URL ごとに覚えておく。
+   */
+  cutout: new Map(),
+  cutoutPending: new Map(),
+
+  prepareSilhouette(url, { trimX = false } = {}) {
+    if (!url || url.startsWith('data:') || url.startsWith('blob:') || this.cutout.has(url)) return Promise.resolve();
+    if (this.cutoutPending.has(url)) return this.cutoutPending.get(url);
+    const job = new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth, h = img.naturalHeight;
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0);
+          const d = ctx.getImageData(0, 0, w, h);
+          const px = d.data;
+          const at = (x, y) => (y * w + x) * 4;
+          const corners = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)];
+          const whiteGround = corners.every((i) => px[i + 3] > 250 && (px[i] + px[i + 1] + px[i + 2]) / 3 > 200);
+          if (whiteGround) {
+            // 地の明るさを基準にして、それより暗いほど不透明にする（JPG のにじみや薄いグレーの地も消える）
+            const ground = corners.reduce((a, i) => a + (px[i] + px[i + 1] + px[i + 2]) / 3, 0) / 4;
+            const hi = ground - 18, lo = 60;
+            for (let i = 0; i < px.length; i += 4) {
+              const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+              const a = lum >= hi ? 0 : lum <= lo ? 255 : Math.round(255 * (hi - lum) / (hi - lo));
+              px[i] = 7; px[i + 1] = 8; px[i + 2] = 11; px[i + 3] = a;
+            }
+            ctx.putImageData(d, 0, 0);
+          }
+          // 群衆は左右の余白を切り落とす（横長のキャンバスの片側に寄って描かれていても中央に置けるように）。
+          // 高さは変えないので、足元の位置と背丈の比率はそのまま
+          let out = c;
+          if (trimX) {
+            let left = w, right = -1;
+            for (let x = 0; x < w; x++) {
+              for (let y = 0; y < h; y += 2) if (px[(y * w + x) * 4 + 3] > 16) { if (x < left) left = x; right = x; break; }
+            }
+            if (right >= left && (left > w * 0.03 || right < w * 0.97)) {
+              const pad = Math.round(w * 0.02);
+              const x0 = Math.max(0, left - pad), x1 = Math.min(w, right + 1 + pad);
+              out = document.createElement('canvas');
+              out.width = x1 - x0; out.height = h;
+              out.getContext('2d').drawImage(c, x0, 0, x1 - x0, h, 0, 0, x1 - x0, h);
+            }
+          }
+          if (!whiteGround && out === c) { this.cutout.set(url, url); resolve(); return; }
+          out.toBlob((blob) => {
+            this.cutout.set(url, blob ? URL.createObjectURL(blob) : url);
+            resolve();
+          }, 'image/png');
+        } catch (_) {
+          this.cutout.set(url, url); // 読めない（別オリジンなど）ときはそのまま
+          resolve();
+        }
+      };
+      img.onerror = () => { this.broken.add(url); resolve(); };
+      img.src = url;
+    }).finally(() => this.cutoutPending.delete(url));
+    this.cutoutPending.set(url, job);
+    return job;
+  },
+
+  /** 場面に出す人物の素材を、表示前に準備する */
+  prepareFigures(scene) {
+    const f = scene && scene.figures;
+    if (!f || f.layout === 'none') return Promise.resolve();
+    const urls = [];
+    const own = (fig, pose) => fig && (this.manifest.sil || {})[`${fig}_${pose}`];
+    urls.push(own(f.main, f.pose), own(f.sub, f.pose === 'lie' ? 'stand' : f.pose));
+    const jobs = urls.filter(Boolean).map((u) => this.prepareSilhouette(u));
+    if (f.layout === 'many') jobs.push(...(this.manifest.crowd || []).map((u) => this.prepareSilhouette(u, { trimX: true })));
+    // 遅くても表示は止めない（最大 1.5 秒待つ）
+    return Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 1500))]);
+  },
+
+  /** 画像を先に読み込む。失敗したら broken に記録して false */
+  preload(url, timeoutMs = 2500) {
+    if (!url || url.startsWith('data:')) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const img = new Image();
+      const t = setTimeout(() => resolve(true), timeoutMs); // 遅いだけなら表示は進める
+      img.onload = () => { clearTimeout(t); resolve(true); };
+      img.onerror = () => { clearTimeout(t); this.broken.add(url); resolve(false); };
+      img.src = url;
+    });
+  },
+
+  svgUrl(svg) { return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; },
+
+  /* ---------- 仮シルエット（SVG）：体型6種 × ポーズ5種 ---------- */
+  BODY: {
+    man:     { h: 1.00, sh: 13.5, hip: 10, head: 7.0 },
+    woman:   { h: 0.93, sh: 11.5, hip: 10, head: 6.8, hair: 'long', skirt: true },
+    boy:     { h: 0.70, sh: 10.5, hip: 8, head: 7.4 },
+    girl:    { h: 0.68, sh: 10.0, hip: 8, head: 7.4, hair: 'twin', skirt: true },
+    old:     { h: 0.88, sh: 12.5, hip: 10, head: 6.8, hunch: 14, cane: true },
+    unknown: { h: 0.95, sh: 12.5, hip: 11, head: 7.0, cloak: true },
+  },
+
+  /** 身長100の座標系で立ち姿を描く（足元 y=100） */
+  svgBody(b, pose) {
+    const P = [];
+    const walk = pose === 'walk', talk = pose === 'talk', sit = pose === 'sit';
+    const legA = walk ? 16 : 0;
+    const hipY = 52;
+    // 脚
+    if (sit) {
+      P.push(`<path d="M${-b.hip} ${hipY - 2} h${b.hip * 2} v8 h24 v36 h-8 v-28 h${-(b.hip * 2 + 16)} z"/>`);
+      P.push(`<rect x="-4" y="${hipY + 6}" width="${b.hip * 2 + 12}" height="4" opacity=".55"/>`); // 腰掛け
+    } else if (!b.cloak) {
+      P.push(`<g transform="rotate(${legA} -4 ${hipY})"><rect x="-9" y="${hipY - 2}" width="8.5" height="${100 - hipY + 2}" rx="3"/></g>`);
+      P.push(`<g transform="rotate(${-legA} 4 ${hipY})"><rect x="0.5" y="${hipY - 2}" width="8.5" height="${100 - hipY + 2}" rx="3"/></g>`);
+    }
+    // 胴（老人は前かがみ）
+    const torso = [];
+    torso.push(`<path d="M${-b.sh} 17 Q0 13 ${b.sh} 17 L${b.hip + 1} ${hipY + 2} L${-b.hip - 1} ${hipY + 2} Z"/>`);
+    if (b.skirt) torso.push(`<path d="M${-b.hip} ${hipY - 6} L${b.hip} ${hipY - 6} L${b.hip + (sit ? 14 : 9)} ${sit ? hipY + 12 : 80} L${-b.hip - (sit ? 2 : 9)} ${sit ? hipY + 12 : 80} Z"/>`);
+    if (b.cloak) torso.push(`<path d="M${-b.sh} 17 Q0 11 ${b.sh} 17 L${b.sh + 8} ${sit ? hipY + 14 : 100} L${-b.sh - 8} ${sit ? hipY + 14 : 100} Z"/>`);
+    // 腕
+    const armR = walk ? -24 : talk ? -70 : 6;
+    const armL = walk ? 24 : -6;
+    torso.push(`<g transform="rotate(${armL} ${-b.sh + 2} 19)"><rect x="${-b.sh - 2}" y="17" width="5.5" height="33" rx="2.7"/></g>`);
+    torso.push(`<g transform="rotate(${armR} ${b.sh - 2} 19)"><rect x="${b.sh - 3.5}" y="17" width="5.5" height="${talk ? 26 : 33}" rx="2.7"/></g>`);
+    // 首・頭・髪
+    torso.push(`<rect x="-3" y="11" width="6" height="8"/>`);
+    torso.push(`<circle cx="0" cy="${9 - b.head + 7}" r="${b.head}"/>`);
+    if (b.cloak) torso.push(`<path d="M${-b.head - 3} ${9} Q0 ${-4} ${b.head + 3} 9 L${b.head + 4} 20 L${-b.head - 4} 20 Z"/>`);
+    if (b.hair === 'long') torso.push(`<path d="M${-b.head - 1} 6 Q0 -3 ${b.head + 1} 6 L${b.head + 2} 26 L${-b.head - 2} 26 Z"/>`);
+    if (b.hair === 'twin') torso.push(`<circle cx="${-b.head - 2}" cy="12" r="3.4"/><circle cx="${b.head + 2}" cy="12" r="3.4"/>`);
+    const hunch = b.hunch || 0;
+    P.push(`<g transform="rotate(${hunch} 0 ${hipY})">${torso.join('')}</g>`);
+    if (b.cane) P.push(`<rect x="${b.sh + 8}" y="${hipY - 4}" width="2.2" height="${100 - hipY + 4}"/>`);
+    return P.join('');
+  },
+
+  svgFigure(figId, poseId) {
+    const b = this.BODY[figId] || this.BODY.unknown;
+    const sit = poseId === 'sit';
+    let g;
+    if (poseId === 'lie') {
+      // 横たわる：立ち姿を倒して足元に寝かせる
+      g = `<g transform="translate(${-50 * b.h} ${100 - 15 * b.h}) rotate(-90) scale(${b.h})">${this.svgBody(b, 'stand')}</g>`;
+    } else {
+      const drop = sit ? 16 : 0; // 座ると頭の位置が下がる
+      g = `<g transform="translate(0 ${100 - 100 * b.h + drop * b.h}) scale(${b.h})">${this.svgBody(b, poseId)}</g>`;
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -2 120 104" preserveAspectRatio="xMidYMax meet"><g fill="#07080b" fill-opacity=".92">${g}</g></svg>`;
+  },
+
+  svgCrowd(k) {
+    const kinds = k % 2 ? ['woman', 'man', 'old', 'man', 'woman', 'boy', 'man'] : ['man', 'woman', 'man', 'girl', 'man', 'woman', 'old'];
+    const parts = kinds.map((f, i) => {
+      const b = this.BODY[f];
+      const x = -150 + i * 50 + (i % 2 ? 8 : -6);
+      const s = b.h * (0.86 + ((i * 37) % 10) / 70);
+      return `<g transform="translate(${x} ${100 - 100 * s}) scale(${s})">${this.svgBody(b, i % 3 === 1 ? 'walk' : 'stand')}</g>`;
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-180 -2 360 104" preserveAspectRatio="xMidYMax meet"><g fill="#07080b" fill-opacity=".85">${parts.join('')}</g></svg>`;
+  },
+};
+
+/* =====================================================================
+ * 天候レイヤー：canvas の雨・雪パーティクル
+ * ===================================================================== */
+JV.Weather = {
+  canvas: null, ctx: null, type: 'none', level: 0, targetType: 'none', targetLevel: 0,
+  fadeMs: 1200, parts: [], raf: 0, last: 0,
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    const resize = () => {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(canvas.clientWidth * dpr) || 1;
+      canvas.height = Math.round(canvas.clientHeight * dpr) || 1;
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    window.addEventListener('resize', resize);
+    resize();
+  },
+
+  /** type: 'rain' | 'snow' | 'none'、level: 0〜1 */
+  set(type, level, fadeMs) {
+    this.targetType = type;
+    this.targetLevel = type === 'none' ? 0 : level;
+    this.fadeMs = Math.max(1, fadeMs);
+    if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame((t) => this.frame(t)); }
+  },
+
+  instant(type, level) {
+    this.type = this.targetType = type;
+    this.level = this.targetLevel = type === 'none' ? 0 : level;
+    if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame((t) => this.frame(t)); }
+  },
+
+  spawn(w, h, anywhere) {
+    const snow = this.type === 'snow';
+    return {
+      x: Math.random() * (w + 200) - 100,
+      y: anywhere ? Math.random() * h : -20 - Math.random() * 60,
+      v: snow ? 30 + Math.random() * 50 : 700 + Math.random() * 500,
+      r: snow ? 1.2 + Math.random() * 2.6 : 10 + Math.random() * 14,
+      ph: Math.random() * Math.PI * 2,
+    };
+  },
+
+  frame(t) {
+    const dt = Math.min(0.05, (t - this.last) / 1000);
+    this.last = t;
+    const step = (dt * 1000) / this.fadeMs;
+    if (this.type !== this.targetType) {
+      this.level -= step;
+      if (this.level <= 0) { this.level = 0; this.type = this.targetType; this.parts = []; }
+    } else if (this.level < this.targetLevel) this.level = Math.min(this.targetLevel, this.level + step);
+    else if (this.level > this.targetLevel) this.level = Math.max(this.targetLevel, this.level - step);
+
+    const c = this.canvas;
+    const w = c.clientWidth, h = c.clientHeight, ctx = this.ctx;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr) || 1;
+      c.height = Math.round(h * dpr) || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    ctx.clearRect(0, 0, w, h);
+    if (this.type === 'none' || (this.level <= 0 && this.targetLevel <= 0 && this.type === this.targetType)) {
+      this.parts = [];
+      this.raf = 0;
+      return;
+    }
+    const max = this.type === 'snow' ? 140 : 220;
+    const want = Math.round(max * Math.min(1, w / 1000 + 0.3) * this.level);
+    while (this.parts.length < want) this.parts.push(this.spawn(w, h, this.parts.length < want / 2));
+    if (this.parts.length > want) this.parts.length = want;
+
+    ctx.globalAlpha = Math.min(1, 0.25 + this.level);
+    if (this.type === 'rain') {
+      ctx.strokeStyle = 'rgba(200, 215, 235, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const p of this.parts) {
+        p.y += p.v * dt; p.x -= p.v * dt * 0.18;
+        if (p.y > h + 20) Object.assign(p, this.spawn(w, h, false));
+        ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.r * 0.18, p.y - p.r);
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      for (const p of this.parts) {
+        p.y += p.v * dt; p.ph += dt; p.x += Math.sin(p.ph) * 18 * dt;
+        if (p.y > h + 10) Object.assign(p, this.spawn(w, h, false));
+        ctx.moveTo(p.x + p.r, p.y); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    this.raf = requestAnimationFrame((tt) => this.frame(tt));
+  },
+};
+
+/* =====================================================================
+ * 合成部：5枚のレイヤー（背景・色調・天候・人物・空気）と章替わりの暗転
+ * ===================================================================== */
+JV.Stage = {
+  el: null, bgEls: [], bgFront: 0, figs: null, gen: 0,
+  shown: null,     // いま表示している場面
+  figKey: '',
+
+  INDOOR: new Set(['washitsu', 'yoshitsu', 'kitchen', 'genkan', 'classroom', 'shop']),
+
+  init() {
+    const st = document.getElementById('stage');
+    st.innerHTML = `
+      <div class="scene layer">
+        <div class="layer bgs" data-layer="bg">
+          <div class="layer bg"><div class="bg-label"></div></div>
+          <div class="layer bg"><div class="bg-label"></div></div>
+        </div>
+        <div class="layer tint tint-morning"></div>
+        <div class="layer tint tint-evening"></div>
+        <div class="layer tint tint-night"></div>
+        <div class="layer tint tint-night-dim"></div>
+        <div class="layer cloudy"></div>
+        <div class="layer figures" data-layer="figures">
+          <div class="fig crowd"><img alt=""></div>
+          <div class="fig sub"><img alt=""></div>
+          <div class="fig main"><img alt=""></div>
+        </div>
+      </div>
+      <canvas class="layer weather" data-layer="weather"></canvas>
+      <div class="layer fog"></div>
+      <div class="layer vignette" data-layer="mood"></div>
+      <div class="layer blackout"></div>`;
+    this.el = st;
+    this.bgEls = Array.from(st.querySelectorAll('.bg'));
+    this.figs = st.querySelector('.figures');
+    JV.Weather.init(st.querySelector('canvas.weather'));
+    this.reset();
+  },
+
+  reset() {
+    this.gen++;
+    this.shown = null;
+    this.figKey = '';
+    this.bgEls.forEach((b) => { b.style.transition = 'none'; b.style.opacity = '0'; b.dataset.key = ''; });
+    this.figs.style.transition = 'none';
+    this.figs.style.opacity = '0';
+    this.figs.querySelectorAll('.fig').forEach((f) => { f.style.display = 'none'; });
+    this.el.querySelectorAll('.tint, .cloudy, .fog').forEach((t) => { t.style.transition = 'none'; t.style.opacity = '0'; });
+    this.setMood(0, 0);
+    this.el.querySelector('.blackout').style.opacity = '0';
+    JV.Weather.instant('none', 0);
+  },
+
+  fade() { return Number(JV.Settings.get('fadeScale')) || 1; },
+
+  /* ---------- 各レイヤー ---------- */
+  setBackground(scene, ms) {
+    const era = scene.era || 'modern';
+    const loc = scene.location || 'none';
+    const spec = JV.Assets.background(era, loc, scene.time);
+    const next = this.bgEls[this.bgFront ^ 1];
+    const cur = this.bgEls[this.bgFront];
+    next.dataset.key = spec.key;
+    next.dataset.loc = loc;
+    const label = next.querySelector('.bg-label');
+    if (spec.kind === 'image') {
+      next.style.background = `#222 url("${spec.url}") center / cover no-repeat`;
+      label.textContent = '';
+    } else {
+      const [top, bottom] = JV.Assets.PALETTE[loc] || JV.Assets.PALETTE.none;
+      next.style.background = `linear-gradient(to bottom, ${top}, ${bottom})`;
+      const o = JV.Schema.byId('scene', 'location', loc);
+      label.textContent = o ? o.label : '';
+    }
+    next.style.transition = 'none';
+    next.style.opacity = '0';
+    next.style.zIndex = '2';
+    cur.style.zIndex = '1';
+    void next.offsetWidth;
+    next.style.transition = `opacity ${ms}ms ease`;
+    next.style.opacity = '1';
+    this.bgFront ^= 1;
+    const gen = this.gen;
+    setTimeout(() => { if (gen === this.gen && this.bgEls[this.bgFront] === next) { cur.style.transition = 'none'; cur.style.opacity = '0'; } }, ms + 50);
+    // 背景画像が時間帯専用の絵なら、色調レイヤーは弱める
+    this.ownTime = spec.kind === 'image' && spec.ownTime;
+  },
+
+  setTone(scene, ms) {
+    const q = (sel) => this.el.querySelector(sel);
+    const own = this.ownTime ? 0.35 : 1;
+    const t = scene.time;
+    this.el.classList.toggle('is-night', t === 'night');
+    const val = { morning: [1, 0, 0, 0], evening: [0, 1, 0, 0], night: [0, 0, 1, 1] }[t] || [0, 0, 0, 0];
+    ['.tint-morning', '.tint-evening', '.tint-night', '.tint-night-dim'].forEach((sel, i) => {
+      const e = q(sel);
+      e.style.transition = `opacity ${ms}ms ease`;
+      e.style.opacity = String(val[i] * own);
+    });
+    const w = scene.weather;
+    const indoor = this.INDOOR.has(scene.location);
+    const cl = q('.cloudy');
+    cl.style.transition = `opacity ${ms}ms ease`;
+    cl.style.opacity = w === 'cloudy' || w === 'rain' || w === 'snow' ? (w === 'cloudy' ? '1' : '0.6') : '0';
+    const fog = q('.fog');
+    fog.style.transition = `opacity ${ms}ms ease`;
+    fog.style.opacity = w === 'fog' ? (indoor ? '0.3' : '1') : '0';
+    const particles = (w === 'rain' || w === 'snow') && !indoor ? w : 'none';
+    JV.Weather.set(particles, 1, ms);
+  },
+
+  setMood(m, ms) {
+    const v = this.el.querySelector('.vignette');
+    const scene = this.el.querySelector('.scene');
+    v.style.transition = `opacity ${ms}ms ease`;
+    v.style.opacity = String(0.15 + 0.5 * m);
+    scene.style.transition = `filter ${ms}ms ease`;
+    scene.style.filter = `saturate(${(1 - 0.55 * m).toFixed(3)}) brightness(${(1 - 0.08 * m).toFixed(3)})`;
+  },
+
+  figuresKey(s) { return s.figures ? `${s.figures.layout}|${s.figures.main || ''}|${s.figures.sub || ''}|${s.figures.pose}` : ''; },
+
+  /** 人物の配置：1人＝中央やや右、2人＝左右に向かい合わせ（主人物が右）、3人以上＝群衆＋手前に主人物 */
+  placeFigures(s) {
+    const f = s.figures;
+    const [crowd, sub, main] = ['crowd', 'sub', 'main'].map((c) => this.figs.querySelector(`.fig.${c}`));
+    [crowd, sub, main].forEach((e) => { e.className = e.className.replace(/\s*pos-\S+/g, ''); e.style.display = 'none'; });
+    if (!f || f.layout === 'none') return;
+    this.figs.classList.toggle('face-right', JV.Assets.manifest.silFacing === 'right');
+    const show = (el, url, pos, fallback) => {
+      const img = el.querySelector('img');
+      img.onerror = () => { JV.Assets.broken.add(url); img.onerror = null; img.src = fallback(); };
+      img.src = url;
+      el.classList.add(pos);
+      el.style.display = '';
+    };
+    const pose = f.pose;
+    const sil = (fig, p) => () => JV.Assets.silhouette(fig, p);
+    const subPose = pose === 'lie' ? 'stand' : pose;
+    if (f.layout === 'one' && f.main) show(main, sil(f.main, pose)(), 'pos-solo', sil(f.main, pose));
+    if (f.layout === 'two') {
+      if (f.main) show(main, sil(f.main, pose)(), 'pos-right', sil(f.main, pose));
+      if (f.sub) show(sub, sil(f.sub, subPose)(), 'pos-left', sil(f.sub, subPose));
+    }
+    if (f.layout === 'many') {
+      const v = s.crowdVariant || 0;
+      show(crowd, JV.Assets.crowd(v), 'pos-crowd', () => JV.Assets.crowd(v));
+      if (f.main) show(main, sil(f.main, pose)(), 'pos-front', sil(f.main, pose));
+    }
+  },
+
+  async fadeFigures(to, ms) {
+    this.figs.style.transition = `opacity ${ms}ms ease`;
+    this.figs.style.opacity = String(to);
+    await JV.util.sleep(ms);
+  },
+
+  /** 判定結果から決まった「次の場面」を、変化の種類に応じた演出で見せる */
+  async show(plan) {
+    const gen = ++this.gen;
+    const k = this.fade();
+    const s = plan.scene;
+    const alive = () => gen === this.gen;
+    const newFigKey = this.figuresKey(s);
+    const figsChanged = newFigKey !== this.figKey;
+
+    // 実素材は読み込んでから切り替える（失敗したら仮素材で代用）
+    const bgSpec = () => JV.Assets.background(s.era || 'modern', s.location, s.time);
+    const front = this.bgEls[this.bgFront];
+    const needBg = plan.bg || plan.chapter || (plan.tone && s.location && bgSpec().key !== front.dataset.key);
+    if (needBg && s.location) {
+      let spec = bgSpec();
+      while (spec.kind === 'image' && !(await JV.Assets.preload(spec.url))) spec = bgSpec();
+      if (!alive()) return;
+    }
+    if (figsChanged) {
+      await JV.Assets.prepareFigures(s);
+      if (!alive()) return;
+    }
+
+    if (plan.chapter) {
+      // 章が変わる：一度黒に落としてから新しい場面（1,000ms）
+      const bo = this.el.querySelector('.blackout');
+      bo.style.transition = `opacity ${450 * k}ms ease`;
+      bo.style.opacity = '1';
+      await JV.util.sleep(500 * k);
+      if (!alive()) return;
+      this.setBackground(s, 0);
+      this.setTone(s, 0);
+      JV.Weather.instant((s.weather === 'rain' || s.weather === 'snow') && !this.INDOOR.has(s.location) ? s.weather : 'none', 1);
+      this.setMood(s.mood, 0);
+      this.placeFigures(s);
+      this.figKey = newFigKey;
+      this.figs.style.transition = 'none';
+      this.figs.style.opacity = s.figures && s.figures.layout !== 'none' ? '1' : '0';
+      bo.style.transition = `opacity ${500 * k}ms ease`;
+      bo.style.opacity = '0';
+      this.shown = s;
+      return;
+    }
+
+    if (plan.bg) {
+      // 場所が変わる：背景をクロスフェード、人物は一度消してから出す（800ms）
+      const hadFigs = this.figs.style.opacity !== '0';
+      if (hadFigs) this.fadeFigures(0, 200 * k);
+      this.setBackground(s, 800 * k);
+      this.setTone(s, 800 * k);
+      this.setMood(s.mood, 1200 * k);
+      this.shown = s;
+      await JV.util.sleep(800 * k);
+      if (!alive()) return;
+      this.placeFigures(s);
+      this.figKey = newFigKey;
+      if (s.figures && s.figures.layout !== 'none') await this.fadeFigures(1, 400 * k);
+      return;
+    }
+
+    // 時間帯・天候だけ変わる：色調・天候レイヤーだけゆっくり（1,200ms）。時間帯専用の絵があれば背景も
+    if (needBg && s.location) this.setBackground(s, 1200 * k);
+    if (plan.tone) this.setTone(s, 1200 * k);
+    this.setMood(s.mood, 1200 * k);
+    this.shown = s;
+
+    // 人物だけ変わる：シルエットだけフェード（400ms）
+    if (figsChanged) {
+      const visible = this.figs.style.opacity !== '0';
+      if (visible) { await this.fadeFigures(0, 200 * k); if (!alive()) return; }
+      this.placeFigures(s);
+      this.figKey = newFigKey;
+      if (s.figures && s.figures.layout !== 'none') await this.fadeFigures(1, (visible ? 200 : 400) * k);
+    }
+  },
+};
+
+/* =====================================================================
+ * 演出の発火ロジック：判定結果 → 次の場面（絵を替えるかどうかはすべてここで決める）
+ * ===================================================================== */
+JV.Director = {
+  scene: null,        // いま表示している（表示が決まった）場面。値は英字ID
+  lastBgAt: -Infinity,
+  lastChapter: null,
+  MIN_BG_MS: 5000,    // 一度替えた背景は最短5秒は替えない
+
+  reset() { this.scene = null; this.lastBgAt = -Infinity; this.lastChapter = null; },
+
+  thresholds() {
+    const th = Number(JV.Settings.get('sensitivity')) || 0.6;
+    return { th, loc: Math.max(0.2, th - 0.1) };
+  },
+
+  /** 判定器の答え（キーが表示名でも英字IDでもよい）を {key: {id, label, p, top}} に揃える */
+  normalize(answers) {
+    const out = {};
+    for (const [key, a] of Object.entries(answers || {})) {
+      if (!(key in JV.Schema.scene)) continue;
+      if (a.type === 'noul' || 'noul' in a) { out[key] = { p: Number(a.noul) }; continue; }
+      if (a.type === 'score' || ('score' in a && !('choice' in a))) {
+        const n = JV.Schema.scene[key].levels.length;
+        let v = Number(a.score);
+        if (v > n - 1) v = n - 1;
+        out[key] = { value: Math.max(0, v) / (n - 1), confidence: a.confidence };
+        continue;
+      }
+      const opt = JV.Schema.byLabel('scene', key, a.choice) || JV.Schema.byId('scene', key, a.choice);
+      if (!opt) continue; // スキーマ外の値は使わない
+      const probs = a.probabilities || {};
+      const p = probs[a.choice] != null ? Number(probs[a.choice]) : Number(a.confidence || 0);
+      out[key] = { id: opt.id, label: opt.label, p, confidence: a.confidence != null ? Number(a.confidence) : p, probabilities: probs };
+    }
+    return out;
+  },
+
+  /**
+   * ルール（仕様 7章）
+   * 1. scene_changed ≥ しきい値、または location が前と違い confidence ≥ 0.5 → 背景を替える
+   * 2. time・weather はしきい値以上の選択肢だけ反映。それ未満は前の値を引き継ぐ
+   * 3. 人物レイヤーは背景と独立。people が「誰もいない」なら人物を消す
+   * 4. location が「不明」なら背景は前のまま
+   * 5. 一度替えた背景は最短5秒は替えない（章替わりは除く）
+   */
+  decide(answers, { chapter, era = 'modern', hideNarrator = false, now = performance.now() } = {}) {
+    const a = this.normalize(answers);
+    const { th, loc: locTh } = this.thresholds();
+    const prev = this.scene;
+    const s = prev ? { ...prev, figures: prev.figures && { ...prev.figures } } : { location: null, time: 'day', weather: 'none', mood: 0, figures: null };
+    s.era = era;
+    const why = [];
+    const isChapter = this.lastChapter !== null && chapter !== this.lastChapter;
+    let bg = false;
+
+    // 背景
+    const L = a.location, sc = a.scene_changed ? a.scene_changed.p : 0;
+    if (!L) why.push('背景：判定なし');
+    else if (L.id === 'unknown') why.push('背景維持（場所が不明）');
+    else if (L.id !== s.location) {
+      const byScene = sc >= th && L.confidence >= 0.25;
+      const byLoc = L.confidence >= locTh;
+      const first = !s.location && (L.confidence >= 0.3 || sc >= th);
+      if (!(byScene || byLoc || first)) why.push(`背景維持（確信度不足 ${L.confidence.toFixed(2)}）`);
+      else if (s.location && !isChapter && now - this.lastBgAt < this.MIN_BG_MS) why.push('背景維持（最短表示5秒）');
+      else { s.location = L.id; bg = true; why.push(`背景 → ${L.label}${byScene ? '（場面転換）' : ''}`); }
+    }
+    if (!s.location) { why.push('まだ場所が決まらない'); }
+
+    // 時間帯・天候
+    const T = a.time;
+    if (T && T.id !== 'unknown' && T.p >= th) s.time = T.id;
+    const W = a.weather;
+    if (bg && !(W && W.p >= th && W.id !== 'none')) s.weather = 'none'; // 場所が変われば天候は書かれ直すまで晴れ
+    if (W && W.p >= th && W.id !== 'none') s.weather = W.id;
+
+    // 空気（緊張感）
+    if (a.mood) s.mood = a.mood.value;
+
+    // 人物
+    const P = a.people, M = a.figure_main, S = a.figure_sub, Po = a.pose;
+    const f = s.figures ? { ...s.figures } : { layout: 'one', main: null, sub: null, pose: 'stand' };
+    if (P && P.confidence >= locTh) f.layout = P.id;
+    if (M && M.id !== 'unknown' && M.confidence >= 0.35) f.main = M.id;
+    if (!f.main) f.main = 'unknown';
+    if (f.layout === 'two' || f.layout === 'many') {
+      if (S && S.id !== 'unknown' && S.confidence >= 0.35) f.sub = S.id;
+      if (!f.sub) f.sub = 'unknown';
+    }
+    if (Po && Po.confidence >= 0.4) f.pose = Po.id;
+    if (f.pose === 'talk' && f.layout === 'one') f.pose = 'stand';
+    // 一人称の作品で「主人物を出さない」設定：相手だけを描く
+    if (hideNarrator) {
+      if (f.layout === 'one') f.main = null;
+      if (f.layout === 'two') { f.main = f.sub; f.sub = null; f.layout = 'one'; }
+      if (f.layout === 'many') f.main = null;
+    }
+    s.figures = f;
+    if (!s.location) s.figures = { ...f, layout: 'none' };
+
+    const tone = !prev || s.time !== prev.time || s.weather !== prev.weather;
+    const chapterFlag = isChapter && !!s.location;
+    this.lastChapter = chapter;
+    if (bg) this.lastBgAt = now;
+    if (chapterFlag && !bg && prev) this.lastBgAt = now;
+    this.scene = s;
+    const figures = JV.Stage.figuresKey(s) !== (prev ? JV.Stage.figuresKey(prev) : '');
+    return { scene: s, bg: bg || (chapterFlag && !!s.location), tone, figures, chapter: chapterFlag && !!prev, why };
+  },
+};
+
+/* =====================================================================
+ * 保存：IndexedDB（作品ハッシュ単位の判定結果と、最近読んだ作品）
+ * 使えない環境（プライベートモード等）ではメモリだけで動く
+ * ===================================================================== */
+JV.Store = {
+  DB: 'jev-viewer',
+  VERSION: 1,
+  dbp: null,
+
+  open() {
+    if (this.dbp) return this.dbp;
+    this.dbp = new Promise((resolve) => {
+      if (!window.indexedDB) { resolve(null); return; }
+      let req;
+      try { req = indexedDB.open(this.DB, this.VERSION); } catch (_) { resolve(null); return; }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('judgments')) {
+          const js = db.createObjectStore('judgments', { keyPath: 'k' });
+          js.createIndex('hash', 'hash');
+        }
+        if (!db.objectStoreNames.contains('works')) {
+          const ws = db.createObjectStore('works', { keyPath: 'hash' });
+          ws.createIndex('updatedAt', 'updatedAt');
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    });
+    return this.dbp;
+  },
+
+  async tx(store, mode, fn) {
+    const db = await this.open();
+    if (!db) return undefined;
+    return new Promise((resolve) => {
+      let out;
+      try {
+        const t = db.transaction(store, mode);
+        const r = fn(t.objectStore(store));
+        if (r) r.onsuccess = () => { out = r.result; };
+        t.oncomplete = () => resolve(out);
+        t.onerror = () => resolve(undefined);
+        t.onabort = () => resolve(undefined);
+      } catch (_) { resolve(undefined); }
+    });
+  },
+
+  get(store, key) { return this.tx(store, 'readonly', (s) => s.get(key)); },
+  put(store, value) { return this.tx(store, 'readwrite', (s) => s.put(value)); },
+  del(store, key) { return this.tx(store, 'readwrite', (s) => s.delete(key)); },
+  all(store) { return this.tx(store, 'readonly', (s) => s.getAll()); },
+
+  /** ある作品の判定結果を消す（hash を省略すると全部） */
+  async clearJudgments(hash) {
+    if (!hash) return this.tx('judgments', 'readwrite', (s) => s.clear());
+    const db = await this.open();
+    if (!db) return undefined;
+    return new Promise((resolve) => {
+      const t = db.transaction('judgments', 'readwrite');
+      const req = t.objectStore('judgments').index('hash').openKeyCursor(IDBKeyRange.only(hash));
+      req.onsuccess = () => { const c = req.result; if (c) { t.objectStore('judgments').delete(c.primaryKey); c.continue(); } };
+      t.oncomplete = () => resolve();
+      t.onerror = () => resolve();
+    });
+  },
+
+  /** 作品ハッシュ：SHA-256（使えなければ FNV-1a を2本） */
+  async hash(text) {
+    try {
+      if (crypto && crypto.subtle) {
+        const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(d).slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (_) { /* 下へ */ }
+    let h1 = 0x811c9dc5, h2 = 0x01000193 ^ text.length;
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+      h2 = Math.imul(h2 ^ c, 0x5bd1e995) >>> 0;
+    }
+    return `f${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+  },
+};
+
+/* =====================================================================
+ * 判定の呼び出し：作品判定（1回）と場面判定（停止ごと）
+ * キャッシュ：メモリ → IndexedDB → 判定器。キーは「作品ハッシュ｜判定器｜判定単位」
+ * ===================================================================== */
+JV.Judge = {
+  SCHEMA_VERSION: 1,     // 質問の文言を変えたら上げる（古いキャッシュを使わないため）
+  PREFETCH: 3,           // 停止した段落の後ろを何単位先読みするか
+  memory: new Map(),
+  inflight: new Map(),   // key → { promise, ctl, unit }
+  hashKey: '',
+  stats: { calls: 0, memoryHits: 0, dbHits: 0, aborted: 0 },
+
+  /** 設定から判定器を選ぶ。キー（中継ならURL）が未設定ならモック */
+  adapter() {
+    const route = JV.Settings.get('route');
+    if (route === 'mock' || !JV.Adapters.remote.ROUTES[route]) return JV.Adapters.mock;
+    // 中継はキーをサーバー側に置けるので、キーなしでも使う
+    const ready = route === 'relay' || !!(JV.Settings.get('apiKey') || '').trim();
+    return ready ? JV.Adapters.remote : JV.Adapters.mock;
+  },
+  adapterKey() {
+    const a = this.adapter();
+    return `${a.cacheKey ? a.cacheKey() : a.name}${JV.Settings.get('asciiKeys') ? ':id' : ''}@s${this.SCHEMA_VERSION}`;
+  },
+  questions(group) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys') }); },
+  key(unit) { return `${this.hashKey}|${this.adapterKey()}|${unit}`; },
+
+  setWork(hash) {
+    this.abortExcept(new Set());
+    this.hashKey = hash;
+    this.memory.clear();
+  },
+
+  /** 指定の単位以外の進行中リクエストを中断する */
+  abortExcept(keep) {
+    for (const [k, f] of this.inflight) {
+      if (!keep.has(f.unit)) { f.ctl.abort(); this.inflight.delete(k); this.stats.aborted++; }
+    }
+  },
+
+  /** 場面判定（キャッシュ付き）。同じ単位が判定中ならその結果を待つ */
+  async scene(doc, unit, work, prevScene) {
+    const k = this.key(unit);
+    const hit = this.memory.get(k);
+    if (hit) { this.stats.memoryHits++; return { ...hit, cached: 'memory' }; }
+    const running = this.inflight.get(k);
+    if (running) return running.promise;
+
+    const ctl = new AbortController();
+    const promise = (async () => {
+      const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
+      if (saved && saved.answers) {
+        const r = { answers: saved.answers, ms: saved.ms, source: saved.source };
+        this.memory.set(k, r);
+        this.stats.dbHits++;
+        return { ...r, cached: 'db' };
+      }
+      if (ctl.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      this.stats.calls++;
+      const r = await this.judgeScene(doc, unit, work, prevScene, { signal: ctl.signal });
+      this.memory.set(k, r);
+      if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit, answers: r.answers, ms: r.ms, source: r.source, at: Date.now() });
+      return r;
+    })();
+    this.inflight.set(k, { promise, ctl, unit });
+    promise.then(() => {}, () => {}).finally(() => { const f = this.inflight.get(k); if (f && f.ctl === ctl) this.inflight.delete(k); });
+    return promise;
+  },
+
+  /** 作品判定（キャッシュ付き） */
+  async work(doc) {
+    const k = this.key('work');
+    const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
+    if (saved && saved.work) return { ...saved.work, cached: true };
+    const w = await this.judgeWork(doc);
+    if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit: -1, work: { era: w.era, narration: w.narration, raw: w.raw }, at: Date.now() });
+    return w;
+  },
+
+  /** 作品判定：冒頭約3,000字 */
+  async judgeWork(doc, { signal } = {}) {
+    const head = doc.paragraphs.map((p) => p.text.replace(/^[\s　]+/, '')).join('\n').slice(0, 3000);
+    const answers = await this.adapter().judge(head, this.questions('work'), { signal });
+    const pick = (key, fallback) => {
+      const a = answers[key];
+      const o = a && (JV.Schema.byLabel('work', key, a.choice) || JV.Schema.byId('work', key, a.choice));
+      return o ? o.id : fallback;
+    };
+    return { era: pick('era', 'modern'), narration: pick('narration', 'third'), raw: answers };
+  },
+
+  /** 場面判定の state：時代・前の場面・直前2段落・現段落 */
+  sceneState(doc, unit, work, prevScene) {
+    const lab = (key, id) => { const o = id && JV.Schema.byId('scene', key, id); return o ? o.label : '不明'; };
+    const era = JV.Schema.byId('work', 'era', work.era);
+    return {
+      era: era ? era.label : '近代日本',
+      previous_scene: { location: lab('location', prevScene && prevScene.location), time: lab('time', prevScene && prevScene.time) },
+      context_before: JV.Reader.contextBefore(unit),
+      current: doc.units[unit].text,
+    };
+  },
+
+  async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
+    const state = this.sceneState(doc, unit, work, prevScene);
+    const t0 = performance.now();
+    const answers = await this.adapter().judge(state, this.questions('scene'), { signal });
+    return { answers, ms: Math.round(performance.now() - t0), source: this.adapter().name };
+  },
+
+  /** デバッグ表示用：判定結果と確率を短く */
+  describe(answers) {
+    const lines = [];
+    for (const [key, a] of Object.entries(answers || {})) {
+      if (a.type === 'noul' || 'noul' in a) { lines.push(`${key}: ${Number(a.noul).toFixed(2)}`); continue; }
+      if (a.type === 'score' || !('choice' in a)) { lines.push(`${key}: ${Number(a.score).toFixed(2)}`); continue; }
+      const top = Object.entries(a.probabilities || {}).sort((x, y) => y[1] - x[1]).slice(0, 3)
+        .map(([k, p]) => `${k} ${p.toFixed(2)}`).join('  ');
+      lines.push(`${key}: ${top}`);
+    }
+    return lines.join('\n');
+  },
+};
+
+/* =====================================================================
+ * 読書画面：本文の描画
+ * ===================================================================== */
+JV.Reader = {
+  doc: null,
+
+  render(doc) {
+    this.doc = doc;
+    const root = document.getElementById('text');
+    root.textContent = '';
+    const frag = document.createDocumentFragment();
+    let lastChapter = -1;
+    for (const p of doc.paragraphs) {
+      if (p.chapter !== lastChapter) {
+        lastChapter = p.chapter;
+        const title = doc.chapters[p.chapter] && doc.chapters[p.chapter].title;
+        if (title) {
+          const h = document.createElement('h2');
+          h.className = 'chapter-title';
+          h.dataset.chapter = p.chapter;
+          h.textContent = title;
+          frag.appendChild(h);
+        }
+      }
+      if (p.breakBefore) {
+        const b = document.createElement('div');
+        b.className = 'scene-break';
+        b.textContent = '◇';
+        frag.appendChild(b);
+      }
+      const el = document.createElement('p');
+      el.className = 'para';
+      el.dataset.p = p.i;
+      for (const si of p.segs) {
+        const seg = doc.segments[si];
+        const span = document.createElement('span');
+        span.className = 'seg';
+        span.dataset.s = seg.i;
+        span.dataset.u = seg.unit;
+        span.textContent = seg.text;
+        el.appendChild(span);
+      }
+      frag.appendChild(el);
+    }
+    const end = document.createElement('div');
+    end.className = 'end-mark';
+    end.textContent = '（おわり）';
+    frag.appendChild(end);
+    root.appendChild(frag);
+
+    document.getElementById('work-title').textContent = doc.title + (doc.author ? `　${doc.author}` : '');
+    this.setChapterName(0);
+  },
+
+  setChapterName(ci) {
+    const ch = this.doc && this.doc.chapters[ci];
+    document.getElementById('chapter-name').textContent = ch && ch.title ? ch.title : '';
+  },
+
+  /** 判定単位 u の断片に印をつける（デバッグ表示時に枠線） */
+  markCurrent(u) {
+    document.querySelectorAll('#text .seg.current').forEach((el) => el.classList.remove('current'));
+    document.querySelectorAll(`#text .seg[data-u="${u}"]`).forEach((el) => el.classList.add('current'));
+  },
+
+  /** 判定単位 u の直前2段落（場面判定の context_before 用） */
+  contextBefore(u, n = 2) {
+    const unit = this.doc.units[u];
+    const start = Math.max(0, unit.paraStart - n);
+    return this.doc.paragraphs.slice(start, unit.paraStart).map((p) => p.text.replace(/^[\s　]+/, '')).join('\n');
+  },
+};
+
+/* =====================================================================
+ * アプリ全体
+ * ===================================================================== */
+JV.App = {
+  SAMPLES: [
+    { file: 'samples/ame_no_teishaba.txt', label: '雨の停車場', note: '青空文庫形式・Shift_JIS' },
+    { file: 'samples/umibe_no_kissaten.md', label: '海辺の喫茶店', note: 'Markdown' },
+    { file: 'samples/mori_no_michi.txt', label: '森の道', note: 'テキスト' },
+  ],
+
+  init() {
+    JV.Settings.load();
+    document.body.classList.add('novel');
+    JV.Stage.init();
+    this.applySettings();
+    JV.Assets.loadManifest().then((ok) => {
+      const m = JV.Assets.manifest;
+      JV.Debug.set('assets', ok
+        ? `素材: 背景 ${Object.keys(m.bg).length}・シルエット ${Object.keys(m.sil).length}・群衆 ${m.crowd.length}${JV.Assets.manifestSkipped.length ? `（名前の規則外 ${JV.Assets.manifestSkipped.length}）` : ''}`
+        : `素材: 仮素材のみ（manifest.json を読めません: ${JV.Assets.manifestError}）`);
+    });
+    this.renderSamples();
+    this.renderRecent();
+    this.setupDrop();
+    window.addEventListener('popstate', () => { if (!location.hash) this.showHome(); });
+    // デバッグ表示の切り替え（D キー。設定画面からも切り替えられる）
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !document.getElementById('settings').classList.contains('hidden')) { JV.SettingsUI.close(); return; }
+      if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) {
+        JV.Settings.set('debug', !JV.Settings.get('debug'));
+        JV.Debug.render();
+      }
+    });
+    JV.Debug.render();
+  },
+
+  toggleEffects() {
+    JV.Settings.set('effects', !JV.Settings.get('effects'));
+    this.applyEffects();
+    if (!this.doc || document.getElementById('reader').classList.contains('hidden')) return;
+    if (JV.Settings.get('effects')) {
+      // オフの間の場面は見ていないので、いまの位置から組み立て直す
+      JV.Director.reset();
+      JV.Stage.reset();
+      JV.StopDetector.fire(true);
+    } else JV.Judge.abortExcept(new Set());
+  },
+
+  /** 設定を画面に反映（文字サイズ・シルエット・デバッグなど） */
+  applySettings() {
+    document.documentElement.style.setProperty('--font-size', `${Number(JV.Settings.get('fontSize')) || 18}px`);
+    this.applyEffects();
+    JV.Debug.render();
+    const a = JV.Judge.adapter();
+    const route = JV.Settings.get('route');
+    const status = a === JV.Adapters.mock
+      ? (route === 'mock' ? '判定：モック' : `判定：モック（${JV.Adapters.remote.ROUTES[route].label} は未設定）`)
+      : `判定：${JV.Adapters.remote.ROUTES[route].label}・${JV.Settings.get('model')}`;
+    const el = document.getElementById('route-status');
+    if (el) el.textContent = status;
+  },
+
+  /** 判定器に関わる設定が変わったら、作品判定からやり直す */
+  onSettingsClosed(judgeChanged) {
+    if (!this.doc || document.getElementById('reader').classList.contains('hidden')) return;
+    if (judgeChanged) {
+      JV.Judge.abortExcept(new Set());
+      JV.Judge.memory.clear();
+      this.startWorkJudgment();
+    }
+    JV.StopDetector.fire(true);
+  },
+
+  applyEffects() {
+    const on = JV.Settings.get('effects');
+    document.body.classList.toggle('effects-off', !on);
+    document.body.classList.toggle('no-silhouettes', !JV.Settings.get('silhouettes'));
+    const b = document.getElementById('effects-toggle');
+    b.setAttribute('aria-pressed', String(on));
+    b.textContent = on ? '演出 オン' : '演出 オフ';
+  },
+
+  /** スクロール停止時：画面中央の判定単位が変わったときだけ呼ばれる */
+  onStop({ unit }) {
+    const doc = this.doc;
+    const u = doc.units[unit];
+    this.currentUnit = unit;
+    JV.Reader.markCurrent(unit);
+    JV.Reader.setChapterName(u.chapter);
+    JV.Debug.set('unit', `単位 #${unit}（段落 ${u.paraStart}${u.paraEnd !== u.paraStart ? `〜${u.paraEnd}` : ''}・${u.text.length}字・章 ${u.chapter}）\n${u.text.slice(0, 60).replace(/\n/g, ' / ')}${u.text.length > 60 ? '…' : ''}`);
+    this.saveProgress(unit);
+    if (JV.Settings.get('effects')) this.judgeAndShow(unit);
+  },
+
+  /** 作品を開いたときに1回だけ：時代と語りの人称 */
+  startWorkJudgment() {
+    const doc = this.doc;
+    this.work = { era: 'modern', narration: 'third' };
+    this.workReady = this.hashReady
+      .then(() => JV.Judge.work(doc))
+      .then((w) => {
+        if (this.doc !== doc) return;
+        this.work = w;
+        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}${w.cached ? '（キャッシュ）' : ''}`);
+      })
+      .catch((err) => { JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱う）`); });
+  },
+
+  /**
+   * 停止した単位を判定して見せ、後ろの3単位を裏で先読みする。
+   * 新しい停止が来たら、その単位と先読み範囲以外の進行中リクエストは中断する。
+   */
+  async judgeAndShow(unit) {
+    const doc = this.doc;
+    const ahead = [];
+    for (let i = 1; i <= JV.Judge.PREFETCH && unit + i < doc.units.length; i++) ahead.push(unit + i);
+    JV.Judge.abortExcept(new Set([unit, ...ahead]));
+    try {
+      await this.workReady;
+      if (this.doc !== doc) return;
+      const r = await JV.Judge.scene(doc, unit, this.work, JV.Director.scene);
+      if (this.doc !== doc || this.currentUnit !== unit || !JV.Settings.get('effects')) return;
+      this.present(unit, r);
+      // 先読み：いま決まった場面を「前の場面」として渡す
+      const prev = JV.Director.scene;
+      for (const n of ahead) {
+        JV.Judge.scene(doc, n, this.work, prev).catch((err) => {
+          if (!JV.util.isAbort(err)) JV.Debug.set('prefetch', `先読みエラー #${n}: ${err.message || err}`);
+        });
+      }
+    } catch (err) {
+      if (JV.util.isAbort(err)) return;
+      JV.Debug.set('judge', `判定エラー: ${err.message || err}（前の絵を維持）`);
+    }
+  },
+
+  /** 判定結果 → 場面を決めて演出 */
+  present(unit, r) {
+    const u = this.doc.units[unit];
+    const plan = JV.Director.decide(r.answers, {
+      chapter: u.chapter,
+      era: this.work.era,
+      hideNarrator: this.work.narration === 'first' && JV.Settings.get('hideNarrator'),
+    });
+    if (JV.Settings.get('effects')) JV.Stage.show(plan);
+    const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物'].filter(Boolean);
+    const src = r.cached ? `キャッシュ(${r.cached === 'db' ? 'IndexedDB' : 'メモリ'})` : `${r.ms}ms`;
+    const st = JV.Judge.stats;
+    JV.Debug.set('judge', `判定 #${unit}（${r.source}・${src}）\n${JV.Judge.describe(r.answers)}\n→ ${[...plan.why, ...changes].join(' / ') || '変化なし'}`);
+    JV.Debug.set('stats', `呼び出し ${st.calls}・メモリ ${st.memoryHits}・DB ${st.dbHits}・中断 ${st.aborted}・判定中 ${JV.Judge.inflight.size}`);
+  },
+
+  /** 読んだ位置を最近読んだ作品に記録（1秒に1回まで） */
+  saveProgress(unit) {
+    this.progressUnit = unit;
+    if (this.progressTimer) return;
+    this.progressTimer = setTimeout(async () => {
+      this.progressTimer = 0;
+      const hash = this.hash;
+      if (!hash) return;
+      const rec = await JV.Store.get('works', hash);
+      if (rec) { rec.lastUnit = this.progressUnit; rec.updatedAt = Date.now(); JV.Store.put('works', rec); }
+    }, 1000);
+  },
+
+  async renderRecent() {
+    const works = ((await JV.Store.all('works')) || []).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 10);
+    const sec = document.getElementById('recent-section');
+    const ul = document.getElementById('recent-list');
+    ul.textContent = '';
+    sec.classList.toggle('hidden', works.length === 0);
+    for (const w of works) {
+      const li = document.createElement('li');
+      li.className = 'recent-item';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '<span class="name"></span><span class="meta"></span>';
+      b.children[0].textContent = w.title + (w.author ? `　${w.author}` : '');
+      const d = new Date(w.updatedAt);
+      const pct = w.unitCount ? Math.round(((w.lastUnit || 0) + 1) / w.unitCount * 100) : 0;
+      b.children[1].textContent = `${d.getMonth() + 1}/${d.getDate()}・${pct}%`;
+      b.onclick = () => this.openText(w.text, w.name, { resumeUnit: w.lastUnit });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'del';
+      del.title = '履歴と判定キャッシュを削除';
+      del.setAttribute('aria-label', `${w.title} を履歴から削除`);
+      del.textContent = '×';
+      del.onclick = async () => { await JV.Store.del('works', w.hash); await JV.Store.clearJudgments(w.hash); this.renderRecent(); };
+      li.append(b, del);
+      ul.appendChild(li);
+    }
+  },
+
+  renderSamples() {
+    const ul = document.getElementById('sample-list');
+    ul.textContent = '';
+    for (const s of this.SAMPLES) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '<span></span><span class="meta"></span>';
+      b.children[0].textContent = s.label;
+      b.children[1].textContent = s.note;
+      b.onclick = () => this.openSample(s);
+      li.appendChild(b);
+      ul.appendChild(li);
+    }
+  },
+
+  setupDrop() {
+    const zone = document.getElementById('drop-zone');
+    const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+    ['dragenter', 'dragover'].forEach((ev) => zone.addEventListener(ev, (e) => { stop(e); zone.classList.add('dragover'); }));
+    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { stop(e); zone.classList.remove('dragover'); }));
+    zone.addEventListener('drop', (e) => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) this.openFile(f);
+    });
+    // ゾーン外へのドロップでブラウザがファイルを開いてしまうのを防ぐ
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => e.preventDefault());
+  },
+
+  onFileInput(input) {
+    const f = input.files && input.files[0];
+    if (f) this.openFile(f);
+    input.value = '';
+  },
+
+  async openFile(file) {
+    try {
+      const buf = await file.arrayBuffer();
+      if (JV.Zip.isZip(buf)) {
+        const { name, bytes } = await JV.Zip.extractText(buf);
+        this.openText(JV.Encoding.decode(bytes), name);
+        return;
+      }
+      this.openText(JV.Encoding.decode(buf), file.name);
+    } catch (err) {
+      this.showError(`ファイルを読み込めませんでした：${err.message || err}`);
+    }
+  },
+
+  async onUrlSubmit(e) {
+    e.preventDefault();
+    const input = document.getElementById('url-input');
+    const btn = document.getElementById('url-submit');
+    const url = input.value.trim();
+    if (!url) return;
+    btn.disabled = true;
+    btn.textContent = '読み込み中…';
+    this.hideError();
+    try {
+      const { text, name } = await JV.Aozora.load(url);
+      input.value = '';
+      this.openText(text, name);
+    } catch (err) {
+      this.showError(err.message || String(err));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '読み込む';
+    }
+  },
+
+  async openSample(s) {
+    try {
+      const res = await fetch(s.file);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      this.openText(JV.Encoding.decode(buf), s.file.split('/').pop());
+    } catch (err) {
+      this.showError(`サンプルを読み込めませんでした（file:// で開いている場合は、ローカルサーバー経由で開くかファイルを直接選んでください）：${err.message || err}`);
+    }
+  },
+
+  openText(text, name, { resumeUnit = null } = {}) {
+    const doc = JV.Parser.parse(text, name);
+    if (!doc.paragraphs.length) { this.showError('本文が見つかりませんでした。'); return; }
+    this.doc = doc;
+    this.hash = '';
+    this.hideError();
+    JV.Reader.render(doc);
+    JV.Debug.clear();
+    JV.Director.reset();
+    JV.Stage.reset();
+    // 作品ハッシュ → キャッシュの切り替えと、最近読んだ作品への登録
+    JV.Judge.setWork('');
+    this.hashReady = JV.Store.hash(text).then(async (hash) => {
+      if (this.doc !== doc) return;
+      this.hash = hash;
+      JV.Judge.setWork(hash);
+      const old = await JV.Store.get('works', hash);
+      await JV.Store.put('works', {
+        hash, name, text, title: doc.title, author: doc.author, format: doc.format,
+        unitCount: doc.units.length, lastUnit: old ? old.lastUnit : 0, updatedAt: Date.now(),
+      });
+    });
+    this.startWorkJudgment();
+    this.showReader();
+    if (resumeUnit > 0 && resumeUnit < doc.units.length) {
+      const el = document.querySelector(`#text .seg[data-u="${resumeUnit}"]`);
+      if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight / 2 + 4);
+    }
+    JV.StopDetector.attach(document.getElementById('text'), (e) => this.onStop(e));
+  },
+
+  showReader() {
+    document.getElementById('home').classList.add('hidden');
+    document.getElementById('reader').classList.remove('hidden');
+    if (location.hash !== '#read') history.pushState(null, '', '#read');
+    window.scrollTo(0, 0);
+  },
+
+  goHome() {
+    if (location.hash === '#read') history.back();
+    else this.showHome();
+  },
+
+  showHome() {
+    JV.StopDetector.detach();
+    JV.Judge.abortExcept(new Set());
+    document.getElementById('reader').classList.add('hidden');
+    document.getElementById('home').classList.remove('hidden');
+    window.scrollTo(0, 0);
+    this.renderRecent();
+  },
+
+  showError(msg) {
+    const el = document.getElementById('home-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  },
+  hideError() { document.getElementById('home-error').classList.add('hidden'); },
+};
+
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+JV.App.init();
+</script>
+</body>
+</html>

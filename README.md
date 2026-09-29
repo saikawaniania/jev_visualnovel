@@ -5,6 +5,7 @@ Python 版と Node.js/TypeScript 版の両方を用意しています。どち�
 
 ## 構成
 
+- `viewer/` — 青空文庫サウンドノベル化ビューア（単一 HTML）。スクロールを止めた箇所の場面を Jev で判定し、背景と人物シルエットを差し替える。詳しくは `viewer/README.md`
 - `python/` — Python 版。`typesafe-sdk` を使用。CLI サンプル(`example.py`)と FastAPI サーバ(`server.py`)
 - `node/` — Node.js/TypeScript 版。`@typesafe-ai/sdk` を使用。CLI サンプル(`src/example.ts`)と Express サーバ(`src/server.ts`)
 

@@ -1,0 +1,22 @@
+# Netlify：ビューア（viewer/）を公開し、/v1/systemone を TypeSafe への中継関数につなぐ。
+# 環境変数（Site configuration → Environment variables）に次の2つを設定すること：
+#   TYPESAFE_API_KEY   TypeSafe の API キー
+#   RELAY_PASSPHRASE   中継の合言葉（ビューアの設定画面に同じものを入れた人だけが使える）
+[build]
+  publish = "viewer"
+  functions = "netlify/functions"
+  # 素材（viewer/assets/bg・sil）の一覧をデプロイのたびに作り直す。画像をアップロードするだけで反映される
+  command = "node viewer/tools/build-manifest.mjs"
+  # 公開される中身が変わっていなければビルドしない（本番デプロイはクレジットを使うため）。
+  # テスト・説明文だけの変更ではデプロイしない。終了コード 0 ＝ スキップ
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- viewer netlify netlify.toml ':(exclude)viewer/tests' ':(exclude)viewer/README.md' ':(exclude)viewer/assets/README.md' ':(exclude)viewer/assets/PROMPTS.md'"
+
+# 素材はめったに変わらないので、ブラウザに1日置いて再転送を減らす
+[[headers]]
+  for = "/assets/bg/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+[[headers]]
+  for = "/assets/sil/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
