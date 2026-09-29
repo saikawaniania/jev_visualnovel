@@ -66,3 +66,11 @@ npm run dev         # Webサーバとして起動(POST /judge)
 - [Python SDK](https://docs.typesafe.ai/sdk/python)
 - [JavaScript SDK](https://docs.typesafe.ai/sdk/javascript)
 - [Primitives (Choice / Score / Noul)](https://docs.typesafe.ai/primitives)
+
+## ライセンス
+
+- **コード**（下記の画像以外のすべて。サンプルの文章を含む）：[MIT License](LICENSE)　© 2026 斉川ニア
+- **画像**（`viewer/assets/bg/` の背景、`viewer/assets/sil/` のシルエット・群衆）：[CC BY 4.0](viewer/assets/LICENSE)　© 2026 斉川ニア
+  - 作者名「斉川ニア」を表示すれば、改変・再配布・商用利用を含めて自由に使えます
+  - これらの画像は、OpenAI の画像生成モデル（GPT Image 2.5）で生成したものです
+  - 自分で素材を作る場合は `viewer/assets/PROMPTS.md` を参考にしてください（素材がなくても仮素材で動きます）
