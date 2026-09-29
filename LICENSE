@@ -22,5 +22,6 @@ SOFTWARE.
 
 ---
 
-This license does not cover the image files in viewer/assets/bg/ and
-viewer/assets/sil/. See "ライセンス" in README.md.
+The image files in viewer/assets/bg/ and viewer/assets/sil/ are not covered
+by this license. They are licensed under Creative Commons Attribution 4.0
+International (CC BY 4.0) by 斉川ニア. See viewer/assets/LICENSE.
