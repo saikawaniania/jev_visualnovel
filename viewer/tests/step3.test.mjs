@@ -185,6 +185,17 @@ const ch3b = await layerState();
 check(Number(ch3b.night) > 0.5 && ch3b.loc === 'station', `背景と時間帯は前の値を引き継ぐ (${ch3b.loc}, 夜=${ch3b.night})`);
 check(Number(ch3b.vignette) > 0.2, `緊張感・寂しさで周辺減光 (${ch3b.vignette})`);
 
+// 天候：前の場面の名残（なし・少しの値）から雪に変わっても、粒の描画が止まらない
+const snow = await page.evaluate(async () => {
+  const W = JV.Weather;
+  W.instant('none', 0);
+  W.level = 0.5; // 前の場面のフェードの名残
+  W.set('snow', 1, 400);
+  await new Promise((r) => setTimeout(r, 900));
+  return { type: W.type, parts: W.parts.length, running: !!W.raf };
+});
+check(snow.type === 'snow' && snow.parts > 0 && snow.running, `「なし」から雪に切り替わって粒が降る (${JSON.stringify(snow)})`);
+
 // フェード時間の倍率
 const fadeMs = await page.evaluate(async () => {
   JV.Settings.set('fadeScale', 2);
