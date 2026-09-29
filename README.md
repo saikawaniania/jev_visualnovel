@@ -66,3 +66,10 @@ npm run dev         # Webサーバとして起動(POST /judge)
 - [Python SDK](https://docs.typesafe.ai/sdk/python)
 - [JavaScript SDK](https://docs.typesafe.ai/sdk/javascript)
 - [Primitives (Choice / Score / Noul)](https://docs.typesafe.ai/primitives)
+
+## ライセンス
+
+- **コード**（下記の画像以外のすべて。サンプルの文章を含む）：[MIT License](LICENSE)　© 2026 斉川ニア
+- **画像**（`viewer/assets/bg/` の背景、`viewer/assets/sil/` のシルエット・群衆）：**MIT ライセンスの対象外**です。
+  このビューアで表示するために同梱しています。再配布・転用はしないでください。
+  自分で使う場合は `viewer/assets/PROMPTS.md` を参考に、ご自身で素材を用意してください（素材がなくても仮素材で動きます）。
