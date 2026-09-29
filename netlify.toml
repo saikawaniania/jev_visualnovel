@@ -7,3 +7,16 @@
   functions = "netlify/functions"
   # 素材（viewer/assets/bg・sil）の一覧をデプロイのたびに作り直す。画像をアップロードするだけで反映される
   command = "node viewer/tools/build-manifest.mjs"
+  # 公開される中身が変わっていなければビルドしない（本番デプロイはクレジットを使うため）。
+  # テスト・説明文だけの変更ではデプロイしない。終了コード 0 ＝ スキップ
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- viewer netlify netlify.toml ':(exclude)viewer/tests' ':(exclude)viewer/README.md' ':(exclude)viewer/assets/README.md' ':(exclude)viewer/assets/PROMPTS.md'"
+
+# 素材はめったに変わらないので、ブラウザに1日置いて再転送を減らす
+[[headers]]
+  for = "/assets/bg/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+[[headers]]
+  for = "/assets/sil/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
