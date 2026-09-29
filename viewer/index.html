@@ -288,6 +288,12 @@ body.debug #center-line {
 #settings .model-list button.current { border-color: var(--accent); }
 #settings .model-list .desc { display: block; color: var(--muted); font-size: 12px; }
 #reader-top .settings-btn { margin-left: auto; }
+#notice {
+  position: fixed; left: 50%; top: 52px; transform: translateX(-50%); z-index: 45;
+  width: min(92vw, 520px); padding: 10px 14px; border-radius: 8px;
+  background: rgba(20, 22, 28, 0.94); border: 1px solid var(--line); color: var(--fg);
+  font-size: 13px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
 </style>
 </head>
 <body>
@@ -344,6 +350,7 @@ body.debug #center-line {
   </div>
   <button id="effects-toggle" type="button" aria-pressed="true" onclick="JV.App.toggleEffects()">演出 オン</button>
   <div id="center-line"></div>
+  <div id="notice" class="hidden" role="status"></div>
   <div id="debug" class="hidden"></div>
 </div>
 
@@ -398,6 +405,17 @@ body.debug #center-line {
         <span id="conn-result" class="result"></span>
       </div>
       <p class="note" id="route-note"></p>
+    </fieldset>
+
+    <fieldset data-show="relay">
+      <legend>公開の管理（持ち主だけ）</legend>
+      <p class="note">合言葉を入れた持ち主だけが操作できます。止めても再デプロイは要りません（クレジットは減りません）。</p>
+      <div class="row">
+        <button type="button" onclick="JV.SettingsUI.admin('status')">状況を見る</button>
+        <button type="button" onclick="JV.SettingsUI.admin('stop')">一般公開を止める</button>
+        <button type="button" onclick="JV.SettingsUI.admin('resume')">再開する</button>
+      </div>
+      <span id="admin-result" class="result"></span>
     </fieldset>
 
     <fieldset id="work-settings" class="hidden">
@@ -1011,6 +1029,7 @@ JV.Settings = {
   KEY: 'jev-viewer-settings',
   DEFAULTS: {
     route: 'mock',         // 呼び出し経路：mock | typesafe | openrouter | relay
+    routeChosen: false,    // 経路を自分で選んだか（選んでいなければ、一般公開中の中継を自動で使う）
     apiKey: '',            // APIキー（この端末の localStorage にだけ保存）
     relayPass: '',         // 中継サーバーの合言葉（Netlify の RELAY_PASSPHRASE と同じもの）
     endpoint: '',          // 接続先URLの上書き（空なら経路ごとの既定）
@@ -1040,6 +1059,16 @@ JV.Settings = {
     return this.values;
   },
   get(k) { if (!this.values) this.load(); return this.values[k]; },
+  /**
+   * 実際に使う呼び出し経路。経路を自分で選んでいない人は、サイトの中継が一般公開中なら
+   * 中継（本物の Jev）、そうでなければモックを使う
+   */
+  route() {
+    const stored = this.get('route');
+    const pub = JV.App && JV.App.publicRelay;
+    if (!this.get('routeChosen') && stored === 'mock' && pub && pub.open) return 'relay';
+    return stored;
+  },
   set(k, v) {
     if (!this.values) this.load();
     this.values[k] = v;
@@ -1092,7 +1121,7 @@ JV.SettingsUI = {
   fill() {
     this.fillWork();
     for (const el of document.querySelectorAll('#settings [data-key]')) {
-      const v = JV.Settings.get(el.dataset.key);
+      const v = el.dataset.key === 'route' ? JV.Settings.route() : JV.Settings.get(el.dataset.key);
       if (el.type === 'checkbox') el.checked = !!v;
       else if (el.tagName === 'SELECT') {
         el.value = String(v);
@@ -1116,13 +1145,14 @@ JV.SettingsUI = {
     else if (key === 'asciiKeys') v = el.value === 'true';
     else v = el.value.trim();
     JV.Settings.set(key, v);
+    if (key === 'route') JV.Settings.set('routeChosen', true);
     if (this.JUDGE_KEYS.has(key)) { this.dirtyJudge = true; document.getElementById('conn-result').textContent = ''; }
     if (key === 'route') this.refreshRoute();
     JV.App.applySettings();
   },
 
   refreshRoute() {
-    const route = JV.Settings.get('route');
+    const route = JV.Settings.route();
     const remote = route !== 'mock';
     document.querySelectorAll('#settings [data-show="remote"]').forEach((e) => e.classList.toggle('off', !remote));
     document.querySelectorAll('#settings [data-show="direct"]').forEach((e) => e.classList.toggle('off', !remote || route === 'relay'));
@@ -1146,7 +1176,7 @@ JV.SettingsUI = {
   async test() {
     const out = document.getElementById('conn-result');
     const btn = document.getElementById('conn-test');
-    const route = JV.Settings.get('route');
+    const route = JV.Settings.route();
     if (route === 'mock') { out.className = 'result'; out.textContent = 'モックでは不要です。'; return; }
     if (JV.Judge.adapter() !== JV.Adapters.remote) {
       out.className = 'result ng';
@@ -1178,7 +1208,11 @@ JV.SettingsUI = {
       let relayHint = '';
       if (route === 'relay') {
         if (err.status === 404 || err.status === 405 || err.status === 501) relayHint = '→ このページは中継サーバーから配信されていないようです。Netlify のURL（または local_server.py が表示したURL）で開き直してください。';
-        else if (err.status === 403 && /passphrase/.test(msg)) relayHint = '→ 合言葉が違います。Netlify の RELAY_PASSPHRASE と同じものを入れてください。';
+        else if (err.status === 403 && (/passphrase/.test(msg) || (err.detail && ['closed', 'stopped', 'limit'].includes(err.detail.code)))) {
+          relayHint = (JV.Settings.get('relayPass') || '').trim()
+            ? '→ 合言葉が違います。Netlify の RELAY_PASSPHRASE と同じものを入れてください。'
+            : `→ いまは一般公開していません（${JV.App.closedLabel(err.detail && err.detail.code)}）。持ち主は合言葉を入れてください。`;
+        }
         else if (err.status === 500 && /not configured/.test(msg)) relayHint = '→ Netlify の環境変数 TYPESAFE_API_KEY と RELAY_PASSPHRASE を設定し、再デプロイしてください。';
         else if (err.status === 401) relayHint = '→ 中継に設定した TypeSafe の APIキーが通っていません。キーを確認してください。';
       }
@@ -1226,6 +1260,31 @@ JV.SettingsUI = {
       out.textContent = `失敗：${err.message}`;
     } finally {
       btn.disabled = false;
+    }
+  },
+
+  /** 一般公開の状況・停止・再開（持ち主の合言葉が必要） */
+  async admin(action) {
+    const out = document.getElementById('admin-result');
+    const pass = (JV.Settings.get('relayPass') || '').trim();
+    if (!pass) { out.className = 'result ng'; out.textContent = '上の「合言葉」を入れてください。'; return; }
+    out.className = 'result';
+    out.textContent = '確認中…';
+    try {
+      const res = await fetch('v1/relay-admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Relay-Passphrase': pass }, body: JSON.stringify({ action }) });
+      let st = {};
+      try { st = await res.json(); } catch (_) { /* 下で扱う */ }
+      if (res.status === 404) throw new Error('このページには公開の管理がありません（Netlify のページで操作してください）');
+      if (res.status === 403) throw new Error('合言葉が違います');
+      if (!res.ok) throw new Error(st.error || `HTTP ${res.status}`);
+      JV.App.publicRelay = { open: st.open, reason: st.reason, until: st.until };
+      JV.App.applySettings();
+      const state = st.open ? '公開中' : JV.App.closedLabel(st.reason);
+      out.className = `result ${st.open ? 'ok' : ''}`;
+      out.textContent = `一般公開：${state}（期限 ${st.until || '未設定'}）・今日 ${st.used} / ${st.limit} 回${st.stopped ? '・停止スイッチ：オン' : ''}`;
+    } catch (err) {
+      out.className = 'result ng';
+      out.textContent = `失敗：${err.message}`;
     }
   },
 
@@ -1749,11 +1808,11 @@ JV.Adapters.remote = {
     relay: { label: '中継サーバー', url: '/v1/systemone' }, // 既定はページと同じサーバー（relay/local_server.py）
   },
 
-  get name() { return JV.Settings.get('route'); },
+  get name() { return JV.Settings.route(); },
   cacheKey() { return `${this.name}:${JV.Settings.get('model')}`; },
 
   endpoint() {
-    const route = JV.Settings.get('route');
+    const route = JV.Settings.route();
     const custom = (JV.Settings.get('endpoint') || '').trim();
     const url = custom || (this.ROUTES[route] || {}).url;
     const key = (JV.Settings.get('apiKey') || '').trim();
@@ -2676,10 +2735,16 @@ JV.Judge = {
 
   /** 設定から判定器を選ぶ。キー（中継ならURL）が未設定ならモック */
   adapter() {
-    const route = JV.Settings.get('route');
+    const route = JV.Settings.route();
     if (route === 'mock' || !JV.Adapters.remote.ROUTES[route]) return JV.Adapters.mock;
-    // 中継はキーをサーバー側に置けるので、キーなしでも使う
-    const ready = route === 'relay' || !!(JV.Settings.get('apiKey') || '').trim();
+    // 中継はキーをサーバー側に置けるので、キーなしでも使う。
+    // ただし合言葉なしで一般公開の中継を使う場合、公開が終わっていたらモックに戻す
+    if (route === 'relay') {
+      const pub = JV.App && JV.App.publicRelay;
+      const hasPass = !!(JV.Settings.get('relayPass') || '').trim();
+      return !hasPass && pub && !pub.open ? JV.Adapters.mock : JV.Adapters.remote;
+    }
+    const ready = !!(JV.Settings.get('apiKey') || '').trim();
     return ready ? JV.Adapters.remote : JV.Adapters.mock;
   },
   adapterKey() {
@@ -2896,6 +2961,7 @@ JV.App = {
     JV.Settings.load();
     JV.Stage.init();
     this.applySettings();
+    this.fetchPublicStatus();
     JV.Assets.loadManifest().then((ok) => {
       const m = JV.Assets.manifest;
       JV.Debug.set('assets', ok
@@ -2939,11 +3005,14 @@ JV.App = {
     this.applyEffects();
     JV.Debug.render();
     const a = JV.Judge.adapter();
-    const route = JV.Settings.get('route');
+    const route = JV.Settings.route();
     const r = JV.Adapters.remote.ROUTES[route];
-    const status = a !== JV.Adapters.remote || !r
-      ? (route === 'mock' || !r ? '判定：モック' : `判定：モック（${r.label} は未設定）`)
-      : `判定：${r.label}・${JV.Settings.get('model')}`;
+    const pub = this.publicRelay;
+    const isPublic = a === JV.Adapters.remote && route === 'relay' && !(JV.Settings.get('relayPass') || '').trim();
+    let status;
+    if (isPublic && pub && pub.open) status = `判定：Jev（一般公開中${pub.until ? `・${pub.until.slice(5).replace('-', '/')}まで` : ''}）`;
+    else if (a !== JV.Adapters.remote || !r) status = route === 'mock' || !r ? '判定：簡易（キーワード）' : `判定：簡易（${pub && !pub.open ? this.closedLabel(pub.reason) : `${r.label} は未設定`}）`;
+    else status = `判定：${r.label}・${JV.Settings.get('model')}`;
     const el = document.getElementById('route-status');
     if (el) el.textContent = status;
   },
@@ -2986,6 +3055,56 @@ JV.App = {
     if (JV.Settings.get('effects')) this.judgeAndShow(unit);
   },
 
+  /** サイトの中継が一般公開中かを調べる（Netlify のときだけ。GitHub Pages や file:// では何もしない） */
+  async fetchPublicStatus() {
+    if (!/^https?:$/.test(location.protocol)) return;
+    try {
+      const pass = (JV.Settings.get('relayPass') || '').trim();
+      const res = await fetch('v1/relay-status', { cache: 'no-store', headers: pass ? { 'X-Relay-Passphrase': pass } : {} });
+      if (!res.ok || !(res.headers.get('Content-Type') || '').includes('json')) return;
+      const st = await res.json();
+      if (typeof st.open !== 'boolean') return;
+      this.publicRelay = st;
+      this.applySettings();
+    } catch (_) { /* 中継のない場所 */ }
+  },
+
+  closedLabel(reason) {
+    return { closed: '一般公開は終了', stopped: '一般公開は一時停止中', limit: '今日の上限に到達' }[reason] || '一般公開なし';
+  },
+
+  /**
+   * 合言葉なしで中継を使っていて「公開していない」と断られたら、モック（キーワード判定）に切り替えて知らせる。
+   * 処理したら true
+   */
+  handlePublicClosed(err) {
+    const code = err && err.status === 403 && err.detail && err.detail.code;
+    if (!['closed', 'stopped', 'limit'].includes(code)) return false;
+    this.publicRelay = { ...(this.publicRelay || {}), open: false, reason: code };
+    this.applySettings();
+    const msg = {
+      closed: '一般公開の期間が終わったため、簡易判定（キーワード）で表示しています。',
+      stopped: '一般公開を一時停止しているため、簡易判定（キーワード）で表示しています。',
+      limit: '今日の利用上限に達したため、簡易判定（キーワード）で表示しています。明日また本物の判定が使えます。',
+    }[code];
+    this.notify(msg);
+    JV.Debug.set('judge', `中継：${this.closedLabel(code)} → 簡易判定に切り替え`);
+    if (this.doc) {
+      JV.Judge.abortExcept(new Set());
+      this.startWorkJudgment();
+      JV.StopDetector.fire(true);
+    }
+    return true;
+  },
+
+  notify(msg, ms = 8000) {
+    const el = document.getElementById('notice');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => el.classList.add('hidden'), ms);
+  },
+
   /** 主人公の見た目：作品ごとの手動指定 → 作品判定 → 不明 */
   protagonist() {
     return this.protagonistOverride || (this.work && this.work.protagonist) || 'unknown';
@@ -3012,7 +3131,10 @@ JV.App = {
         const pro = JV.Schema.byId('work', 'protagonist', this.protagonist());
         JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}`);
       })
-      .catch((err) => { JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱う）`); });
+      .catch((err) => {
+        if (this.handlePublicClosed(err)) return;
+        JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱う）`);
+      });
   },
 
   /**
@@ -3039,6 +3161,7 @@ JV.App = {
       }
     } catch (err) {
       if (JV.util.isAbort(err)) return;
+      if (this.handlePublicClosed(err)) return;
       JV.Debug.set('judge', `判定エラー: ${err.message || err}（前の絵を維持）`);
     }
   },

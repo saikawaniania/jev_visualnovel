@@ -42,7 +42,9 @@ export async function openApp({ viewport = { width: 1000, height: 800 } } = {}) 
   const page = await browser.newPage({ viewport });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // 「Failed to load resource」はネットワークの記録（中継のない場所で /v1/relay-status が 404 になる等）なので数えない。
+  // スクリプトのエラーは pageerror と他の console.error で拾う
+  page.on('console', (m) => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.goto(url);
   return {
     page, url, errors, ROOT,
