@@ -569,7 +569,7 @@ JV.Encoding = {
     } catch (_) { /* UTF-8 ではない */ }
     const sjis = new TextDecoder('shift_jis').decode(u8);
     const euc = new TextDecoder('euc-jp').decode(u8);
-    const bad = (s) => (s.match(/�/g) || []).length;
+    const bad = (s) => (s.match(/\uFFFD/g) || []).length;
     return bad(euc) < bad(sjis) ? euc : sjis;
   },
 };
