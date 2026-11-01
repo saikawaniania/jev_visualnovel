@@ -195,18 +195,24 @@ check(all.missing.length === 0, `スキーマの場所はすべて描き方が�
 
 console.log('吹き出し（セリフ・話し手・重要度）');
 const bub = await page.evaluate(async () => {
-  const q = JV.Parser.quotes('「おはよう」と言った。『明日は雨』と画面に出た。「封を切ってはいけないよ」');
+  const q = JV.Parser.quotes('「おはよう」と言った。\n『明日は雨』と画面に出た。\n差出人は「明日の私」だった。\n「封を切ってはいけないよ」');
   const none = Object.keys(JV.Schema.toQuestions('scene'));
-  const qs = JV.Schema.toQuestions('scene', { lines: q });
+  const qs = JV.Schema.toQuestions('scene', { lines: JV.Parser.quoteItems('「おはよう」と言った。\n『明日は雨』と画面に出た。\n「封を切ってはいけないよ」') });
   const one = Object.keys(JV.Schema.toQuestions('scene', { lines: ['ひとつだけ'] }));
-  const ans = await JV.Adapters.mock.judge({ current: '「おはよう」と言った。\n「封を切ってはいけないよ、お嬢ちゃん！」' }, JV.Schema.toQuestions('scene', { lines: ['おはよう', '封を切ってはいけないよ、お嬢ちゃん！'] }));
+  const cur = '「おはよう」と私は言った。\n「封を切ってはいけないよ、お嬢ちゃん！」と老婆が言った。\n『至急、城へ戻れ』';
+  const ans = await JV.Adapters.mock.judge({ current: cur }, JV.Schema.toQuestions('scene', { lines: JV.Parser.quoteItems(cur) }));
+  const many = JV.Parser.quoteItems(['あ', 'い', 'う', 'えっ！？', 'お', '最後の一言だ！'].map((x) => `「${x}」`).join('\n'));
   const D = JV.Director;
   const ch = (k, label, p = 0.9) => ({ type: 'choice', choice: label, probabilities: { [label]: p }, confidence: p });
   const base = { location: ch('location', '和室'), people: ch('people', '2人'), figure_main: ch('figure_main', '成人女性'), figure_sub: ch('figure_sub', '少女') };
   D.reset();
   const lines = ['こんにちは', 'それは宣戦布告だ'];
-  const p1 = D.decide({ ...base, line: ch('line', '2'), line_speaker: ch('line_speaker', '相手'), line_importance: { type: 'score', score: 2, confidence: 0.9 } }, { chapter: 0, lines });
-  const p2 = D.decide({ ...base, line: ch('line', '1'), line_speaker: ch('line_speaker', '中心人物'), line_importance: { type: 'score', score: 0, confidence: 0.9 } }, { chapter: 0, lines });
+  const sp = (label) => ch('speaker', label);
+  const p1 = D.decide({ ...base, line: ch('line', '2'), speaker_1: sp('成人女性'), speaker_2: sp('少女'), line_importance: { type: 'score', score: 2, confidence: 0.9 } }, { chapter: 0, lines });
+  const p2 = D.decide({ ...base, line: ch('line', '1'), speaker_1: sp('成人女性'), line_importance: { type: 'score', score: 0, confidence: 0.9 } }, { chapter: 0, lines });
+  // 話し手の見た目 → しっぽを向ける人物
+  const role = (label, opts = {}) => D.speakerRole(sp(label), { layout: 'two', main: 'woman', sub: 'girl', pose: 'talk' }, { pro: 'woman', first: true, hideNarrator: false, ...opts });
+  const roles = { narr: role('語り手'), girl: role('少女'), man: role('成人男性'), other: role('場面にいない人物'), unk: role('不明'), hidden: role('語り手', { hideNarrator: true }) };
   const p3 = D.decide({ ...base }, { chapter: 0, lines: [] });
   await JV.Stage.show(p1);
   await new Promise((r) => setTimeout(r, 1700));
@@ -219,14 +225,17 @@ const bub = await page.evaluate(async () => {
   const other = Draw.bubbleLayout(L, { text: '明日は雨', speaker: 'other', importance: 0.5 }, fig, 'chair');
   const long = Draw.bubbleLayout(L, { text: 'あ'.repeat(60), speaker: 'main', importance: 0.5 }, fig, 'chair');
   const heads = Draw.placement(L, fig.figures).map((p) => [p.role, Draw.headOf(L, p, 'chair').x]);
-  return { q, none, keys: Object.keys(qs).slice(-3), lineN: Object.keys(qs.line.criteria).length, one, mock: [ans.line && ans.line.choice, ans.line_speaker && ans.line_speaker.choice, ans.line_importance && ans.line_importance.score],
+  return { q, none, keys: Object.keys(qs).filter((k) => /^(line|speaker_)/.test(k)), lineN: Object.keys(qs.line.criteria).length, ctx: qs.speaker_1.instructions, one, mock: [ans.line && ans.line.choice, ans.speaker_1 && ans.speaker_1.choice, ans.speaker_2 && ans.speaker_2.choice, ans.speaker_3 && ans.speaker_3.choice, ans.line_importance && ans.line_importance.score], many: many.map((x) => x.text), roles,
     l1: p1.scene.line, l2: p2.scene.line, l3: p3.scene.line, st: st.line, sub, main, other, long, heads, W: L.W };
 });
-check(bub.q.join('|') === 'おはよう|明日は雨|封を切ってはいけないよ', `「」と『』のセリフを拾う (${bub.q})`);
-check(!bub.none.includes('line') && !bub.none.includes('line_speaker'), 'セリフがない単位では吹き出しの質問をしない');
-check(bub.keys.join() === 'line,line_speaker,line_importance' && bub.lineN === 3, `セリフがあれば代表・話し手・重要度を聞く (${bub.keys})`);
-check(!bub.one.includes('line') && bub.one.includes('line_speaker'), 'セリフが1つなら代表は聞かない');
-check(bub.mock[0] === '2' && bub.mock[2] >= 1, `モックは印象の強いセリフを選び、重要度を高めに (${bub.mock})`);
+check(bub.q.join('|') === 'おはよう|明日は雨|封を切ってはいけないよ', `「」と『』のセリフを拾い、地の文の中の名前は除く (${bub.q})`);
+check(!bub.none.some((k) => /^(line|speaker)/.test(k)), 'セリフがない単位では吹き出しの質問をしない');
+check(bub.keys.join() === 'line,speaker_1,speaker_2,speaker_3,line_importance' && bub.lineN === 3, `代表・セリフごとの話し手・重要度を聞く (${bub.keys})`);
+check(bub.ctx.includes('直後の地の文「と言った') && bub.ctx.includes('セリフ1「おはよう」'), `話し手の質問に前後の地の文を添える (${bub.ctx.slice(0, 60)})`);
+check(!bub.one.includes('line') && bub.one.includes('speaker_1'), 'セリフが1つなら代表は聞かない');
+check(bub.many.length === 4 && bub.many.includes('最後の一言だ！') && bub.many.includes('えっ！？'), `候補は4つまで、印象の強いものを残す (${bub.many})`);
+check(bub.mock[0] === '2' && bub.mock[1] === '語り手' && bub.mock[2] === '老人（女）' && bub.mock[3] === '場面にいない人物' && bub.mock[4] >= 1, `モック：地の文から話し手を当てる (${bub.mock})`);
+check(bub.roles.narr === 'main' && bub.roles.girl === 'sub' && bub.roles.man === 'other' && bub.roles.other === 'other' && bub.roles.unk === 'main' && bub.roles.hidden === 'other', `話し手の見た目 → 描いている人物 (${JSON.stringify(bub.roles)})`);
 check(bub.l1 && bub.l1.text === 'それは宣戦布告だ' && bub.l1.speaker === 'sub' && bub.l1.importance === 1, `選ばれたセリフ・話し手・重要度 (${JSON.stringify(bub.l1)})`);
 check(bub.l2 === null && bub.l3 === null, '重要度が「さりげない」なら出さない／セリフがなければ出さない');
 check(bub.st && bub.st.text === 'それは宣戦布告だ', `舞台に吹き出しが出る (${bub.st && bub.st.text})`);
