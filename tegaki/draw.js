@@ -726,9 +726,12 @@
     for (const sd of [-1, 1]) {
       const [rx, ry] = sd < 0 ? E.back : E.front, x = sideX(pts, ey, sd);
       tg.ellipse(x, ey, rx * r, ry * r, { fill: skin, lw, seed: seed + 32 + sd });
-      if (E.inner && sd < 0) tg.line([[x - rx * r * 0.45, ey - ry * r * 0.45], [x - rx * r * 0.62, ey], [x - rx * r * 0.35, ey + ry * r * 0.5]], { lw: lw * 0.7, seed: seed + 35, amp: 0.4 });
     }
     tg.shape(pts, { fill: skin, lw: lw * 1.1, seed: seed + 31, amp: 1.2 });
+    // 後ろ側の耳は顔とひと続きに見せる：耳の内側を肌色で塗って、耳と顔の間の輪郭線を消す
+    const [brx, bry] = E.back, bx = sideX(pts, ey, -1), inset = lw * 1.6 + 2;
+    tg.ellipse(bx, ey, Math.max(1, brx * r - inset), Math.max(1, bry * r - inset), { fill: skin, stroke: null, seed: seed + 34, amp: 0.3 });
+    if (E.inner) tg.line([[bx - brx * r * 0.45, ey - bry * r * 0.45], [bx - brx * r * 0.62, ey], [bx - brx * r * 0.35, ey + bry * r * 0.5]], { lw: lw * 0.7, seed: seed + 35, amp: 0.4 });
   }
 
   function hairBase(tg, B, cos, d, S, lw, seed) {
