@@ -1,0 +1,9 @@
+{
+  "name": "jev-tegaki-novel",
+  "private": true,
+  "description": "手描きサウンドノベル（tegaki/）の Netlify 中継関数が使う依存関係。ページ本体は依存なし",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^11.1.1"
+  }
+}

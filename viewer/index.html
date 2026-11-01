@@ -180,6 +180,74 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 /* 3 天候（曇り・霧。雨雪は canvas） */
 #stage .cloudy { opacity: 0; background: rgba(110, 115, 125, 0.30); mix-blend-mode: multiply; }
 #stage .fog { opacity: 0; background: linear-gradient(to top, rgba(225, 228, 232, 0.75), rgba(220, 224, 230, 0.35) 55%, rgba(220, 224, 230, 0.15)); }
+/* 3.5 心象（心の中だけを描く段落で、場所の背景の代わりに気持ちの色を出す） */
+#stage .emo { opacity: 0; overflow: hidden; }
+#stage .emo::before, #stage .emo::after { content: ""; position: absolute; inset: -20%; }
+/* 不安：沈んだ藍と紫のまだら。ゆっくり不規則に揺れる */
+#stage .emo-anxiety { background: linear-gradient(160deg, #23243f, #3a2f52 55%, #1c2234); }
+#stage .emo-anxiety::before {
+  background:
+    radial-gradient(closest-side at 30% 35%, rgba(120, 96, 170, 0.45), transparent),
+    radial-gradient(closest-side at 72% 60%, rgba(70, 90, 150, 0.45), transparent),
+    radial-gradient(closest-side at 50% 85%, rgba(40, 30, 60, 0.6), transparent);
+  animation: emo-drift 9s ease-in-out infinite alternate;
+}
+#stage .emo-anxiety::after {
+  background: repeating-radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0) 0 22px, rgba(190, 180, 255, 0.05) 23px 25px);
+  animation: emo-waver 2.6s ease-in-out infinite;
+}
+/* 喜び：あたたかい桃と金。上から光が差し、光の粒が昇る */
+#stage .emo-joy { background: linear-gradient(to bottom, #f6c98a, #ef9f8a 60%, #c97a8f); }
+#stage .emo-joy::before {
+  background: radial-gradient(ellipse 60% 45% at 50% 18%, rgba(255, 246, 210, 0.85), rgba(255, 230, 170, 0) 70%);
+  animation: emo-breathe 5s ease-in-out infinite alternate;
+}
+#stage .emo-joy::after {
+  background-image:
+    radial-gradient(circle, rgba(255, 252, 230, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle, rgba(255, 240, 200, 0.7) 0 1.5px, transparent 2.5px);
+  background-size: 90px 110px, 140px 150px;
+  background-position: 0 0, 40px 60px;
+  animation: emo-rise 14s linear infinite;
+}
+/* 落ち着き：水色と若草のやわらかな階調。ゆっくり呼吸する光 */
+#stage .emo-calm { background: linear-gradient(to bottom, #a9d3d6, #9cc7b4 55%, #7fae9e); }
+#stage .emo-calm::before {
+  background: radial-gradient(ellipse 70% 50% at 50% 40%, rgba(240, 255, 250, 0.55), rgba(240, 255, 250, 0) 70%);
+  animation: emo-breathe 8s ease-in-out infinite alternate;
+}
+#stage .emo-calm::after {
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0) 0 38px, rgba(255, 255, 255, 0.07) 39px 41px);
+  animation: emo-sway 12s ease-in-out infinite alternate;
+}
+/* 悲しみ：灰青。上が暗く、細い筋がゆっくり落ちる */
+#stage .emo-sadness { background: linear-gradient(to bottom, #3c4a5e, #5d6f85 60%, #7a8798); }
+#stage .emo-sadness::before {
+  background: radial-gradient(ellipse 80% 55% at 50% 100%, rgba(170, 190, 215, 0.35), rgba(170, 190, 215, 0) 70%);
+}
+#stage .emo-sadness::after {
+  background-image: linear-gradient(to bottom, rgba(210, 225, 245, 0), rgba(210, 225, 245, 0.18) 50%, rgba(210, 225, 245, 0));
+  background-size: 3px 160px;
+  -webkit-mask-image: repeating-linear-gradient(to right, #000 0 1px, transparent 1px 47px);
+  mask-image: repeating-linear-gradient(to right, #000 0 1px, transparent 1px 47px);
+  animation: emo-fall 7s linear infinite;
+}
+/* 怒り：深紅から黒へ。脈打つように明滅する */
+#stage .emo-anger { background: radial-gradient(ellipse at 50% 60%, #8e2a26, #4a1414 60%, #1e0a0a); }
+#stage .emo-anger::before {
+  background: radial-gradient(ellipse 55% 45% at 50% 60%, rgba(255, 110, 60, 0.45), rgba(255, 110, 60, 0) 70%);
+  animation: emo-pulse 1.6s ease-in-out infinite;
+}
+@keyframes emo-drift { from { transform: translate(-3%, -2%) rotate(-2deg) scale(1); } to { transform: translate(3%, 2%) rotate(3deg) scale(1.08); } }
+@keyframes emo-waver { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.03) translate(0.4%, -0.3%); } 70% { transform: scale(0.99) translate(-0.3%, 0.4%); } }
+@keyframes emo-breathe { from { opacity: 0.55; transform: scale(1); } to { opacity: 1; transform: scale(1.06); } }
+@keyframes emo-rise { from { background-position: 0 0, 40px 60px; } to { background-position: 0 -660px, 40px -840px; } }
+@keyframes emo-sway { from { transform: translateY(-2%); } to { transform: translateY(2%); } }
+@keyframes emo-fall { from { background-position: 0 -160px; } to { background-position: 0 1000px; } }
+@keyframes emo-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #stage .emo::before, #stage .emo::after { animation: none; } }
+/* 心象の背景の上でも黒いシルエットが沈まないよう、夜と同じく縁を光らせる */
+#stage.is-inner .fig img { filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.55)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.3)); }
 /* 4 人物シルエット */
 #stage .figures { opacity: 0; }
 body.no-silhouettes #stage .figures { display: none; }
@@ -501,7 +569,7 @@ JV.Encoding = {
     } catch (_) { /* UTF-8 ではない */ }
     const sjis = new TextDecoder('shift_jis').decode(u8);
     const euc = new TextDecoder('euc-jp').decode(u8);
-    const bad = (s) => (s.match(/�/g) || []).length;
+    const bad = (s) => (s.match(/\uFFFD/g) || []).length;
     return bad(euc) < bad(sjis) ? euc : sjis;
   },
 };
@@ -1572,6 +1640,22 @@ JV.Schema = {
         '緊迫：恐怖・危険・争い・強い動揺のある場面',
       ],
     },
+    inner: {
+      type: 'noul',
+      instructions: '現在の段落(current)が、外の出来事・動作・会話・風景ではなく、ほぼ視点人物の心の中（思い・迷い・感情・物思い）だけを描いている。動作や会話が中心なら当てはまらない',
+    },
+    emotion: {
+      type: 'choice',
+      instructions: '現在の段落(current)で、視点人物の心にいちばん強く表れている気持ち。読み取れなければ「不明」',
+      options: [
+        { id: 'anxiety', label: '不安', desc: '不安・心配・胸騒ぎ・迷い・おびえ・落ち着かない気持ち' },
+        { id: 'joy', label: '喜び', desc: '喜び・嬉しさ・楽しさ・幸福感・胸が躍る気持ち' },
+        { id: 'calm', label: '落ち着き', desc: '落ち着き・安らぎ・安心・しみじみとした穏やかな気持ち' },
+        { id: 'sadness', label: '悲しみ', desc: '悲しみ・寂しさ・切なさ・喪失感・やるせなさ' },
+        { id: 'anger', label: '怒り', desc: '怒り・苛立ち・悔しさ・憎しみ' },
+        { id: 'unknown', label: '不明', desc: '気持ちが読み取れない' },
+      ],
+    },
   },
 
   options(group, key) {
@@ -1674,6 +1758,15 @@ JV.Adapters.mock = {
       ['寂し', '哀し', '悲し', '涙', '独り', 'ひとりきり', '遠ざか', '形見', '思い出', '昔', '見当らな', '不安'],
       ['叫', '震', '恐', '血', '逃げ', '怖', '悲鳴', '嵐', '雷', '激し', '黒い影', '背筋が寒', '顔色が悪'],
     ],
+    emotion: {
+      '不安': ['不安', '心配', '落ち着かな', '胸騒ぎ', '気がかり', '怯え', 'おびえ', 'どうしよう', '迷', 'ざわ', '恐ろし'],
+      '喜び': ['嬉し', 'うれし', '喜', '楽し', '幸せ', '幸福', '胸が躍', '晴れやか', '弾ん', 'わくわく'],
+      '落ち着き': ['安らか', 'ほっと', '落ち着い', '安心', 'しみじみ', '穏やか', '和ん', 'のどか'],
+      '悲しみ': ['悲し', '哀し', '寂し', '淋し', '涙', '泣', '切な', 'やるせな', '失っ', '独りきり'],
+      '怒り': ['怒', '腹が立', '憤', '苛立', 'いらいら', '悔し', '許せな', '憎'],
+    },
+    // 心の中だけを描く段落の手がかり
+    inner: ['思った', '思う', '思われ', '気がし', '気持ち', '胸の', '胸が', '心の', '心が', '感じ', '考え', 'ような気', 'たまらな', 'のだろう', 'だろうか', '願っ', '祈'],
     transition: ['翌朝', 'その夜', '日が暮れ', '昼過ぎ', '夜更け', 'やがて', '着いた', '出た', '乗り込', 'しばらくして', '夕方になる', 'になると', '目が覚め', 'ようやく'],
   },
 
@@ -1789,6 +1882,15 @@ JV.Adapters.mock = {
       if (time && time !== '不明' && prev.time && time !== prev.time && answers.time.confidence > 0.35) p += 0.3;
       if (!prev.location) p += 0.3;
       answers.scene_changed = { type: 'noul', noul: Math.min(0.97, p) };
+    }
+    if (questions.inner) {
+      // 会話がなく、心の動きを表す言葉が多く、場所や動作の言葉が少ないほど「心の中だけ」
+      const narr = cur.replace(/「[^」]*」|『[^』]*』/g, '');
+      const hits = this.count(narr, K.inner) + 0.6 * Object.values(K.emotion).reduce((n, kws) => n + this.count(narr, kws), 0);
+      const outer = Object.values(K.location).reduce((n, kws) => n + this.count(narr, kws), 0) + 0.5 * this.count(narr, K.pose['歩く・走る']);
+      const per100 = (x) => x / Math.max(1, narr.length / 100);
+      const p = 0.08 + 0.3 * per100(hits) - 0.25 * dialogues - 0.15 * per100(outer);
+      answers.inner = { type: 'noul', noul: Math.max(0.02, Math.min(0.95, p)) };
     }
     return answers;
   },
@@ -2304,6 +2406,13 @@ JV.Stage = {
         <div class="layer tint tint-night"></div>
         <div class="layer tint tint-night-dim"></div>
         <div class="layer cloudy"></div>
+        <div class="layer inner" data-layer="inner">
+          <div class="layer emo emo-anxiety"></div>
+          <div class="layer emo emo-joy"></div>
+          <div class="layer emo emo-calm"></div>
+          <div class="layer emo emo-sadness"></div>
+          <div class="layer emo emo-anger"></div>
+        </div>
         <div class="layer figures" data-layer="figures">
           <div class="fig crowd"><img alt=""></div>
           <div class="fig sub"><img alt=""></div>
@@ -2330,6 +2439,7 @@ JV.Stage = {
     this.figs.style.opacity = '0';
     this.figs.querySelectorAll('.fig').forEach((f) => { f.style.display = 'none'; });
     this.el.querySelectorAll('.tint, .cloudy, .fog').forEach((t) => { t.style.transition = 'none'; t.style.opacity = '0'; });
+    this.setInner(null, 0);
     this.setMood(0, 0);
     this.el.querySelector('.blackout').style.opacity = '0';
     JV.Weather.instant('none', 0);
@@ -2381,7 +2491,8 @@ JV.Stage = {
       e.style.transition = `opacity ${ms}ms ease`;
       e.style.opacity = String(val[i] * own);
     });
-    const w = scene.weather;
+    // 心象の背景を出している間は、雲・霧・雨雪を止める（心の中の場面なので）
+    const w = scene.inner ? 'none' : scene.weather;
     const indoor = this.INDOOR.has(scene.location);
     const cl = q('.cloudy');
     cl.style.transition = `opacity ${ms}ms ease`;
@@ -2393,9 +2504,22 @@ JV.Stage = {
     JV.Weather.set(particles, 1, ms);
   },
 
+  /** 心象の背景：心の中だけを描く段落で、気持ち（不安・喜び・落ち着き・悲しみ・怒り）の色に替える。null で消す */
+  setInner(id, ms) {
+    this.inner = id || null;
+    this.el.classList.toggle('is-inner', !!this.inner);
+    this.el.dataset.inner = this.inner || '';
+    this.el.querySelectorAll('.emo').forEach((e) => {
+      e.style.transition = `opacity ${ms}ms ease`;
+      e.style.opacity = e.classList.contains(`emo-${this.inner}`) ? '1' : '0';
+    });
+  },
+
   setMood(m, ms) {
     const v = this.el.querySelector('.vignette');
     const scene = this.el.querySelector('.scene');
+    // 心象の背景は気持ちの色そのものなので、緊張感で色を抜かない
+    if (this.inner) m = 0;
     v.style.transition = `opacity ${ms}ms ease`;
     v.style.opacity = String(0.15 + 0.5 * m);
     scene.style.transition = `filter ${ms}ms ease`;
@@ -2470,8 +2594,9 @@ JV.Stage = {
       await JV.util.sleep(500 * k);
       if (!alive()) return;
       this.setBackground(s, 0);
+      this.setInner(s.inner, 0);
       this.setTone(s, 0);
-      JV.Weather.instant((s.weather === 'rain' || s.weather === 'snow') && !this.INDOOR.has(s.location) ? s.weather : 'none', 1);
+      JV.Weather.instant(!s.inner && (s.weather === 'rain' || s.weather === 'snow') && !this.INDOOR.has(s.location) ? s.weather : 'none', 1);
       this.setMood(s.mood, 0);
       this.placeFigures(s);
       this.figKey = newFigKey;
@@ -2488,6 +2613,7 @@ JV.Stage = {
       const hadFigs = this.figs.style.opacity !== '0';
       if (hadFigs) this.fadeFigures(0, 200 * k);
       this.setBackground(s, 800 * k);
+      this.setInner(s.inner, 800 * k);
       this.setTone(s, 800 * k);
       this.setMood(s.mood, 1200 * k);
       this.shown = s;
@@ -2501,7 +2627,9 @@ JV.Stage = {
 
     // 時間帯・天候だけ変わる：色調・天候レイヤーだけゆっくり（1,200ms）。時間帯専用の絵があれば背景も
     if (needBg && s.location) this.setBackground(s, 1200 * k);
-    if (plan.tone) this.setTone(s, 1200 * k);
+    // 心象の出入りはゆっくり（1,200ms）。出入りのときは雨雪・霧も止めたり戻したりする
+    if (plan.inner) this.setInner(s.inner, 1200 * k);
+    if (plan.tone || plan.inner) this.setTone(s, 1200 * k);
     this.setMood(s.mood, 1200 * k);
     this.shown = s;
 
@@ -2596,6 +2724,13 @@ JV.Director = {
     // 空気（緊張感）
     if (a.mood) s.mood = a.mood.value;
 
+    // 心象：心の中だけを描く段落では、背景を気持ちの色に替える。そうでない段落が来たら元の背景に戻す
+    const I = a.inner, E = a.emotion;
+    const wasInner = s.inner || null;
+    if (I && I.p >= th && E && E.id !== 'unknown' && E.confidence >= 0.35) s.inner = E.id;
+    else s.inner = null;
+    if (s.inner !== wasInner) why.push(s.inner ? `心象 → ${E.label}` : '心象おわり');
+
     // 人物
     const P = a.people, M = a.figure_main, S = a.figure_sub, Po = a.pose;
     const f = s.figures ? { ...s.figures } : { layout: 'one', main: null, sub: null, pose: 'stand' };
@@ -2634,7 +2769,8 @@ JV.Director = {
     if (chapterFlag && !bg && prev) this.lastBgAt = now;
     this.scene = s;
     const figures = JV.Stage.figuresKey(s) !== (prev ? JV.Stage.figuresKey(prev) : '');
-    return { scene: s, bg: bg || (chapterFlag && !!s.location), tone, figures, chapter: chapterFlag && !!prev, why };
+    const inner = (s.inner || null) !== ((prev && prev.inner) || null);
+    return { scene: s, bg: bg || (chapterFlag && !!s.location), tone, figures, inner, chapter: chapterFlag && !!prev, why };
   },
 };
 
@@ -2729,7 +2865,7 @@ JV.Store = {
  * キャッシュ：メモリ → IndexedDB → 判定器。キーは「作品ハッシュ｜判定器｜判定単位」
  * ===================================================================== */
 JV.Judge = {
-  SCHEMA_VERSION: 2,     // 質問・state・判定単位の作り方を変えたら上げる（古いキャッシュを使わないため）
+  SCHEMA_VERSION: 3,    // 質問・state・判定単位の作り方を変えたら上げる（古いキャッシュを使わないため）
   PREFETCH: 3,           // 停止した段落の後ろを何単位先読みするか
   memory: new Map(),
   inflight: new Map(),   // key → { promise, ctl, unit }
@@ -3180,7 +3316,7 @@ JV.App = {
       narration: this.work.narration,
     });
     if (JV.Settings.get('effects')) JV.Stage.show(plan);
-    const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物'].filter(Boolean);
+    const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物', plan.inner && '心象'].filter(Boolean);
     const src = r.cached ? `キャッシュ(${r.cached === 'db' ? 'IndexedDB' : 'メモリ'})` : `${r.ms}ms`;
     const st = JV.Judge.stats;
     JV.Debug.set('judge', `判定 #${unit}（${r.source}・${src}）\n${JV.Judge.describe(r.answers)}\n→ ${[...plan.why, ...changes].join(' / ') || '変化なし'}`);

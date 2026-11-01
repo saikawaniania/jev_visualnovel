@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手描き部品の見本</title>
+<style>
+  :root { --bg: #EFE7D8; --panel: #FFFBF3; --ink: #2A2320; --muted: #7A6E66; --accent: #E0703E; --line: #DCCFBC; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1C1A22; --panel: #26232D; --ink: #EDE6DA; --muted: #A79E94; --accent: #F08A5A; --line: #3A3644; } }
+  :root[data-theme="dark"] { --bg: #1C1A22; --panel: #26232D; --ink: #EDE6DA; --muted: #A79E94; --accent: #F08A5A; --line: #3A3644; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 14px; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+  h1 { font-size: 20px; margin: 0; }
+  p { margin: 0; color: var(--muted); }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #111; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  select, button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  button { cursor: pointer; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .grid figure { margin: 0; } .grid figcaption { font-size: 12px; color: var(--muted); padding: 4px 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>手描き部品の見本</h1>
+  <p>読書画面で使う絵（場所・人物・心象・天候）を、値を選んで確かめるページ。</p>
+  <canvas id="c" width="1280" height="720"></canvas>
+  <div class="controls" id="controls"></div>
+  <div><button id="gridBg">場所の一覧</button> <button id="gridPeople">人物の一覧</button> <button id="gridEmo">心象の一覧</button></div>
+  <div class="grid" id="grid"></div>
+</div>
+<script src="tegaki.js"></script>
+<script src="draw.js"></script>
+<script>
+(function () {
+  'use strict';
+  const LOC = [['washitsu', '和室'], ['yoshitsu', '洋室'], ['kitchen', '台所'], ['genkan', '廊下・玄関'], ['classroom', '教室'], ['shop', '店・酒場'], ['station', '駅・車内'], ['street', '街路'], ['alley', '路地'], ['garden', '庭'], ['field', '田畑・野原'], ['forest', '森・山道'], ['river', '川・水辺'], ['seaside', '海辺'], ['nightsky', '夜空'], ['none', '無地']];
+  const FIG = [['man', '成人男性'], ['woman', '成人女性'], ['boy', '少年'], ['girl', '少女'], ['oldman', '老人（男）'], ['oldwoman', '老人（女）'], ['unknown', '不明']];
+  const F = {
+    location: ['場所', LOC], time: ['時間帯', [['morning', '朝'], ['day', '昼'], ['evening', '夕方'], ['night', '夜']]],
+    era: ['時代', [['modern', '近代日本'], ['present', '現代日本'], ['western', '西洋風'], ['fantasy', 'ファンタジー']]],
+    layout: ['人数', [['one', '1人'], ['two', '2人'], ['many', '3人以上'], ['none', 'なし']]],
+    main: ['主人物', FIG], sub: ['相手', [['woman', '成人女性'], ...FIG.filter(([k]) => k !== 'woman')]],
+    pose: ['姿勢', [['stand', '立つ'], ['sit', '座る'], ['walk', '歩く'], ['lie', '横たわる'], ['talk', '話す']]],
+    expr: ['表情', [['normal', 'ふつう'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anxiety', '不安'], ['anger', '怒り']]],
+    weather: ['天候', [['none', 'なし'], ['cloudy', '曇り'], ['rain', '雨'], ['snow', '雪'], ['fog', '霧']]],
+    inner: ['心象', [['', 'なし'], ['anxiety', '不安'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anger', '怒り']]],
+  };
+  const st = { location: 'washitsu', time: 'day', era: 'modern', layout: 'two', main: 'man', sub: 'woman', pose: 'talk', expr: 'joy', weather: 'none', inner: '' };
+  const ctrl = document.getElementById('controls');
+  for (const [k, [label, opts]] of Object.entries(F)) {
+    const l = document.createElement('label'); l.textContent = label;
+    const s = document.createElement('select'); for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; s.appendChild(o); }
+    s.value = st[k]; s.onchange = () => { st[k] = s.value; }; l.appendChild(s); ctrl.appendChild(l);
+  }
+  function frame(tg, s, t) {
+    const L = Draw.layout(tg);
+    Draw.background(tg, L, s, t);
+    if (s.inner) Draw.emotion(tg, L, s.inner, t, 1);
+    Draw.figures(tg, L, { figures: { layout: s.layout, main: s.main, sub: s.sub, pose: s.pose }, era: s.era, time: s.time, location: s.location, expr: s.expr, innerK: s.inner ? 1 : 0 }, t);
+    if (!s.inner) Draw.weather(tg, L, { rain: s.weather === 'rain' ? 1 : 0, snow: s.weather === 'snow' ? 1 : 0, cloudy: s.weather === 'cloudy' ? 1 : s.weather === 'rain' || s.weather === 'snow' ? 0.6 : 0, fog: s.weather === 'fog' ? 1 : 0 }, t);
+  }
+  const tg = Tegaki.create(document.getElementById('c'), { style: 'paper' });
+  tg.play((t) => frame(tg, st, t));
+  window.Preview = { st, frame };
+  function grid(list) {
+    const g = document.getElementById('grid'); g.innerHTML = '';
+    for (const [cap, s] of list) {
+      const f = document.createElement('figure'), c = document.createElement('canvas'); c.width = 640; c.height = 360;
+      const cc = document.createElement('figcaption'); cc.textContent = cap; f.append(c, cc); g.appendChild(f);
+      const t2 = Tegaki.create(c, { style: 'paper' }); t2.renderAt(1.3, (t) => frame(t2, Object.assign({}, st, s), t));
+    }
+  }
+  document.getElementById('gridBg').onclick = () => grid(LOC.flatMap(([k, l]) => [[`${l}（昼）`, { location: k, time: 'day', layout: 'none', inner: '' }], [`${l}（夜）`, { location: k, time: 'night', layout: 'none', inner: '' }]]));
+  document.getElementById('gridPeople').onclick = () => grid(['modern', 'present', 'western', 'fantasy'].flatMap((era) => FIG.map(([k, l]) => [`${l}・${F.era[1].find((e) => e[0] === era)[1]}`, { era, main: k, layout: 'one', location: 'none', pose: 'stand', expr: 'normal', inner: '' }])));
+  document.getElementById('gridEmo').onclick = () => grid(F.inner[1].slice(1).map(([k, l]) => [l, { inner: k, layout: 'one', expr: k, pose: 'stand' }]));
+})();
+</script>
+</body>
+</html>
