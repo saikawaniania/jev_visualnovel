@@ -464,6 +464,7 @@ body.debug #center-line {
         </select>
       </label>
       <label class="check"><input data-key="silhouettes" type="checkbox" onchange="JV.SettingsUI.change(this)"> 人物を表示</label>
+      <label class="check"><input data-key="bubbles" type="checkbox" onchange="JV.SettingsUI.change(this)"> セリフを吹き出しで出す</label>
       <label class="check"><input data-key="hideNarrator" type="checkbox" onchange="JV.SettingsUI.change(this)"> 一人称の作品では語り手を描かず、相手だけを描く</label>
     </fieldset>
 
@@ -947,6 +948,17 @@ JV.Parser = {
   },
 
   /* ---------- 判定単位 ---------- */
+  /** 単位の中のセリフ（「」の中身）。吹き出しの候補。多すぎるときは先頭から 8 つまで */
+  quotes(text) {
+    const out = [];
+    // 「」は会話、『』は通知・手紙・電話など（会話でなくても吹き出しにする）
+    for (const m of String(text || '').matchAll(/「([^「」]{1,120})」|『([^『』]{1,120})』/g)) {
+      const t = (m[1] || m[2]).replace(/\s+/g, ' ').trim();
+      if (t) out.push(t);
+      if (out.length >= 8) break;
+    }
+    return out;
+  },
   isDialogue(s) {
     const t = s.replace(/^[\s　]+/, '').replace(/[\s　]+$/, '');
     return /^[「『（(]/.test(t) && /[」』）)]$/.test(t);
@@ -1057,6 +1069,7 @@ JV.Settings = {
     sensitivity: 0.6,      // 絵を替える感度（しきい値）。普通=0.6
     fadeScale: 1.0,        // フェード時間の倍率
     silhouettes: true,     // 人物を描く
+    bubbles: true,         // セリフの吹き出し
     hideNarrator: false,   // 一人称の作品で主人物（語り手）を出さず相手だけを描く
     effects: true,         // 演出オン／オフ
     debug: false,          // デバッグ表示
@@ -1607,6 +1620,25 @@ JV.Schema = {
         { id: 'unknown', label: '不明', desc: '気持ちが読み取れない' },
       ],
     },
+    // ↓ セリフがある単位だけで聞く（吹き出し）。代表のセリフ（line）は単位ごとに選択肢が変わるので toQuestions で作る
+    line_speaker: {
+      type: 'choice', withLines: true,
+      instructions: '代表のセリフ(line)を言っている人物。場面の中心人物か、その相手か、いま場面にいない人物（電話・手紙・回想・画面の外の声）か',
+      options: [
+        { id: 'main', label: '中心人物', desc: '場面の中心にいる人物（一人称なら語り手）' },
+        { id: 'sub', label: '相手', desc: '中心人物と向き合っている2人目' },
+        { id: 'other', label: '場面にいない人物', desc: '電話・手紙・通知・回想・姿の見えない声など' },
+      ],
+    },
+    line_importance: {
+      type: 'score', withLines: true,
+      instructions: '代表のセリフ(line)が物語の中でどれくらい大事か',
+      levels: [
+        'さりげない：あいさつや相づちなど、なくても話が通じる',
+        'ふつう：人物の気持ちや状況が伝わる',
+        '物語の要：秘密が明かされる・決心する・話が大きく動く一言',
+      ],
+    },
   },
 
   options(group, key) {
@@ -1619,9 +1651,16 @@ JV.Schema = {
   byId(group, key, id) { return this.options(group, key).find((o) => o.id === id); },
 
   /** TypeSafe 形式の questions を組み立てる（asciiKeys なら criteria のキーを英字IDにする） */
-  toQuestions(group, { asciiKeys = false } = {}) {
+  toQuestions(group, { asciiKeys = false, lines = [] } = {}) {
     const out = {};
     for (const [key, q] of Object.entries(this[group])) {
+      if (q.withLines && !lines.length) continue;
+      if (key === 'line_speaker' && lines.length > 1) {
+        // 代表のセリフ：この単位のセリフから1つ選ばせる（キーは番号）
+        const criteria = {};
+        lines.forEach((t, i) => { criteria[String(i + 1)] = `「${t}」`; });
+        out.line = { type: 'choice', instructions: '現在の段落(current)のセリフのうち、場面をいちばんよく表す・いちばん印象に残る一言', criteria };
+      }
       if (q.type === 'noul') out[key] = { type: 'noul', instructions: q.instructions };
       else if (q.type === 'score') out[key] = { type: 'score', instructions: q.instructions, criteria: q.levels.slice() };
       else {
@@ -1761,8 +1800,38 @@ JV.Adapters.mock = {
     const answers = {};
     const dialogues = (cur.match(/^[「『]/gm) || []).length;
 
+    // 吹き出し：！や？・気持ちの言葉が多く、ほどよく長いセリフほど「代表」で「大事」
+    // 単位の最後のほうのセリフ（場面の引き）も大事にする。あいさつ・相づちは「さりげない」
+    const lineKeys = questions.line ? Object.keys(questions.line.criteria) : null;
+    const lineTexts = lineKeys ? lineKeys.map((k) => questions.line.criteria[k].replace(/^「|」$/g, '')) : JV.Parser.quotes(cur).slice(0, 1);
+    const casual = (t) => /^(いらっしゃ|おはよう|こんにちは|こんばんは|はい|ええ|うん|そう|じゃあ|ありがとう)/.test(t) && t.length <= 14;
+    const lineScore = (t, i = 0) => casual(t) ? -1 : (t.match(/[！!？?]/g) || []).length + 0.8 * Object.values(K.emotion).reduce((n, kws) => n + this.count(t, kws), 0) + (t.length >= 8 ? 0.6 : 0) + (/……|っ$/.test(t) ? 0.3 : 0) + (lineTexts.length > 1 ? 0.8 * i / (lineTexts.length - 1) : 0);
+    let bestLine = 0;
+    lineTexts.forEach((t, i) => { if (lineScore(t, i) > lineScore(lineTexts[bestLine], bestLine)) bestLine = i; });
     for (const key of Object.keys(questions)) {
       const q = questions[key];
+      if (key === 'line') {
+        const w = lineTexts.map((t, i) => Math.max(0.1, 1.3 + lineScore(t, i)) + (i === bestLine ? 0.5 : 0)), sum = w.reduce((a, b) => a + b, 0);
+        const probabilities = {}; lineKeys.forEach((k, i) => { probabilities[k] = w[i] / sum; });
+        answers.line = { type: 'choice', choice: lineKeys[bestLine], probabilities, confidence: probabilities[lineKeys[bestLine]] };
+        continue;
+      }
+      if (key === 'line_speaker') {
+        // 会話は交互に話すとみなす：単位の中で偶数番目は中心人物、奇数番目は相手。会話がなければ画面の外の声
+        const bt = lineTexts[bestLine] || '', written = cur.includes(`『${bt}』`);
+        const keys = labelsOf(key), pick = written || dialogues === 0 ? 2 : bestLine % 2;
+        const probabilities = {}; keys.forEach((k, i) => { probabilities[k] = i === pick ? 0.7 : 0.15; });
+        answers[key] = { type: 'choice', choice: keys[pick], probabilities, confidence: 0.7 };
+        continue;
+      }
+      if (key === 'line_importance') {
+        const bt = lineTexts[bestLine] || '', ls = lineScore(bt, bestLine);
+        const sc = ls < 0 ? 0.2 : Math.min(2, 0.9 + ls * 0.45);
+        const probabilities = { 0: Math.max(0, 1 - sc) / 2, 1: 0.5, 2: Math.max(0, sc - 1) / 2 + 0.0 }; const z = probabilities[0] + probabilities[1] + probabilities[2];
+        for (const k in probabilities) probabilities[k] /= z;
+        answers[key] = { type: 'score', score: sc, probabilities, confidence: 0.6 };
+        continue;
+      }
       if (q.type === 'choice') {
         const keys = labelsOf(key);
         const group = key in JV.Schema.work ? 'work' : 'scene';
@@ -2015,7 +2084,7 @@ JV.Stage = {
 
   /* ---------- 補間 ---------- */
   tw(from, to, ms) { return { from, to, t0: performance.now(), ms: Math.max(0, ms || 0) }; },
-  k(tw) { return tw.ms ? Math.min(1, (performance.now() - tw.t0) / tw.ms) : 1; },
+  k(tw) { return tw.ms ? Math.max(0, Math.min(1, (performance.now() - tw.t0) / tw.ms)) : 1; },
   val(tw) { const k = this.k(tw), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; return tw.from + (tw.to - tw.from) * e; },
   set(name, to, ms) { this[name] = this.tw(this.val(this[name]), to, ms); this.dirty = true; },
 
@@ -2031,6 +2100,7 @@ JV.Stage = {
     for (const id of Draw.EMOTIONS) this.emo[id] = this.tw(0, 0, 0);
     this.mood = this.tw(0, 0, 0);
     this.black = this.tw(0, 0, 0);
+    this.line = { from: null, to: null, t0: 0, ms: 0 };
     this.dirty = true;
   },
 
@@ -2075,6 +2145,14 @@ JV.Stage = {
     this.dirty = true;
   },
   setMood(m, ms) { this.set('mood', this.inner ? 0 : m, ms); },
+  /** 吹き出し：同じセリフならそのまま。delay だけ待ってから出す（人物が出そろってから） */
+  setLine(line, ms, delay = 0) {
+    const key = line ? `${line.speaker}|${line.text}` : '';
+    const cur = this.line.to, curKey = cur ? `${cur.speaker}|${cur.text}` : '';
+    if (key === curKey) { if (line) this.line.to = line; return; }
+    this.line = { from: ms > 0 && this.k(this.line) >= 1 ? cur : null, to: line, t0: performance.now() + delay, ms: Math.max(1, ms) };
+    this.dirty = true;
+  },
 
   /** 判定結果から決まった「次の場面」を、変化の種類に応じた演出で見せる */
   async show(plan) {
@@ -2094,6 +2172,7 @@ JV.Stage = {
       this.setTone(s, 0);
       this.setMood(s.mood, 0);
       this.setFigures(s, 0);
+      this.setLine(s.line, 0);
       this.set('black', 0, 500 * k);
       this.shown = s;
       return;
@@ -2105,6 +2184,7 @@ JV.Stage = {
       this.setTone(s, 800 * k);
       this.setMood(s.mood, 1200 * k);
       this.setFigures(s, figsChanged || this.figs.to ? 1200 * k : 0, 'outin');
+      this.setLine(s.line, 300 * k, 1000 * k);
       this.shown = s;
       return;
     }
@@ -2114,13 +2194,14 @@ JV.Stage = {
     if (plan.tone || plan.inner) this.setTone(s, 1200 * k);
     this.setMood(s.mood, 1200 * k);
     this.setFigures(s, figsChanged ? 400 * k : 0, this.figs.to ? 'outin' : 'cross');
+    this.setLine(s.line, 300 * k, figsChanged ? 350 * k : 0);
     this.shown = s;
   },
 
   /* ---------- 描画 ---------- */
   animating() {
     const busy = (tw) => tw.ms && performance.now() - tw.t0 < tw.ms;
-    return busy(this.world) || busy(this.figs) || busy(this.mood) || busy(this.black) || busy(this.w_rain) || busy(this.w_snow) || busy(this.w_cloudy) || busy(this.w_fog) || Object.values(this.emo).some(busy);
+    return busy(this.line) || busy(this.world) || busy(this.figs) || busy(this.mood) || busy(this.black) || busy(this.w_rain) || busy(this.w_snow) || busy(this.w_cloudy) || busy(this.w_fog) || Object.values(this.emo).some(busy);
   },
   loop() {
     const tick = () => {
@@ -2138,6 +2219,8 @@ JV.Stage = {
   },
   frame(t) {
     const tg = this.tg, c = tg.ctx, L = Draw.layout(tg);
+    // 上のバー（戻る・設定）の下から吹き出しを置く
+    L.topInset = 48 * (this.canvas.height / (this.el.clientHeight || this.canvas.height));
     tg.setTime(t);
     c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
     c.fillStyle = '#1b1d22'; c.fillRect(0, 0, L.W, L.H);
@@ -2179,8 +2262,15 @@ JV.Stage = {
       c.fillStyle = g; c.fillRect(0, 0, L.W, L.H);
       c.restore();
     }
+    // 6 吹き出し（新しいセリフは少し大きいところから 1 倍に）
+    if (JV.Settings.get('bubbles') !== false) {
+      const lk = this.k(this.line), started = performance.now() >= this.line.t0;
+      const fig = this.figs.to && Object.assign({}, this.figs.to);
+      if (this.line.from && (lk < 1)) Draw.bubble(tg, L, this.line.from, fig, t, started ? 1 - lk : 1);
+      if (this.line.to && started) Draw.bubble(tg, L, this.line.to, fig, t, lk, 1 + 0.08 * (1 - lk));
+    }
     tg.post();
-    // 6 暗転
+    // 7 暗転
     const b = this.val(this.black);
     if (b > 0.003) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.fillStyle = `rgba(0,0,0,${b.toFixed(3)})`; c.fillRect(0, 0, L.W, L.H); }
     this.frames++;
@@ -2194,6 +2284,7 @@ JV.Stage = {
       emo: Object.fromEntries(Object.entries(this.emo).map(([k, v]) => [k, +this.val(v).toFixed(2)])),
       rain: +this.val(this.w_rain).toFixed(2), snow: +this.val(this.w_snow).toFixed(2), fog: +this.val(this.w_fog).toFixed(2), cloudy: +this.val(this.w_cloudy).toFixed(2),
       mood: +this.val(this.mood).toFixed(2), black: +this.val(this.black).toFixed(2), frames: this.frames,
+      line: this.line.to ? { ...this.line.to } : null,
     };
   },
 };
@@ -2244,7 +2335,7 @@ JV.Director = {
    * 4. location が「不明」なら背景は前のまま
    * 5. 一度替えた背景は最短5秒は替えない（章替わりは除く）
    */
-  decide(answers, { chapter, era = 'modern', hideNarrator = false, protagonist = 'unknown', narration = 'third', now = performance.now() } = {}) {
+  decide(answers, { chapter, era = 'modern', hideNarrator = false, protagonist = 'unknown', narration = 'third', lines = [], now = performance.now() } = {}) {
     const a = this.normalize(answers);
     const { th, loc: locTh } = this.thresholds();
     const prev = this.scene;
@@ -2316,6 +2407,20 @@ JV.Director = {
       if (f.layout === 'many') f.main = null;
     }
     s.figures = f;
+
+    // 吹き出し：代表のセリフを1つ。重要度が「さりげない」寄りなら出さない
+    s.line = null;
+    if (lines.length) {
+      const raw = answers && answers.line;
+      const idx = lines.length === 1 ? 0 : raw && raw.choice != null ? parseInt(String(raw.choice).replace(/\D/g, ''), 10) - 1 : -1;
+      const text = lines[idx];
+      const imp = a.line_importance ? a.line_importance.value : 0.5;
+      const Sp = a.line_speaker;
+      if (text && imp >= 0.25) {
+        s.line = { text, importance: imp, speaker: Sp && Sp.confidence >= 0.3 ? Sp.id : 'main' };
+        why.push(`吹き出し「${text.slice(0, 12)}${text.length > 12 ? '…' : ''}」（${s.line.speaker}・重要度 ${imp.toFixed(2)}）`);
+      } else if (text) why.push(`吹き出しなし（重要度 ${imp.toFixed(2)}）`);
+    }
     if (!s.location) s.figures = { ...f, layout: 'none' };
 
     const tone = !prev || s.time !== prev.time || s.weather !== prev.weather;
@@ -2421,7 +2526,7 @@ JV.Store = {
  * キャッシュ：メモリ → IndexedDB → 判定器。キーは「作品ハッシュ｜判定器｜判定単位」
  * ===================================================================== */
 JV.Judge = {
-  SCHEMA_VERSION: 3,    // 質問・state・判定単位の作り方を変えたら上げる（古いキャッシュを使わないため）
+  SCHEMA_VERSION: 4,    // 質問・state・判定単位の作り方を変えたら上げる（古いキャッシュを使わないため）
   PREFETCH: 3,           // 停止した段落の後ろを何単位先読みするか
   memory: new Map(),
   inflight: new Map(),   // key → { promise, ctl, unit }
@@ -2446,7 +2551,7 @@ JV.Judge = {
     const a = this.adapter();
     return `${a.cacheKey ? a.cacheKey() : a.name}${JV.Settings.get('asciiKeys') ? ':id' : ''}@s${this.SCHEMA_VERSION}`;
   },
-  questions(group) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys') }); },
+  questions(group, lines = []) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys'), lines }); },
   key(unit) { return `${this.hashKey}|${this.adapterKey()}|${unit}`; },
 
   setWork(hash) {
@@ -2532,7 +2637,7 @@ JV.Judge = {
   async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
     const state = this.sceneState(doc, unit, work, prevScene);
     const t0 = performance.now();
-    const answers = await this.adapter().judge(state, this.questions('scene'), { signal });
+    const answers = await this.adapter().judge(state, this.questions('scene', JV.Parser.quotes(doc.units[unit].text)), { signal });
     return { answers, ms: Math.round(performance.now() - t0), source: this.adapter().name };
   },
 
@@ -2712,6 +2817,8 @@ JV.App = {
     { file: 'samples/ame_no_teishaba.txt', label: '雨の停車場', note: '青空文庫の形式' },
     { file: 'samples/umibe_no_kissaten.md', label: '海辺の喫茶店', note: 'Markdown' },
     { file: 'samples/mori_no_michi.txt', label: '森の道', note: 'テキスト' },
+    { file: 'samples/shuden_no_ato.txt', label: '終電のあとで', note: '現代劇' },
+    { file: 'samples/ryu_no_yubinya.md', label: '竜の郵便屋', note: 'ファンタジー' },
   ],
 
   init() {
@@ -2928,6 +3035,7 @@ JV.App = {
       hideNarrator: this.work.narration === 'first' && JV.Settings.get('hideNarrator'),
       protagonist: this.protagonist(),
       narration: this.work.narration,
+      lines: JV.Parser.quotes(u.text),
     });
     if (JV.Settings.get('effects')) JV.Stage.show(plan);
     const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物', plan.inner && '心象'].filter(Boolean);

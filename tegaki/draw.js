@@ -706,32 +706,145 @@
     if (expr === 'sleep' && pose === 'lie') for (let k = 0; k < 3; k++) { const a = (t * 0.5 + k / 3) % 1; tg.text('z', r * 1.2 + a * r * 1.2, hy - r * 0.8 - a * r * 2, { size: r * (0.4 + k * 0.12), color: '#FFFDF6', strokeW: r * 0.08, boilAmp: 0.4 }); }
   }
 
+  /* 人数・配置：誰をどこに、どちら向きに立たせるか（吹き出しのしっぽもこれを使う） */
+  function heightOf(L, type) {
+    const unit = Math.min(L.H, L.W * 1.25);
+    return unit * (type === 'boy' || type === 'girl' ? 0.44 : type === 'oldman' || type === 'oldwoman' ? 0.55 : 0.58);
+  }
+  function placement(L, f) {
+    if (!f || f.layout === 'none') return [];
+    const one = (role, type, x, facing, pose) => (type ? [{ role, type, x, facing, pose, h: heightOf(L, type) }] : []);
+    if (f.layout === 'many') return one('main', f.main, L.W * 0.62, -1, f.pose === 'talk' ? 'stand' : f.pose);
+    if (f.layout === 'two') return [...one('sub', f.sub, L.W * 0.32, 1, f.pose === 'lie' ? 'stand' : f.pose), ...one('main', f.main, L.W * 0.68, -1, f.pose)];
+    return one('main', f.main, f.pose === 'lie' ? L.W * 0.62 : L.W * 0.6, -1, f.pose);
+  }
+  /** 頭の位置（中心 x, y と半径）。姿勢で変わる */
+  function headOf(L, p, seat) {
+    const d = dims(p.type, p.h), h = p.h;
+    if (p.pose === 'lie') return { x: p.x + p.facing * (0.5 * h + d.hy), y: L.floor - 0.085 * h, r: d.r };
+    let drop = 0;
+    if (p.pose === 'sit') drop = seat === 'seiza' ? -0.12 * h - d.hipY : -0.27 * h - d.hipY;
+    return { x: p.x, y: L.floor + d.hy + drop, r: d.r };
+  }
+
   /* 人数・配置ごとに描く */
   function figures(tg, L, st, t) {
     const f = st.figures; if (!f || f.layout === 'none') return;
     const S = shader(st.time || 'day', st.innerK != null ? 0.6 * (1 - st.innerK) : 0.6);
-    const unit = Math.min(L.H, L.W * 1.25);
-    const H = (type) => unit * (type === 'boy' || type === 'girl' ? 0.44 : type === 'oldman' || type === 'oldwoman' ? 0.55 : 0.58);
     const seat = st.location === 'washitsu' ? 'seiza' : 'chair';
     const y = L.floor;
-    const P = (type, x, facing, slot, pose, expr) => person(tg, L, { type: type || 'unknown', era: st.era, pose, expr, x, y: pose === 'lie' ? y : y, h: H(type || 'unknown'), facing, slot, shade: S, seat }, t);
     if (f.layout === 'many') {
       for (let k = 0; k < 4; k++) {
         const types = ['man', 'woman', 'oldman', 'girl', 'woman', 'boy', 'oldwoman', 'man'];
         const ty = types[(k * 3 + (st.crowdVariant || 0)) % types.length];
         const x = L.W * (0.12 + k * 0.25), c = tg.ctx; c.save(); c.translate(x, y - L.H * 0.1); c.scale(0.62, 0.62); c.translate(-x, -(y - L.H * 0.1));
-        person(tg, L, { type: ty, era: st.era, pose: k % 2 ? 'walk' : 'stand', expr: 'normal', x, y: y - L.H * 0.1, h: H(ty), facing: k % 2 ? 1 : -1, slot: 2 + k, shade: (h) => mix(S(h), '#B8BCC8', 0.35), alpha: 0.85 }, t);
+        person(tg, L, { type: ty, era: st.era, pose: k % 2 ? 'walk' : 'stand', expr: 'normal', x, y: y - L.H * 0.1, h: heightOf(L, ty), facing: k % 2 ? 1 : -1, slot: 2 + k, shade: (h) => mix(S(h), '#B8BCC8', 0.35), alpha: 0.85 }, t);
         c.restore();
       }
-      if (f.main) P(f.main, L.W * 0.62, -1, 0, f.pose === 'talk' ? 'stand' : f.pose, st.expr);
-      return;
     }
-    if (f.layout === 'two') {
-      if (f.sub) P(f.sub, L.W * 0.32, 1, 1, f.pose === 'lie' ? 'stand' : f.pose, st.subExpr || 'normal');
-      if (f.main) P(f.main, L.W * 0.68, -1, 0, f.pose, st.expr);
-      return;
+    for (const p of placement(L, f)) {
+      const main = p.role === 'main';
+      person(tg, L, { type: p.type, era: st.era, pose: p.pose, expr: main ? st.expr : st.subExpr || 'normal', x: p.x, y, h: p.h, facing: p.facing, slot: main ? 0 : 1, shade: S, seat }, t);
     }
-    if (f.main) P(f.main, f.pose === 'lie' ? L.W * 0.62 : L.W * 0.6, -1, 0, f.pose, st.expr);
+  }
+
+  /* ================= 吹き出し ================= */
+  // 縦書きで回す文字（長音・ダッシュ・括弧・三点リーダー・英数字）と、右上に寄せる句読点・小書きの仮名
+  const ROTATE = /[ー－—―…‥〜～（）()「」『』【】\-~A-Za-z0-9]/;
+  const PUNCT = /[、。，．]/;
+  const SMALL = /[ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ]/;
+  const toFull = (t) => t.replace(/!/g, '！').replace(/\?/g, '？');
+
+  /** 吹き出しの大きさと向きを決める（縦書きが収まれば縦、だめなら横） */
+  function bubbleLayout(L, line, fig, seat) {
+    const U = L.U, imp = line.importance ?? 0.5;
+    const fs = clamp(Math.min(L.H * 0.036, L.W * 0.045), 13, 28) * (imp >= 0.75 ? 1.12 : 1);
+    let text = toFull(line.text.replace(/[\s　]+/g, ''));
+    if (text.length > 44) text = text.slice(0, 43) + '…';
+    const people = fig ? placement(L, fig.figures) : [];
+    const who = people.find((p) => p.role === line.speaker) || (line.speaker === 'other' ? null : null);
+    const head = who ? headOf(L, who, seat) : null;
+    const m = Math.max(10, L.H * 0.035), top = Math.max(m, L.topInset || 0), pad = fs * 0.75;
+    // 縦書き：頭の上か、頭の横（上の余白から頭の高さまで）に収まるか
+    const above = (head ? head.y - head.r * 1.4 : L.H * 0.62) - top;
+    const roomH = Math.max(above, head ? head.y + head.r - top : 0);
+    const perColMax = Math.floor((roomH - pad * 2) / fs);
+    let vertical = false, cols = 0, perCol = 0;
+    if (perColMax >= 4) {
+      cols = Math.ceil(text.length / perColMax);
+      if (cols <= 4) { vertical = true; perCol = Math.ceil(text.length / cols); }
+    }
+    let w, h, rows = [];
+    if (vertical) {
+      for (let i = 0; i < cols; i++) rows.push(text.slice(i * perCol, (i + 1) * perCol));
+      w = cols * fs * 1.45 + pad * 2 - fs * 0.45; h = perCol * fs + pad * 2;
+    } else {
+      const maxW = Math.min(L.W * 0.56, fs * 16), cpl = Math.max(4, Math.floor((maxW - pad * 2) / fs));
+      for (let i = 0; i < text.length; i += cpl) rows.push(text.slice(i, i + cpl));
+      w = Math.min(text.length, cpl) * fs + pad * 2; h = rows.length * fs * 1.45 + pad * 2 - fs * 0.45;
+    }
+    // 置き場所：話している人の頭の上、画面の中央寄り。いない人のセリフは左上の隅から（しっぽは画面の外へ）
+    let x, y, tip;
+    if (head) {
+      const side = head.x > L.W / 2 ? -1 : 1;
+      x = head.x + side * (head.r * 0.6) - (side < 0 ? w : 0);
+      y = head.y - head.r * 1.5 - h;
+      tip = [head.x + side * head.r * 0.55, head.y - head.r * 0.95];
+      // 頭の上に入らなければ、頭の横に立てる（しっぽは横から頭へ）
+      if (y < top) { y = top; x = head.x + side * (head.r * 1.9) - (side < 0 ? w : 0); tip = [head.x + side * head.r * 1.05, head.y - head.r * 0.2]; }
+    } else {
+      x = m * 1.5; y = top;
+      tip = [-L.W * 0.05, y + h * 0.9];
+    }
+    x = clamp(x, m, L.W - m - w); y = clamp(y, top, L.H - m - h);
+    return { x, y, w, h, fs, pad, rows, vertical, tip, imp, offscreen: !head };
+  }
+
+  function bubble(tg, L, line, fig, t, alpha = 1, pop = 1) {
+    if (!line || !line.text || alpha <= 0.003) return;
+    const seat = fig && fig.location === 'washitsu' ? 'seiza' : 'chair';
+    const B = bubbleLayout(L, line, fig, seat), c = tg.ctx, U = L.U;
+    const cx = B.x + B.w / 2, cy = B.y + B.h / 2;
+    c.save(); c.globalAlpha *= alpha;
+    c.translate(cx, cy); c.scale(pop, pop); c.translate(-cx, -cy);
+    // 輪郭：角丸の四角にしっぽを継ぎ足した1本の線（手描きで揺れる）
+    const r = Math.min(B.w, B.h) * 0.42, step = Math.max(10, B.fs * 0.55);
+    const pts = tg.points.rrPts(B.x, B.y, B.w, B.h, r, step);
+    let best = 0, bd = Infinity;
+    pts.forEach((p, i) => { const d = Math.hypot(p[0] - B.tip[0], p[1] - B.tip[1]); if (d < bd) { bd = d; best = i; } });
+    const span = Math.max(1, Math.round(B.fs * 0.5 / step));
+    const n = pts.length, keep = [];
+    for (let i = 0; i < n; i++) { const di = Math.min(Math.abs(i - best), n - Math.abs(i - best)); if (di > span) keep.push(pts[i]); else if (i === best) keep.push(null); }
+    // しっぽの先：頭の少し手前で止める
+    const base = pts[best], vx = B.tip[0] - base[0], vy = B.tip[1] - base[1], len = Math.hypot(vx, vy) || 1;
+    const reach = Math.min(len, B.offscreen ? len : Math.max(B.fs * 1.2, len * 0.85));
+    const tipP = [base[0] + vx / len * reach, base[1] + vy / len * reach];
+    const outline = []; for (const p of keep) { if (p) outline.push(p); else outline.push(tipP); }
+    const lw = (B.imp >= 0.75 ? 4.5 : 3) * U;
+    tg.shape(outline, { fill: '#FFFFFF', lw, seed: 5000, amp: 1.2 });
+    // 大事なセリフ：外側に勢いの線
+    if (B.imp >= 0.75) for (let k = 0; k < 5; k++) { const a = -Math.PI * (0.15 + k * 0.17), r0 = Math.max(B.w, B.h) * 0.6, r1 = r0 + 14 * U; tg.line([[cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.8], [cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * 0.8]], { lw: 3 * U, seed: 5010 + k }); }
+    // 文字
+    c.fillStyle = '#1E2B45'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = `${B.imp >= 0.75 ? 700 : 400} ${B.fs}px "Yusei Magic", "Hiragino Maru Gothic ProN", "Zen Maru Gothic", "Hiragino Sans", sans-serif`;
+    const jig = (k) => (hash(k, tg.boil) - 0.5) * 0.6 * U;
+    if (B.vertical) {
+      B.rows.forEach((col, ci) => {
+        const x0 = B.x + B.w - B.pad - B.fs / 2 - ci * B.fs * 1.45;
+        [...col].forEach((ch, i) => {
+          const y0 = B.y + B.pad + B.fs * (i + 0.5);
+          c.save(); c.translate(x0 + jig(ci * 50 + i), y0 + jig(ci * 50 + i + 7));
+          if (PUNCT.test(ch)) c.translate(B.fs * 0.32, -B.fs * 0.3);
+          else if (SMALL.test(ch)) c.translate(B.fs * 0.1, -B.fs * 0.08);
+          if (ROTATE.test(ch)) c.rotate(Math.PI / 2);
+          c.fillText(ch, 0, 0); c.restore();
+        });
+      });
+    } else {
+      B.rows.forEach((row, ri) => { [...row].forEach((ch, i) => c.fillText(ch, B.x + B.pad + B.fs * (i + 0.5) + jig(ri * 50 + i), B.y + B.pad + B.fs * 0.5 + ri * B.fs * 1.45 + jig(ri * 50 + i + 7))); });
+    }
+    c.restore();
+    return B;
   }
 
   /* ================= 心象（気持ちの背景） ================= */
@@ -798,7 +911,7 @@
     if (w.fog > 0) { c.save(); const g = c.createLinearGradient(0, L.H, 0, 0); g.addColorStop(0, `rgba(228,230,234,${0.8 * w.fog})`); g.addColorStop(0.55, `rgba(222,226,232,${0.4 * w.fog})`); g.addColorStop(1, `rgba(222,226,232,${0.15 * w.fog})`); c.fillStyle = g; c.fillRect(0, 0, L.W, L.H); c.restore(); }
   }
 
-  const Draw = { layout, background, person, figures, emotion, weather, costume, mix, shader, LOCATIONS: Object.keys(BG), EMOTIONS: Object.keys(EMO), COSTUME };
+  const Draw = { layout, background, person, figures, placement, headOf, bubble, bubbleLayout, emotion, weather, costume, mix, shader, LOCATIONS: Object.keys(BG), EMOTIONS: Object.keys(EMO), COSTUME };
   if (typeof module !== 'undefined' && module.exports) module.exports = Draw;
   root.Draw = Draw;
 })(typeof window !== 'undefined' ? window : globalThis);

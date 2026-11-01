@@ -193,6 +193,67 @@ const all = await page.evaluate(() => {
 check(all.bad.length === 0 && all.n > 1000, `${all.n} 通りを描いてエラーなし ${all.bad.slice(0, 3)}`);
 check(all.missing.length === 0, `スキーマの場所はすべて描き方がある (${all.missing})`);
 
+console.log('吹き出し（セリフ・話し手・重要度）');
+const bub = await page.evaluate(async () => {
+  const q = JV.Parser.quotes('「おはよう」と言った。『明日は雨』と画面に出た。「封を切ってはいけないよ」');
+  const none = Object.keys(JV.Schema.toQuestions('scene'));
+  const qs = JV.Schema.toQuestions('scene', { lines: q });
+  const one = Object.keys(JV.Schema.toQuestions('scene', { lines: ['ひとつだけ'] }));
+  const ans = await JV.Adapters.mock.judge({ current: '「おはよう」と言った。\n「封を切ってはいけないよ、お嬢ちゃん！」' }, JV.Schema.toQuestions('scene', { lines: ['おはよう', '封を切ってはいけないよ、お嬢ちゃん！'] }));
+  const D = JV.Director;
+  const ch = (k, label, p = 0.9) => ({ type: 'choice', choice: label, probabilities: { [label]: p }, confidence: p });
+  const base = { location: ch('location', '和室'), people: ch('people', '2人'), figure_main: ch('figure_main', '成人女性'), figure_sub: ch('figure_sub', '少女') };
+  D.reset();
+  const lines = ['こんにちは', 'それは宣戦布告だ'];
+  const p1 = D.decide({ ...base, line: ch('line', '2'), line_speaker: ch('line_speaker', '相手'), line_importance: { type: 'score', score: 2, confidence: 0.9 } }, { chapter: 0, lines });
+  const p2 = D.decide({ ...base, line: ch('line', '1'), line_speaker: ch('line_speaker', '中心人物'), line_importance: { type: 'score', score: 0, confidence: 0.9 } }, { chapter: 0, lines });
+  const p3 = D.decide({ ...base }, { chapter: 0, lines: [] });
+  await JV.Stage.show(p1);
+  await new Promise((r) => setTimeout(r, 1700));
+  const st = JV.Stage.state();
+  // 吹き出しの形：短いセリフは縦書き。しっぽは話し手（相手＝左の人物）の方へ
+  const c = document.createElement('canvas'); c.width = 900; c.height = 600;
+  const tg = Tegaki.create(c), L = Draw.layout(tg), fig = { figures: { layout: 'two', main: 'woman', sub: 'girl', pose: 'stand' }, location: 'garden' };
+  const sub = Draw.bubbleLayout(L, { text: 'それは宣戦布告だ', speaker: 'sub', importance: 1 }, fig, 'chair');
+  const main = Draw.bubbleLayout(L, { text: 'それは宣戦布告だ', speaker: 'main', importance: 0.5 }, fig, 'chair');
+  const other = Draw.bubbleLayout(L, { text: '明日は雨', speaker: 'other', importance: 0.5 }, fig, 'chair');
+  const long = Draw.bubbleLayout(L, { text: 'あ'.repeat(60), speaker: 'main', importance: 0.5 }, fig, 'chair');
+  const heads = Draw.placement(L, fig.figures).map((p) => [p.role, Draw.headOf(L, p, 'chair').x]);
+  return { q, none, keys: Object.keys(qs).slice(-3), lineN: Object.keys(qs.line.criteria).length, one, mock: [ans.line && ans.line.choice, ans.line_speaker && ans.line_speaker.choice, ans.line_importance && ans.line_importance.score],
+    l1: p1.scene.line, l2: p2.scene.line, l3: p3.scene.line, st: st.line, sub, main, other, long, heads, W: L.W };
+});
+check(bub.q.join('|') === 'おはよう|明日は雨|封を切ってはいけないよ', `「」と『』のセリフを拾う (${bub.q})`);
+check(!bub.none.includes('line') && !bub.none.includes('line_speaker'), 'セリフがない単位では吹き出しの質問をしない');
+check(bub.keys.join() === 'line,line_speaker,line_importance' && bub.lineN === 3, `セリフがあれば代表・話し手・重要度を聞く (${bub.keys})`);
+check(!bub.one.includes('line') && bub.one.includes('line_speaker'), 'セリフが1つなら代表は聞かない');
+check(bub.mock[0] === '2' && bub.mock[2] >= 1, `モックは印象の強いセリフを選び、重要度を高めに (${bub.mock})`);
+check(bub.l1 && bub.l1.text === 'それは宣戦布告だ' && bub.l1.speaker === 'sub' && bub.l1.importance === 1, `選ばれたセリフ・話し手・重要度 (${JSON.stringify(bub.l1)})`);
+check(bub.l2 === null && bub.l3 === null, '重要度が「さりげない」なら出さない／セリフがなければ出さない');
+check(bub.st && bub.st.text === 'それは宣戦布告だ', `舞台に吹き出しが出る (${bub.st && bub.st.text})`);
+const subHead = bub.heads.find((h) => h[0] === 'sub')[1], mainHead = bub.heads.find((h) => h[0] === 'main')[1];
+check(bub.sub.vertical && bub.main.vertical, '短いセリフは縦書き');
+check(Math.abs(bub.sub.tip[0] - subHead) < Math.abs(bub.sub.tip[0] - mainHead) && Math.abs(bub.main.tip[0] - mainHead) < Math.abs(bub.main.tip[0] - subHead), `しっぽは話している人の頭へ (相手 ${Math.round(bub.sub.tip[0])}→${Math.round(subHead)}, 中心 ${Math.round(bub.main.tip[0])}→${Math.round(mainHead)})`);
+check(bub.other.offscreen && bub.other.tip[0] < 0, '画面にいない人のセリフは、しっぽを画面の外へ');
+check(!bub.long.vertical && bub.long.rows.length >= 2 && bub.long.x >= 0 && bub.long.x + bub.long.w <= bub.W, '収まらない長さは横書きにして、はみ出さない');
+for (const b of [bub.sub, bub.main, bub.other, bub.long]) if (!(b.x >= 0 && b.y >= 0 && b.x + b.w <= bub.W + 1)) check(false, `吹き出しが画面内 (${JSON.stringify([b.x, b.y, b.w, b.h])})`);
+
+console.log('試し読みのサンプル（現代劇・ファンタジー）');
+const works = await page.evaluate(async () => {
+  const out = [];
+  for (const s of JV.App.SAMPLES) {
+    const buf = await (await fetch(s.file)).arrayBuffer();
+    const doc = JV.Parser.parse(JV.Encoding.decode(buf), s.file);
+    const w = await JV.Judge.judgeWork(doc);
+    out.push({ label: s.label, era: w.era, units: doc.units.length, chapters: doc.chapters.length, lines: doc.units.reduce((n, u) => n + JV.Parser.quotes(u.text).length, 0) });
+  }
+  return out;
+});
+const W = Object.fromEntries(works.map((w) => [w.label, w]));
+check(works.length === 5, `試し読みは5作品 (${works.map((w) => w.label)})`);
+check(W['終電のあとで'] && W['終電のあとで'].era === 'present' && W['終電のあとで'].chapters >= 2, `現代劇は現代日本と判定 (${JSON.stringify(W['終電のあとで'])})`);
+check(W['竜の郵便屋'] && W['竜の郵便屋'].era === 'fantasy' && W['竜の郵便屋'].chapters >= 2, `ファンタジーはファンタジーと判定 (${JSON.stringify(W['竜の郵便屋'])})`);
+check(works.every((w) => w.lines > 0), 'どの作品にも吹き出しにできるセリフがある');
+
 console.log('合成と演出（サンプルで通しで確認）');
 await page.click('#sample-list li:first-child button');
 await page.waitForTimeout(2200);
