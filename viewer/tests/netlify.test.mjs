@@ -24,6 +24,7 @@ const upstream = createServer((req, res) => {
       res.end(JSON.stringify({ error_type: 'api_usage_error', message: `Unknown model: ${body.model}` }));
       return;
     }
+    if (body.state === 'UPSTREAM401HTML') { res.writeHead(401, { 'Content-Type': 'text/html' }); res.end('<!DOCTYPE html><html><head><title>Login Redirect</title></head><body></body></html>'); return; }
     if (body.state === 'UPSTREAM401') { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end('{"error":{"message":"invalid api key"}}'); return; }
     const answers = {};
     for (const [k, q] of Object.entries(body.questions || {})) {
@@ -70,6 +71,9 @@ check(up.auth === 'Bearer netlify-secret-key', 'キーは関数が付ける');
 check(JSON.stringify(Object.keys(up.body)) === '["model","state","questions"]', '送るのは model・state・questions だけ');
 r = await call({ body: JSON.stringify({ state: 'UPSTREAM401', questions: {} }), headers: { 'X-Relay-Passphrase': 'hanabi-2026' } });
 check(r.status === 401, '上流のエラー（401）はそのまま返す');
+r = await call({ body: JSON.stringify({ state: 'UPSTREAM401HTML', questions: {} }), headers: { 'X-Relay-Passphrase': 'hanabi-2026' } });
+const hb = await r.json().catch(() => ({}));
+check(r.status === 401 && hb.code === 'upstream_auth' && /TYPESAFE_API_KEY/.test(hb.error), `上流がログイン画面（HTML）を返したら、キーが通らないと JSON で知らせる (${hb.code})`);
 const get = (headers = {}) => fn.default(new Request('https://site.example/v1/models', { method: 'GET', headers }));
 r = await get();
 check(r.status === 403, 'モデル一覧も合言葉なしは 403');

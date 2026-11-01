@@ -949,15 +949,28 @@ JV.Parser = {
 
   /* ---------- 判定単位 ---------- */
   /** 単位の中のセリフ（「」の中身）。吹き出しの候補。多すぎるときは先頭から 8 つまで */
-  quotes(text) {
-    const out = [];
-    // 「」は会話、『』は通知・手紙・電話など（会話でなくても吹き出しにする）
-    for (const m of String(text || '').matchAll(/「([^「」]{1,120})」|『([^『』]{1,120})』/g)) {
+  quotes(text) { return this.quoteItems(text).map((q) => q.text); },
+  /**
+   * 吹き出しの候補のセリフ（最大 4 つ、本文の順）。前後の地の文（話し手の手がかり）も付ける。
+   * 「」は会話、『』は通知・手紙・電話など。5 つ以上あるときは、！？・長さ・単位の最後のほうを優先して選ぶ
+   */
+  QUOTE_MAX: 4,
+  quoteItems(text) {
+    const src = String(text || ''), all = [];
+    for (const m of src.matchAll(/「([^「」]{1,120})」|『([^『』]{1,120})』/g)) {
       const t = (m[1] || m[2]).replace(/\s+/g, ' ').trim();
-      if (t) out.push(t);
-      if (out.length >= 8) break;
+      if (!t) continue;
+      // 行の頭から始まるものだけをセリフとみなす（地の文の中の「明日の私」のような名前・題名は除く）
+      const prevCh = m.index > 0 ? src[m.index - 1] : '\n';
+      if (!/[\n\r 　]/.test(prevCh)) continue;
+      const clip = (s) => s.replace(/「[^「」]*」|『[^『』]*』/g, '…').replace(/\s+/g, ' ').trim();
+      const before = clip(src.slice(Math.max(0, m.index - 60), m.index)).slice(-40);
+      const after = clip(src.slice(m.index + m[0].length, m.index + m[0].length + 60)).slice(0, 40);
+      all.push({ text: t, before, after, written: !!m[2], i: all.length });
     }
-    return out;
+    if (all.length <= this.QUOTE_MAX) return all;
+    const score = (q) => (q.text.match(/[！!？?]/g) || []).length + (q.text.length >= 8 ? 1 : 0) + q.i / all.length;
+    return all.slice().sort((a, b) => score(b) - score(a)).slice(0, this.QUOTE_MAX).sort((a, b) => a.i - b.i);
   },
   isDialogue(s) {
     const t = s.replace(/^[\s　]+/, '').replace(/[\s　]+$/, '');
@@ -1245,6 +1258,7 @@ JV.SettingsUI = {
             : `→ いまは一般公開していません（${JV.App.closedLabel(err.detail && err.detail.code)}）。持ち主は合言葉を入れてください。`;
         }
         else if (err.status === 500 && /not configured/.test(msg)) relayHint = '→ Netlify の環境変数 TYPESAFE_API_KEY と RELAY_PASSPHRASE を設定し、再デプロイしてください。';
+        else if (err.kind === 'html' && (err.status === 401 || err.status === 403)) relayHint = '→ Netlify の Project configuration → Access & security で、サイトの保護（Visitor access・Password protection）をオフにしてください。プレビュー（deploy-preview-…）は本番以外の保護で止められることがあります。';
         else if (err.status === 401) relayHint = '→ 中継に設定した TypeSafe の APIキーが通っていません。キーを確認してください。';
       }
       if (/unknown model/i.test(msg)) relayHint = '→ このモデル名は使えません。「使えるモデルを確認」を押して、一覧から選んでください。';
@@ -1621,13 +1635,20 @@ JV.Schema = {
       ],
     },
     // ↓ セリフがある単位だけで聞く（吹き出し）。代表のセリフ（line）は単位ごとに選択肢が変わるので toQuestions で作る
-    line_speaker: {
-      type: 'choice', withLines: true,
-      instructions: '代表のセリフ(line)を言っている人物。場面の中心人物か、その相手か、いま場面にいない人物（電話・手紙・回想・画面の外の声）か',
+    // 話し手はセリフごとに聞く（speaker_1, speaker_2 …）。代表のセリフと別々に評価されても食い違わないように
+    speaker: {
+      type: 'choice', withLines: true, perLine: true,
+      instructions: 'このセリフを声に出して言った人物の見た目。セリフの直後・直前の地の文（「と少女が言った」「老人は笑った」「私は答えた」など）を最優先の手がかりにする。手がかりがなければ、会話は二人が交互に話すことが多い点と、セリフの言葉づかい（「だぞ」「ですわ」「じゃ」「僕」など）から判断する。『』の中身は通知・手紙・電話・看板などで、声の主が場面にいなければ「場面にいない人物」',
       options: [
-        { id: 'main', label: '中心人物', desc: '場面の中心にいる人物（一人称なら語り手）' },
-        { id: 'sub', label: '相手', desc: '中心人物と向き合っている2人目' },
-        { id: 'other', label: '場面にいない人物', desc: '電話・手紙・通知・回想・姿の見えない声など' },
+        { id: 'narrator', label: '語り手', desc: '一人称の語り手（地の文の「私」「僕」「俺」）が言った' },
+        { id: 'man', label: '成人男性', desc: '大人の男が言った' },
+        { id: 'woman', label: '成人女性', desc: '大人の女が言った' },
+        { id: 'boy', label: '少年', desc: '男の子・少年が言った' },
+        { id: 'girl', label: '少女', desc: '女の子・少女が言った' },
+        { id: 'oldman', label: '老人（男）', desc: '年寄りの男が言った' },
+        { id: 'oldwoman', label: '老人（女）', desc: '年寄りの女が言った' },
+        { id: 'other', label: '場面にいない人物', desc: '電話・手紙・通知・看板・回想・姿の見えない声' },
+        { id: 'unknown', label: '不明', desc: '誰が言ったか読み取れない' },
       ],
     },
     line_importance: {
@@ -1653,13 +1674,24 @@ JV.Schema = {
   /** TypeSafe 形式の questions を組み立てる（asciiKeys なら criteria のキーを英字IDにする） */
   toQuestions(group, { asciiKeys = false, lines = [] } = {}) {
     const out = {};
+    const items = lines.map((l) => (typeof l === 'string' ? { text: l, before: '', after: '' } : l));
     for (const [key, q] of Object.entries(this[group])) {
-      if (q.withLines && !lines.length) continue;
-      if (key === 'line_speaker' && lines.length > 1) {
+      if (q.withLines && !items.length) continue;
+      if (q.perLine) {
         // 代表のセリフ：この単位のセリフから1つ選ばせる（キーは番号）
+        if (items.length > 1) {
+          const criteria = {};
+          items.forEach((l, i) => { criteria[String(i + 1)] = `「${l.text}」`; });
+          out.line = { type: 'choice', instructions: '現在の段落(current)のセリフのうち、場面をいちばんよく表す・いちばん印象に残る一言', criteria };
+        }
+        // 話し手：セリフごとに、前後の地の文を添えて聞く
         const criteria = {};
-        lines.forEach((t, i) => { criteria[String(i + 1)] = `「${t}」`; });
-        out.line = { type: 'choice', instructions: '現在の段落(current)のセリフのうち、場面をいちばんよく表す・いちばん印象に残る一言', criteria };
+        for (const o of this.options(group, key)) criteria[asciiKeys ? o.id : o.label] = asciiKeys ? `${o.label}：${o.desc}` : o.desc;
+        items.forEach((l, i) => {
+          const where = `${l.before ? `直前の地の文「${l.before}」` : '直前の地の文なし'}／${l.after ? `直後の地の文「${l.after}」` : '直後の地の文なし'}`;
+          out[`speaker_${i + 1}`] = { type: 'choice', instructions: `セリフ${i + 1}「${l.text}」（${where}）について：${q.instructions}`, criteria: { ...criteria } };
+        });
+        continue;
       }
       if (q.type === 'noul') out[key] = { type: 'noul', instructions: q.instructions };
       else if (q.type === 'score') out[key] = { type: 'score', instructions: q.instructions, criteria: q.levels.slice() };
@@ -1803,7 +1835,8 @@ JV.Adapters.mock = {
     // 吹き出し：！や？・気持ちの言葉が多く、ほどよく長いセリフほど「代表」で「大事」
     // 単位の最後のほうのセリフ（場面の引き）も大事にする。あいさつ・相づちは「さりげない」
     const lineKeys = questions.line ? Object.keys(questions.line.criteria) : null;
-    const lineTexts = lineKeys ? lineKeys.map((k) => questions.line.criteria[k].replace(/^「|」$/g, '')) : JV.Parser.quotes(cur).slice(0, 1);
+    const items = JV.Parser.quoteItems(cur);
+    const lineTexts = lineKeys ? lineKeys.map((k) => questions.line.criteria[k].replace(/^「|」$/g, '')) : items.map((q) => q.text).slice(0, 1);
     const casual = (t) => /^(いらっしゃ|おはよう|こんにちは|こんばんは|はい|ええ|うん|そう|じゃあ|ありがとう)/.test(t) && t.length <= 14;
     const lineScore = (t, i = 0) => casual(t) ? -1 : (t.match(/[！!？?]/g) || []).length + 0.8 * Object.values(K.emotion).reduce((n, kws) => n + this.count(t, kws), 0) + (t.length >= 8 ? 0.6 : 0) + (/……|っ$/.test(t) ? 0.3 : 0) + (lineTexts.length > 1 ? 0.8 * i / (lineTexts.length - 1) : 0);
     let bestLine = 0;
@@ -1816,12 +1849,21 @@ JV.Adapters.mock = {
         answers.line = { type: 'choice', choice: lineKeys[bestLine], probabilities, confidence: probabilities[lineKeys[bestLine]] };
         continue;
       }
-      if (key === 'line_speaker') {
-        // 会話は交互に話すとみなす：単位の中で偶数番目は中心人物、奇数番目は相手。会話がなければ画面の外の声
-        const bt = lineTexts[bestLine] || '', written = cur.includes(`『${bt}』`);
-        const keys = labelsOf(key), pick = written || dialogues === 0 ? 2 : bestLine % 2;
-        const probabilities = {}; keys.forEach((k, i) => { probabilities[k] = i === pick ? 0.7 : 0.15; });
-        answers[key] = { type: 'choice', choice: keys[pick], probabilities, confidence: 0.7 };
+      if (/^speaker_\d+$/.test(key)) {
+        // 直後の地の文「と少女が言った」「私は答えた」、直前の「老人が口を開いた」などから話し手を当てる。『』は場面にいない人物
+        const it = items[Number(key.split('_')[1]) - 1] || { text: '', before: '', after: '' };
+        const keys = labelsOf(key), labels = keys.map((k) => (JV.Schema.byLabel('scene', 'speaker', k) || JV.Schema.byId('scene', 'speaker', k) || { label: k }).label);
+        const near = `${it.after.split(/[。]/)[0]} ${it.before.split(/[。]/).pop()}`;
+        let pick = '不明';
+        if (it.written) pick = '場面にいない人物';
+        else if (/^と?(私|僕|俺|わたし|あたし)|(私|僕|俺)は(言|答|叫|聞|つぶや|たず)/.test(it.after) || /(私|僕|俺)は(言|答|叫|聞|つぶや|たず)/.test(near) || /^[^。]{0,12}(言|叫|答|声に出し|つぶやい)[たっ][^。]{0,3}(私|僕|俺)/.test(it.after)) pick = '語り手';
+        else {
+          const sc = this.scoreFor({ ...K.figure, '老人（男）': ['老人', '爺', '翁', '局長'], '老人（女）': ['老婆', '婆', '魔女'] }, near, '');
+          for (const l of Object.keys(sc)) if (sc[l] > 0 && (pick === '不明' || sc[l] > sc[pick])) pick = l;
+        }
+        const probabilities = {}; labels.forEach((l, i) => { probabilities[keys[i]] = l === pick ? 0.72 : 0.28 / (labels.length - 1); });
+        const ch = keys[labels.indexOf(pick)] ?? keys[labels.length - 1];
+        answers[key] = { type: 'choice', choice: ch, probabilities, confidence: probabilities[ch] };
         continue;
       }
       if (key === 'line_importance') {
@@ -2009,6 +2051,15 @@ JV.Adapters.remote = {
       const text = await res.text();
       let data;
       try { data = text ? JSON.parse(text) : undefined; } catch (_) { data = text; }
+      // JSON ではなくウェブページが返ってきた：その場所に中継がなく、サーバーのログイン画面やエラーページが出ている
+      if (data && data.code === 'upstream_auth') {
+        throw new JV.Adapters.RemoteError(`中継には届きましたが、TypeSafe が API キーを受け付けませんでした（HTTP ${res.status}）。Netlify の環境変数 TYPESAFE_API_KEY の値（前に Bearer や引用符・空白が付いていないか、キーが有効か）を確かめて、再デプロイしてください。`, 'auth', data, res.status);
+      }
+      if (typeof data === 'string' && /^\s*<(!doctype|html|head|body)/i.test(data)) {
+        throw new JV.Adapters.RemoteError(res.status === 401 || res.status === 403
+          ? `接続先が Jev の中継ではなく、ログイン画面を返しました（HTTP ${res.status}）。中継に届く前に止められています。Netlify のサイト保護（パスワードや Netlify へのログイン）がかかっていないか確かめてください。`
+          : `接続先が Jev の中継ではなく、ウェブページを返しました（HTTP ${res.status}）。いま開いているページの置き場所には中継サーバーがありません。Netlify に置いたサイトか relay/local_server.py で開くか、設定の呼び出し経路を「モック」にしてください。`, 'html', text.slice(0, 200), res.status);
+      }
       if (!res.ok) {
         const msg = (data && (data.error && (data.error.message || data.error) || data.message || data.detail)) || text.slice(0, 200);
         const kind = res.status === 401 || res.status === 403 ? 'auth' : res.status === 429 ? 'rate' : res.status === 404 ? 'notfound' : 'http';
@@ -2328,6 +2379,30 @@ JV.Director = {
   },
 
   /**
+   * 話し手（見た目）→ 吹き出しのしっぽを向ける人物（main / sub / other）。
+   * 語り手は主人公の見た目に置き換える。描いている2人の見た目と合えばその人、合わなければ画面の外の声
+   */
+  speakerRole(raw, f, { pro, first, hideNarrator }) {
+    if (!raw || raw.choice == null) return 'main';
+    const o = JV.Schema.byLabel('scene', 'speaker', raw.choice) || JV.Schema.byId('scene', 'speaker', raw.choice);
+    const p = raw.probabilities && raw.probabilities[raw.choice] != null ? Number(raw.probabilities[raw.choice]) : Number(raw.confidence || 0);
+    if (!o || o.id === 'unknown' || p < 0.3) return 'main';
+    if (o.id === 'other') return 'other';
+    let type = o.id;
+    if (type === 'narrator') {
+      if (hideNarrator && first) return 'other';
+      if (!pro) return 'main';
+      type = pro;
+    }
+    if (!f || f.layout === 'none') return 'other';
+    const isMain = f.main === type, isSub = (f.layout === 'two') && f.sub === type;
+    if (isMain && isSub) return o.id === 'narrator' || type === pro ? (f.main === pro ? 'main' : 'sub') : 'main';
+    if (isMain) return 'main';
+    if (isSub) return 'sub';
+    return 'other';
+  },
+
+  /**
    * ルール（仕様 7章）
    * 1. scene_changed ≥ しきい値、または location が前と違い confidence ≥ 0.5 → 背景を替える
    * 2. time・weather はしきい値以上の選択肢だけ反映。それ未満は前の値を引き継ぐ
@@ -2415,9 +2490,8 @@ JV.Director = {
       const idx = lines.length === 1 ? 0 : raw && raw.choice != null ? parseInt(String(raw.choice).replace(/\D/g, ''), 10) - 1 : -1;
       const text = lines[idx];
       const imp = a.line_importance ? a.line_importance.value : 0.5;
-      const Sp = a.line_speaker;
       if (text && imp >= 0.25) {
-        s.line = { text, importance: imp, speaker: Sp && Sp.confidence >= 0.3 ? Sp.id : 'main' };
+        s.line = { text, importance: imp, speaker: this.speakerRole(answers && answers[`speaker_${idx + 1}`], s.figures, { pro, first, hideNarrator }) };
         why.push(`吹き出し「${text.slice(0, 12)}${text.length > 12 ? '…' : ''}」（${s.line.speaker}・重要度 ${imp.toFixed(2)}）`);
       } else if (text) why.push(`吹き出しなし（重要度 ${imp.toFixed(2)}）`);
     }
@@ -2526,7 +2600,7 @@ JV.Store = {
  * キャッシュ：メモリ → IndexedDB → 判定器。キーは「作品ハッシュ｜判定器｜判定単位」
  * ===================================================================== */
 JV.Judge = {
-  SCHEMA_VERSION: 4,    // 質問・state・判定単位の作り方を変えたら上げる（古いキャッシュを使わないため）
+  SCHEMA_VERSION: 5,    // 質問・state・判定単位の作り方を変えたら上げる（古いキャッシュを使わないため）
   PREFETCH: 3,           // 停止した段落の後ろを何単位先読みするか
   memory: new Map(),
   inflight: new Map(),   // key → { promise, ctl, unit }
@@ -2637,7 +2711,7 @@ JV.Judge = {
   async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
     const state = this.sceneState(doc, unit, work, prevScene);
     const t0 = performance.now();
-    const answers = await this.adapter().judge(state, this.questions('scene', JV.Parser.quotes(doc.units[unit].text)), { signal });
+    const answers = await this.adapter().judge(state, this.questions('scene', JV.Parser.quoteItems(doc.units[unit].text)), { signal });
     return { answers, ms: Math.round(performance.now() - t0), source: this.adapter().name };
   },
 

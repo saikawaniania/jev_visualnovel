@@ -143,7 +143,19 @@ async function forward(url, init) {
   } catch (err) {
     return json(502, { error: `upstream unreachable: ${err.name === 'TimeoutError' ? 'timeout' : err.message}` });
   }
-  return new Response(await res.text(), {
+  const text = await res.text();
+  // TypeSafe がキーを受け付けないと、JSON ではなくログイン画面（HTML）を返すことがある。そのまま返すと原因が分からないので、言い直す
+  const type = res.headers.get('Content-Type') || '';
+  if (!res.ok && (type.includes('html') || /^\s*<(!doctype|html)/i.test(text))) {
+    const auth = res.status === 401 || res.status === 403;
+    return json(res.status, {
+      error: auth
+        ? `TypeSafe rejected the API key (HTTP ${res.status}): check TYPESAFE_API_KEY in Netlify environment variables (no "Bearer", no quotes or spaces), then redeploy`
+        : `TypeSafe returned a web page instead of JSON (HTTP ${res.status})`,
+      code: auth ? 'upstream_auth' : 'upstream_html',
+    });
+  }
+  return new Response(text, {
     status: res.status,
     headers: { 'Content-Type': res.headers.get('Content-Type') || 'application/json', 'Cache-Control': 'no-store' },
   });

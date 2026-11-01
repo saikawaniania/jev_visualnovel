@@ -1282,6 +1282,7 @@ JV.SettingsUI = {
             : `→ いまは一般公開していません（${JV.App.closedLabel(err.detail && err.detail.code)}）。持ち主は合言葉を入れてください。`;
         }
         else if (err.status === 500 && /not configured/.test(msg)) relayHint = '→ Netlify の環境変数 TYPESAFE_API_KEY と RELAY_PASSPHRASE を設定し、再デプロイしてください。';
+        else if (err.kind === 'html' && (err.status === 401 || err.status === 403)) relayHint = '→ Netlify の Project configuration → Access & security で、サイトの保護（Visitor access・Password protection）をオフにしてください。プレビュー（deploy-preview-…）は本番以外の保護で止められることがあります。';
         else if (err.status === 401) relayHint = '→ 中継に設定した TypeSafe の APIキーが通っていません。キーを確認してください。';
       }
       if (/unknown model/i.test(msg)) relayHint = '→ このモデル名は使えません。「使えるモデルを確認」を押して、一覧から選んでください。';
@@ -1988,6 +1989,15 @@ JV.Adapters.remote = {
       const text = await res.text();
       let data;
       try { data = text ? JSON.parse(text) : undefined; } catch (_) { data = text; }
+      // JSON ではなくウェブページが返ってきた：その場所に中継がなく、サーバーのログイン画面やエラーページが出ている
+      if (data && data.code === 'upstream_auth') {
+        throw new JV.Adapters.RemoteError(`中継には届きましたが、TypeSafe が API キーを受け付けませんでした（HTTP ${res.status}）。Netlify の環境変数 TYPESAFE_API_KEY の値（前に Bearer や引用符・空白が付いていないか、キーが有効か）を確かめて、再デプロイしてください。`, 'auth', data, res.status);
+      }
+      if (typeof data === 'string' && /^\s*<(!doctype|html|head|body)/i.test(data)) {
+        throw new JV.Adapters.RemoteError(res.status === 401 || res.status === 403
+          ? `接続先が Jev の中継ではなく、ログイン画面を返しました（HTTP ${res.status}）。中継に届く前に止められています。Netlify のサイト保護（パスワードや Netlify へのログイン）がかかっていないか確かめてください。`
+          : `接続先が Jev の中継ではなく、ウェブページを返しました（HTTP ${res.status}）。いま開いているページの置き場所には中継サーバーがありません。Netlify に置いたサイトか relay/local_server.py で開くか、設定の呼び出し経路を「モック」にしてください。`, 'html', text.slice(0, 200), res.status);
+      }
       if (!res.ok) {
         const msg = (data && (data.error && (data.error.message || data.error) || data.message || data.detail)) || text.slice(0, 200);
         const kind = res.status === 401 || res.status === 403 ? 'auth' : res.status === 429 ? 'rate' : res.status === 404 ? 'notfound' : 'http';
