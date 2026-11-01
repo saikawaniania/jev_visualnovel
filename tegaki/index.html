@@ -2010,6 +2010,9 @@ JV.Adapters.remote = {
       let data;
       try { data = text ? JSON.parse(text) : undefined; } catch (_) { data = text; }
       // JSON ではなくウェブページが返ってきた：その場所に中継がなく、サーバーのログイン画面やエラーページが出ている
+      if (data && data.code === 'upstream_auth') {
+        throw new JV.Adapters.RemoteError(`中継には届きましたが、TypeSafe が API キーを受け付けませんでした（HTTP ${res.status}）。Netlify の環境変数 TYPESAFE_API_KEY の値（前に Bearer や引用符・空白が付いていないか、キーが有効か）を確かめて、再デプロイしてください。`, 'auth', data, res.status);
+      }
       if (typeof data === 'string' && /^\s*<(!doctype|html|head|body)/i.test(data)) {
         throw new JV.Adapters.RemoteError(`接続先が Jev の中継ではなく、ウェブページを返しました（HTTP ${res.status}）。いま開いているページの置き場所には中継サーバーがありません。Netlify に置いたサイトか relay/local_server.py で開くか、設定の呼び出し経路を「モック」にしてください。`, 'html', text.slice(0, 200), res.status);
       }
