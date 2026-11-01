@@ -6,6 +6,7 @@ Python 版と Node.js/TypeScript 版の両方を用意しています。どち�
 ## 構成
 
 - `viewer/` — 青空文庫サウンドノベル化ビューア（単一 HTML）。スクロールを止めた箇所の場面を Jev で判定し、背景と人物シルエットを差し替える。詳しくは `viewer/README.md`
+- `tegaki/` — 同じビューアを手描きアニメ（canvas）で描き直した別サイト。画像素材なしで、場所・人物・天候・心象を毎コマ描く。詳しくは `tegaki/README.md`
 - `python/` — Python 版。`typesafe-sdk` を使用。CLI サンプル(`example.py`)と FastAPI サーバ(`server.py`)
 - `node/` — Node.js/TypeScript 版。`@typesafe-ai/sdk` を使用。CLI サンプル(`src/example.ts`)と Express サーバ(`src/server.ts`)
 
@@ -69,7 +70,8 @@ npm run dev         # Webサーバとして起動(POST /judge)
 
 ## ライセンス
 
-- **コード**（下記の画像以外のすべて。サンプルの文章を含む）：[MIT License](LICENSE)　© 2026 斉川ニア
+- **`tegaki/tegaki.js`**：MIT License © 2026 Afaq Rashid（元は [claude-animation-studio](https://github.com/i-afaqrashid/claude-animation-studio) の描画エンジン）
+- **コード**（下記の画像と tegaki.js 以外のすべて。サンプルの文章を含む）：[MIT License](LICENSE)　© 2026 斉川ニア
 - **画像**（`viewer/assets/bg/` の背景、`viewer/assets/sil/` のシルエット・群衆）：[CC BY 4.0](viewer/assets/LICENSE)　© 2026 斉川ニア
   - 作者名「斉川ニア」を表示すれば、改変・再配布・商用利用を含めて自由に使えます
   - これらの画像は、OpenAI の画像生成モデル（GPT Image 2.5）で生成したものです

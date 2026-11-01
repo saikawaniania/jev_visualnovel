@@ -1,0 +1,15 @@
+# Netlify：手描きサウンドノベル（tegaki/）を、既存のビューアとは別のサイトとして公開する。
+# サイトの設定で Base directory を「tegaki」にすること（このファイルはそこから読まれる）。
+# 環境変数は既存のビューアと同じ：
+#   TYPESAFE_API_KEY   TypeSafe の API キー
+#   RELAY_PASSPHRASE   中継の合言葉
+#   RELAY_PUBLIC_UNTIL / RELAY_DAILY_LIMIT   期間限定の一般公開（任意）
+[build]
+  command = "node build.mjs"
+  publish = "public"
+  functions = "netlify/functions"
+  # 公開される中身（このフォルダと中継関数）が変わっていなければビルドしない。終了コード 0 ＝ スキップ
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../netlify ':(exclude)tests' ':(exclude)README.md'"
+
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "RELAY_PUBLIC_UNTIL,RELAY_DAILY_LIMIT"
