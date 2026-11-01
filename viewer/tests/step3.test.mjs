@@ -18,9 +18,10 @@ const q = await page.evaluate(() => {
     types: Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.type])),
   };
 });
-check(q.keys.join() === 'scene_changed,location,time,weather,people,figure_main,figure_sub,pose,mood', `場面判定の質問キー ${q.keys}`);
+check(q.keys.join() === 'scene_changed,location,time,weather,people,figure_main,figure_sub,pose,mood,inner,emotion', `場面判定の質問キー ${q.keys}`);
 check(q.locN === 16 && q.mood === 3, `location 16択・mood 3段階 (${q.locN}, ${q.mood})`);
 check(q.types.scene_changed === 'noul' && q.types.mood === 'score' && q.types.location === 'choice', '型は Noul / Score / Choice');
+check(q.types.inner === 'noul' && q.types.emotion === 'choice', '心象：inner は Noul・emotion は Choice');
 check(q.sub.join() === '成人男性,成人女性,少年,少女,老人,不明', 'figure_sub は figure_main と同じ選択肢');
 check(q.work.join() === 'era,narration,protagonist', `作品判定の質問 (${q.work})`);
 check(q.asciiLoc.join() === 'washitsu,yoshitsu,kitchen', '英字IDの criteria も作れる');
@@ -88,6 +89,8 @@ const rules = await page.evaluate(() => {
     figure_sub: ch('figure_sub', o.sub ?? '不明', 0.7),
     pose: ch('pose', o.pose ?? '立っている', 0.7),
     mood: { type: 'score', score: o.mood ?? 0, confidence: 0.8 },
+    inner: { type: 'noul', noul: o.inner ?? 0.1 },
+    emotion: ch('emotion', o.emo ?? '不明', o.emoP ?? 0.8),
   });
   const r = [];
   let t = 0;
@@ -110,6 +113,14 @@ const rules = await page.evaluate(() => {
   a2.time = { type: 'choice', choice: '真夜中', probabilities: { '真夜中': 0.99 }, confidence: 0.99 };
   const p2 = D.decide(a2, { chapter: 1, now: t });
   r.push({ loc: p2.scene.location, time: p2.scene.time });
+  // 心象：心の中だけの段落なら気持ちの背景、外の描写に戻れば消す（場所はそのまま）
+  const inn = (o) => { t += 6000; const p = D.decide(ans({ loc: '和室', ...o }), { chapter: 1, now: t }); return { inner: p.scene.inner, flag: p.inner, loc: p.scene.location, why: p.why.join(',') }; };
+  r.push(inn({ inner: 0.85, emo: '不安' }));                 // 12 心象に入る
+  r.push(inn({ inner: 0.85, emo: '喜び' }));                 // 13 気持ちが変わる
+  r.push(inn({ inner: 0.85, emo: '喜び' }));                 // 14 同じなら変化なし
+  r.push(inn({ inner: 0.85, emo: '不明' }));                 // 15 気持ちが不明なら出さない
+  r.push(inn({ inner: 0.3, emo: '悲しみ' }));                // 16 心の中だけでなければ出さない
+  r.push(inn({ inner: 0.9, emo: '悲しみ', emoP: 0.3 }));     // 17 気持ちの確信度が低ければ出さない
   return r;
 });
 const R = rules;
@@ -125,6 +136,34 @@ check(R[8].weather === 'rain', `「記述なし」では天候を消さない ($
 check(R[9].fig === 'none', `people が誰もいないなら人物を消す (${R[9].fig})`);
 check(R[10].bg && R[10].chapter && R[10].loc === 'seaside', `章替わりは暗転し、5秒ルールより優先 (${R[10].why})`);
 check(R[11].loc === 'forest' && R[11].time === 'night', `英字IDの答えも読め、スキーマ外の値は無視 (${R[11].loc}, ${R[11].time})`);
+
+check(R[12].inner === 'anxiety' && R[12].flag && R[12].loc === 'washitsu' && R[12].why.includes('心象 → 不安'), `心の中だけの段落で心象の背景を出す (${R[12].why})`);
+check(R[13].inner === 'joy' && R[13].flag, `気持ちが変われば心象も替える (${R[13].inner})`);
+check(R[14].inner === 'joy' && !R[14].flag, `同じ気持ちなら替えない (${R[14].flag})`);
+check(R[15].inner === null && R[15].flag && R[15].why.includes('心象おわり'), `気持ちが不明なら心象を消す (${R[15].why})`);
+check(R[16].inner === null && !R[16].flag, `inner がしきい値未満なら出さない (${R[16].inner})`);
+check(R[17].inner === null, `emotion の確信度が低ければ出さない (${R[17].inner})`);
+
+console.log('心象の背景（レイヤー）');
+const emo = await page.evaluate(async () => {
+  const S = JV.Stage;
+  const op = () => Object.fromEntries([...S.el.querySelectorAll('.emo')].map((e) => [e.className.match(/emo-(\w+)/)[1], e.style.opacity]));
+  S.setInner('sadness', 0);
+  const a = { op: op(), cls: S.el.classList.contains('is-inner') };
+  S.setTone({ time: 'day', weather: 'rain', location: 'street', inner: 'sadness' }, 0);
+  const w1 = JV.Weather.targetType;
+  S.setMood(1, 0);
+  const filt = S.el.querySelector('.scene').style.filter;
+  S.setInner(null, 0);
+  S.setTone({ time: 'day', weather: 'rain', location: 'street', inner: null }, 0);
+  const b = { op: op(), cls: S.el.classList.contains('is-inner'), w: JV.Weather.targetType };
+  S.reset();
+  return { a, w1, filt, b };
+});
+check(emo.a.op.sadness === '1' && emo.a.op.joy === '0' && emo.a.cls, `悲しみの層だけを出す (${JSON.stringify(emo.a.op)})`);
+check(emo.w1 === 'none', `心象の間は雨雪を止める (${emo.w1})`);
+check(emo.filt.includes('saturate(1)'), `心象の間は緊張感で色を抜かない (${emo.filt})`);
+check(Object.values(emo.b.op).every((v) => v === '0') && !emo.b.cls && emo.b.w === 'rain', `心象が終われば元に戻る (${emo.b.w})`);
 
 console.log('合成と演出（サンプルで通しで確認）');
 await page.click('#sample-list li:first-child button');
