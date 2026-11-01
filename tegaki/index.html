@@ -4,101 +4,152 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>手描きサウンドノベル</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;600&family=Yusei+Magic&display=swap">
 <style>
+/* 和紙と藍墨の絵本：紙の上に手描きの絵、文字は藍墨、山吹は「次にすること」と焦点だけ */
 :root {
-  --bg: #0d0f14;
-  --fg: #e8e6e1;
-  --muted: #9a978f;
-  --accent: #c9a86a;
-  --panel: rgba(16, 18, 24, 0.92);
-  --line: rgba(255, 255, 255, 0.12);
+  --paper: #E9ECE6;      /* 和紙（少し青みのある白） */
+  --sheet: #F6F7F3;      /* 紙の上に重ねる一枚 */
+  --ink: #1E2B45;        /* 藍墨 */
+  --ink-soft: #5D6678;
+  --rule: rgba(30, 43, 69, 0.18);
+  --yamabuki: #E2A23B;   /* 山吹：主な操作と焦点 */
+  --on-yamabuki: #1E2B45;
+  --danger: #A8402E;
+  --ok: #3E7A52;
+  --field: #FFFFFF;
+  --night: rgba(16, 22, 36, 0.55);   /* 絵の上に本文を載せる帯（絵の上なので常に暗い） */
+  --night-ink: #F1F0EA;
+  /* 旧名（スクリプト・他の部品から参照） */
+  --bg: var(--paper); --fg: var(--ink); --muted: var(--ink-soft); --accent: var(--yamabuki); --line: var(--rule); --panel: var(--sheet);
   --font-size: 18px;
-  --serif: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", "Noto Serif CJK JP", serif;
-  --sans: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif;
+  --hand: "Yusei Magic", "Hiragino Maru Gothic ProN", "Zen Maru Gothic", var(--sans-base);
+  --serif: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif;
+  --sans-base: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif;
+  --sans: var(--sans-base);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #141925; --sheet: #1C2232; --ink: #E4E7E0; --ink-soft: #9AA2B2; --rule: rgba(228, 231, 224, 0.16);
+    --yamabuki: #EDB45A; --on-yamabuki: #141925; --danger: #F09A86; --ok: #8FD0A2; --field: #11151F;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #141925; --sheet: #1C2232; --ink: #E4E7E0; --ink-soft: #9AA2B2; --rule: rgba(228, 231, 224, 0.16);
+  --yamabuki: #EDB45A; --on-yamabuki: #141925; --danger: #F09A86; --ok: #8FD0A2; --field: #11151F;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--sans);
   -webkit-text-size-adjust: 100%;
 }
 button, input, select { font: inherit; color: inherit; }
 button {
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  background: var(--sheet);
+  border: 1.5px solid var(--rule);
+  border-radius: 8px;
   padding: 8px 14px;
 }
-button:hover { background: rgba(255, 255, 255, 0.12); }
+button:hover { border-color: var(--ink-soft); }
+button.primary { background: var(--yamabuki); border-color: var(--yamabuki); color: var(--on-yamabuki); font-weight: 600; }
+button.primary:hover { filter: brightness(1.05); }
+:focus-visible { outline: 2.5px solid var(--yamabuki); outline-offset: 2px; }
 .hidden { display: none !important; }
 
 /* ---------- 起動画面 ---------- */
 #home {
   min-height: 100vh;
-  max-width: 640px;
+  max-width: 620px;
   margin: 0 auto;
-  padding: 48px 16px 64px;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 30px;
 }
+/* 見本の絵：読んでいる一文が、その場で手描きの場面になる */
+#home-hero { margin: 0; display: grid; gap: 12px; }
+#home-scene {
+  width: 100%; aspect-ratio: 16 / 9; max-width: 100%; display: block;
+  border-radius: 6px; background: var(--sheet);
+  box-shadow: 0 0 0 1.5px var(--ink), 3px 4px 0 0 var(--rule);
+}
+#home-hero figcaption {
+  font-family: var(--serif); font-size: 15px; line-height: 1.8; color: var(--ink);
+  min-height: 1.8em; transition: opacity 0.6s ease;
+}
+#home-hero figcaption.fading { opacity: 0; }
 #home h1 {
-  font-family: var(--serif);
-  font-weight: 500;
-  font-size: 26px;
-  letter-spacing: 0.08em;
+  font-family: var(--hand);
+  font-weight: 400;
+  font-size: clamp(32px, 9vw, 46px);
+  line-height: 1.15;
+  letter-spacing: 0.02em;
   margin: 0;
+  text-wrap: balance;
 }
-#home .lead { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 8px 0 0; }
+#home .lead { color: var(--ink-soft); font-size: 15px; line-height: 1.85; margin: 10px 0 0; max-width: 34em; }
 #drop-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 180px;
-  border: 2px dashed rgba(201, 168, 106, 0.5);
-  border-radius: 12px;
-  padding: 24px 16px;
-  text-align: center;
+  display: grid;
+  gap: 6px;
+  border: 2px dashed var(--ink-soft);
+  border-radius: 10px;
+  padding: 22px 18px;
   cursor: pointer;
+  background: var(--sheet);
   transition: background 0.2s, border-color 0.2s;
 }
-#drop-zone.dragover { background: rgba(201, 168, 106, 0.08); border-color: var(--accent); }
-#drop-zone .big { font-size: 17px; }
-#drop-zone .small { font-size: 13px; color: var(--muted); }
-#file-input { display: none; }
-#home section h2 {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.1em;
-  margin: 0 0 10px;
+#drop-zone:hover, #drop-zone.dragover { border-color: var(--yamabuki); }
+#drop-zone.dragover { background: color-mix(in srgb, var(--yamabuki) 12%, var(--sheet)); }
+#drop-zone:focus-within { outline: 2.5px solid var(--yamabuki); outline-offset: 2px; }
+#drop-zone .big { font-family: var(--hand); font-size: 22px; }
+#drop-zone .small { font-size: 13px; color: var(--ink-soft); line-height: 1.6; }
+#file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+#home section h2, #url-form > label {
+  font-family: var(--hand);
+  font-size: 19px;
+  font-weight: 400;
+  margin: 0 0 6px;
 }
-.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* 作品の一覧は罫線の行（帳面の罫） */
+.list { list-style: none; margin: 0; padding: 0; border-top: 1.5px solid var(--rule); }
+.list > li { border-bottom: 1.5px solid var(--rule); }
 .list button {
   width: 100%;
   text-align: left;
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 14px 4px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--serif);
+  font-size: 17px;
 }
-.list .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
-#home-error { color: #f0a0a0; font-size: 14px; }
+.list button:hover { background: color-mix(in srgb, var(--yamabuki) 10%, transparent); }
+.list .meta { font-family: var(--sans); color: var(--ink-soft); font-size: 12px; white-space: nowrap; }
+#home-error { color: var(--danger); font-size: 14px; line-height: 1.6; }
 #url-form { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 #url-form .url-row { display: flex; gap: 8px; }
-#url-form input { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--line); background: #0f1115; }
-#url-form small { color: var(--muted); font-size: 12px; }
-.recent-item { display: flex; gap: 6px; }
+#url-form input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 8px; border: 1.5px solid var(--rule); background: var(--field); }
+#url-form small { color: var(--ink-soft); font-size: 12px; }
+.recent-item { display: flex; gap: 6px; align-items: center; }
 .recent-item > button:first-child { flex: 1; min-width: 0; }
 .recent-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-item .del { width: auto; flex: none; padding: 0 14px; color: var(--muted); }
-#home-footer { display: flex; gap: 12px; align-items: center; }
-#home-footer .meta { color: var(--muted); font-size: 12px; }
+.recent-item .del { width: auto; flex: none; padding: 6px 10px; color: var(--ink-soft); font-family: var(--sans); font-size: 13px; }
+#home-footer { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+#home-footer .meta { color: var(--ink-soft); font-size: 12px; }
 
 /* ---------- 読書画面 ---------- */
 #reader { position: relative; min-height: 100vh; }
@@ -110,15 +161,16 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+  background: linear-gradient(rgba(16, 22, 36, 0.75), rgba(16, 22, 36, 0));
+  color: var(--night-ink);
   font-size: 13px;
   pointer-events: none;
 }
 #reader-top > * { pointer-events: auto; }
 #reader-top .titles { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #reader-top .work-title { font-family: var(--serif); font-size: 15px; }
-#reader-top .chapter-name { color: var(--muted); margin-left: 10px; }
-#reader-top button { padding: 4px 10px; font-size: 12px; background: rgba(0, 0, 0, 0.4); }
+#reader-top .chapter-name { color: rgba(241, 240, 234, 0.7); margin-left: 10px; }
+#reader-top button { padding: 5px 11px; font-size: 12px; background: rgba(16, 22, 36, 0.5); color: var(--night-ink); border-color: rgba(241, 240, 234, 0.25); }
 
 #text-column {
   position: relative;
@@ -141,8 +193,8 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
   letter-spacing: 0.12em;
 }
 #text .chapter-title:first-child { margin-top: 0.6em; }
-#text .scene-break { text-align: center; color: var(--muted); margin: 1.6em 0; letter-spacing: 1em; }
-#text .end-mark { text-align: center; color: var(--muted); margin: 3em 0 0; font-size: 0.85em; }
+#text .scene-break { text-align: center; opacity: 0.6; margin: 1.6em 0; letter-spacing: 1em; }
+#text .end-mark { text-align: center; opacity: 0.6; margin: 3em 0 0; font-size: 0.85em; }
 
 /* ノベルモード：絵を全画面に固定し、本文は半透明の暗い帯の上に流す */
 #stage {
@@ -154,12 +206,12 @@ button:hover { background: rgba(255, 255, 255, 0.12); }
 }
 #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 body.novel #text-column {
-  background: linear-gradient(to right, rgba(8, 10, 14, 0) 0, rgba(8, 10, 14, 0.5) 32px, rgba(8, 10, 14, 0.5) calc(100% - 32px), rgba(8, 10, 14, 0) 100%);
-  color: #f3f1ec;
+  background: linear-gradient(to right, rgba(16, 22, 36, 0) 0, var(--night) 32px, var(--night) calc(100% - 32px), rgba(16, 22, 36, 0) 100%);
+  color: var(--night-ink);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.9);
 }
 @media (max-width: 700px) {
-  body.novel #text-column { background: rgba(8, 10, 14, 0.5); }
+  body.novel #text-column { background: var(--night); }
 }
 body.effects-off #stage { display: none; }
 
@@ -183,10 +235,13 @@ body.effects-off #text-column { background: transparent; box-shadow: none; }
   padding: 6px 12px;
   font-size: 12px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(16, 22, 36, 0.6);
+  color: var(--night-ink);
+  border-color: rgba(241, 240, 234, 0.25);
   backdrop-filter: blur(4px);
 }
-#effects-toggle[aria-pressed="false"] { color: var(--muted); }
+#effects-toggle[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--yamabuki); }
+#effects-toggle[aria-pressed="false"] { color: rgba(241, 240, 234, 0.6); }
 
 /* デバッグ表示 */
 #debug {
@@ -214,29 +269,31 @@ body.debug #center-line {
 /* 設定画面 */
 #settings {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(16, 22, 36, 0.55);
   display: flex; justify-content: center; align-items: flex-start;
   overflow-y: auto; padding: 24px 16px;
 }
 #settings .sheet {
   width: 100%; max-width: 560px;
-  background: #16181e; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--sheet); color: var(--ink); border: 1.5px solid var(--ink); border-radius: 10px; box-shadow: 4px 5px 0 0 rgba(16, 22, 36, 0.25);
   padding: 16px 18px 20px;
 }
 #settings header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-#settings h2 { margin: 0; font-size: 18px; font-weight: 600; }
+#settings h2 { margin: 0; font-family: var(--hand); font-size: 24px; font-weight: 400; }
 #settings fieldset { border: 0; border-top: 1px solid var(--line); margin: 12px 0 0; padding: 12px 0 0; display: flex; flex-direction: column; gap: 12px; }
-#settings legend { color: var(--accent); font-size: 13px; letter-spacing: 0.1em; padding: 0 8px 0 0; }
+#settings legend { font-family: var(--hand); font-size: 18px; padding: 0 8px 0 0; }
 #settings label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
-#settings label.check { flex-direction: row; align-items: center; gap: 8px; }
+#settings label.check { flex-direction: row; align-items: flex-start; gap: 8px; line-height: 1.5; }
+#settings label.check input { flex: none; margin: 1px 0 0; }
 #settings input[type="text"], #settings input[type="url"], #settings input[type="password"], #settings input[type="number"], #settings select {
-  width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: #0f1115;
+  width: 100%; padding: 9px 10px; border-radius: 8px; border: 1.5px solid var(--rule); background: var(--field);
 }
+#settings input[type="checkbox"] { accent-color: var(--yamabuki); width: 18px; height: 18px; }
 #settings small, #settings .note { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
 #settings .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #settings .result { font-size: 13px; line-height: 1.6; }
-#settings .result.ok { color: #9fd89f; }
-#settings .result.ng { color: #f0a0a0; }
+#settings .result.ok { color: var(--ok); }
+#settings .result.ng { color: var(--danger); }
 #settings [data-show].off { display: none; }
 #settings .model-list { display: flex; flex-direction: column; gap: 6px; }
 #settings .model-list:empty { display: none; }
@@ -247,7 +304,7 @@ body.debug #center-line {
 #notice {
   position: fixed; left: 50%; top: 52px; transform: translateX(-50%); z-index: 45;
   width: min(92vw, 520px); padding: 10px 14px; border-radius: 8px;
-  background: rgba(20, 22, 28, 0.94); border: 1px solid var(--line); color: var(--fg);
+  background: var(--sheet); border: 1.5px solid var(--ink); color: var(--ink);
   font-size: 13px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 </style>
@@ -256,14 +313,18 @@ body.debug #center-line {
 
 <!-- 起動画面 -->
 <main id="home">
+  <figure id="home-hero">
+    <canvas id="home-scene" width="960" height="540" aria-hidden="true"></canvas>
+    <figcaption id="home-line">朝の座敷には、障子越しに淡い光がさしていた。</figcaption>
+  </figure>
   <header>
     <h1>手描きサウンドノベル</h1>
-    <p class="lead">青空文庫形式・テキスト・Markdown のファイルを開くと、スクロールを止めた箇所の場面に合わせて、手描きアニメの背景と人物が動きながら切り替わります。</p>
+    <p class="lead">小説を開いてスクロールを止めると、いま読んでいる場面が手描きの絵になって動きます。場所も時間も、登場人物の気持ちも、本文から読み取って描き分けます。</p>
   </header>
 
   <label id="drop-zone" for="file-input">
-    <span class="big">ファイルをここにドロップ</span>
-    <span class="small">またはタップして選択（.txt ／ .md ／ 青空文庫の .zip、Shift_JIS・UTF-8 対応）</span>
+    <span class="big">本を開く</span>
+    <span class="small">ファイルをここに置くか、タップして選んでください。テキスト（.txt）、Markdown（.md）、青空文庫の zip が読めます。文字コードは自動で見分けます。</span>
     <input id="file-input" type="file" accept=".txt,.md,.markdown,.zip,text/plain,text/markdown,application/zip" onchange="JV.App.onFileInput(this)">
   </label>
 
@@ -271,19 +332,18 @@ body.debug #center-line {
     <label for="url-input">青空文庫のURLから読む</label>
     <div class="url-row">
       <input id="url-input" type="url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://www.aozora.gr.jp/cards/…/card….html">
-      <button type="submit" id="url-submit">読み込む</button>
+      <button type="submit" id="url-submit" class="primary">読み込む</button>
     </div>
-    <small>作品の図書カードのURLを貼り付けてください。</small>
   </form>
   <div id="home-error" class="hidden"></div>
 
   <section id="recent-section" class="hidden">
-    <h2>最近読んだ作品</h2>
+    <h2>続きから読む</h2>
     <ul class="list" id="recent-list"></ul>
   </section>
 
   <section id="samples-section">
-    <h2>サンプル</h2>
+    <h2>試しに読む</h2>
     <ul class="list" id="sample-list"></ul>
   </section>
 
@@ -2583,11 +2643,73 @@ JV.Reader = {
 };
 
 /* =====================================================================
+ * 起動画面の見本：サンプルの一文と、その場面の手描きの絵を順に見せる
+ * ===================================================================== */
+JV.HomeScene = {
+  SCENES: [
+    { line: '朝の座敷には、障子越しに淡い光がさしていた。', location: 'washitsu', time: 'morning', era: 'modern', figures: { layout: 'one', main: 'man', pose: 'sit' }, expr: 'calm' },
+    { line: '夜更けの停車場は、雪になっていた。', location: 'station', time: 'night', era: 'modern', figures: { layout: 'two', main: 'man', sub: 'woman', pose: 'stand' }, expr: 'anxiety', snow: 1 },
+    { line: '夕方になると、浜辺に人影はなくなった。', location: 'seaside', time: 'evening', era: 'present', figures: { layout: 'one', main: 'woman', pose: 'walk' }, expr: 'sadness' },
+    { line: '昼近くになって、ようやく霧が晴れた。', location: 'forest', time: 'day', era: 'modern', figures: { layout: 'two', main: 'boy', sub: 'girl', pose: 'walk' }, expr: 'joy' },
+  ],
+  HOLD: 5200, FADE: 900,
+  i: 0, prev: null, t0: 0, tg: null, last: 0,
+  init() {
+    const c = document.getElementById('home-scene');
+    if (!c || !window.Tegaki || !window.Draw) return;
+    this.canvas = c;
+    this.still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.resize();
+    window.addEventListener('resize', () => this.resize());
+    this.t0 = performance.now();
+    const tick = () => { requestAnimationFrame(tick); this.tick(); };
+    requestAnimationFrame(tick);
+  },
+  resize() {
+    const r = this.canvas.getBoundingClientRect();
+    const w = Math.max(320, Math.min(1280, Math.round((r.width || 600) * Math.min(window.devicePixelRatio || 1, 1.5))));
+    const h = Math.round(w * 9 / 16);
+    if (this.tg && this.canvas.width === w) return;
+    this.canvas.width = w; this.canvas.height = h;
+    this.tg = Tegaki.create(this.canvas, { style: 'paper', paper: 0.4, vignette: 0.18, grain: 0.05, fps: this.still ? 0 : 12 });
+    this.last = 0;
+  },
+  draw(sc, t) {
+    const tg = this.tg, L = Draw.layout(tg);
+    Draw.background(tg, L, sc, t);
+    Draw.figures(tg, L, { figures: sc.figures, era: sc.era, time: sc.time, location: sc.location, expr: sc.expr, subExpr: 'normal' }, t);
+    if (sc.snow) Draw.weather(tg, L, { snow: sc.snow, rain: 0, cloudy: 0.5, fog: 0 }, t);
+  },
+  tick() {
+    const home = document.getElementById('home');
+    if (!this.tg || document.hidden || (home && home.classList.contains('hidden'))) return;
+    const now = performance.now();
+    if (this.still) { if (this.last) return; } else if (now - this.last < 83) return;
+    this.last = now;
+    // 場面を順に替える（動きを減らす設定では最初の場面のまま）
+    if (!this.still && now - this.t0 > this.HOLD) {
+      this.prev = this.SCENES[this.i]; this.i = (this.i + 1) % this.SCENES.length; this.t0 = now;
+      const cap = document.getElementById('home-line');
+      cap.classList.add('fading');
+      setTimeout(() => { cap.textContent = this.SCENES[this.i].line; cap.classList.remove('fading'); }, 450);
+    }
+    const tg = this.tg, c = tg.ctx, t = now / 1000, k = Math.min(1, (now - this.t0) / this.FADE);
+    tg.setTime(t);
+    c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+    c.clearRect(0, 0, tg.W, tg.H);
+    if (this.prev && k < 1) { this.draw(this.prev, t); c.globalAlpha = k; }
+    this.draw(this.SCENES[this.i], t);
+    c.globalAlpha = 1;
+    tg.post();
+  },
+};
+
+/* =====================================================================
  * アプリ全体
  * ===================================================================== */
 JV.App = {
   SAMPLES: [
-    { file: 'samples/ame_no_teishaba.txt', label: '雨の停車場', note: '青空文庫形式・Shift_JIS' },
+    { file: 'samples/ame_no_teishaba.txt', label: '雨の停車場', note: '青空文庫の形式' },
     { file: 'samples/umibe_no_kissaten.md', label: '海辺の喫茶店', note: 'Markdown' },
     { file: 'samples/mori_no_michi.txt', label: '森の道', note: 'テキスト' },
   ],
@@ -2595,6 +2717,7 @@ JV.App = {
   init() {
     JV.Settings.load();
     JV.Stage.init();
+    JV.HomeScene.init();
     this.applySettings();
     this.fetchPublicStatus();
     JV.Debug.set('assets', '描画: 手描き（tegaki.js・canvas）');

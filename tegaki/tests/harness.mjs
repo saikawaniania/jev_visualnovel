@@ -45,6 +45,8 @@ export async function openApp({ viewport = { width: 1000, height: 800 } } = {}) 
   // 「Failed to load resource」はネットワークの記録（中継のない場所で /v1/relay-status が 404 になる等）なので数えない。
   // スクリプトのエラーは pageerror と他の console.error で拾う
   page.on('console', (m) => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  // Google Fonts はテストでは読まない（ネットワークなしでも同じ結果にする。文字は代わりの書体で出る）
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await page.goto(url);
   return {
     page, url, errors, ROOT,
