@@ -1201,8 +1201,8 @@
         } else if (closed) {
           tg.line([[x - r * 0.12, y], [x, y + r * 0.05], [x + r * 0.12, y]], { lw: fl, seed: seed + 94 + sd, amp: 0.5, stroke: ink });
         } else {
-          const sy = expr === 'anger' ? 0.1 : expr === 'anxiety' ? 0.12 : 0.15;
-          tg.ellipse(x, y, r * 0.11, r * sy, { fill: ink, lw: fl * 0.6, seed: seed + 96 + sd, amp: 0.3 });
+          const sy = expr === 'anger' ? 0.1 : expr === 'anxiety' ? 0.12 : expr === 'surprise' ? 0.18 : 0.15;
+          tg.ellipse(x, y, r * (expr === 'surprise' ? 0.13 : 0.11), r * sy, { fill: ink, lw: fl * 0.6, seed: seed + 96 + sd, amp: 0.3 });
           tg.ellipse(x + r * 0.04, y - r * sy * 0.45, r * 0.045, r * 0.045, { fill: '#FFFFFF', stroke: null, seed: seed + 98 + sd, amp: 0.2 });
         }
       } else if (expr === 'joy' || expr === 'calm') {
@@ -1211,12 +1211,12 @@
       } else if (closed) {
         tg.line([[x - r * 0.08, y + r * 0.02], [x, y + r * 0.06], [x + r * 0.08, y + r * 0.02]], { lw: fl, seed: seed + 94 + sd, amp: 0.4, stroke: ink });
       } else {
-        // 縦長の目（見本どおり細い楕円をインクで塗る）
-        const k = expr === 'anger' ? 0.72 : expr === 'anxiety' ? 0.85 : 1;
-        tg.ellipse(x, y + E.ry * r * (1 - k) * 0.5, E.rx * r, E.ry * r * k, { fill: ink, lw: fl * 0.5, seed: seed + 96 + sd, amp: 0.25 });
+        // 縦長の目（見本どおり細い楕円をインクで塗る）。驚きは目を見開く
+        const k = expr === 'anger' ? 0.72 : expr === 'anxiety' ? 0.85 : expr === 'surprise' ? 1.2 : 1;
+        tg.ellipse(x, y + E.ry * r * (1 - k) * 0.5, E.rx * r * (expr === 'surprise' ? 1.35 : 1), E.ry * r * k, { fill: ink, lw: fl * 0.5, seed: seed + 96 + sd, amp: 0.25 });
       }
       // 眉：細い弧。怒りは内側を下げ、悲しみ・不安は内側を上げる
-      const by = hy + B.brow * r, bx = x + sd * r * 0.02;
+      const by = hy + B.brow * r - (expr === 'surprise' ? r * 0.09 : 0), bx = x + sd * r * 0.02; // 驚きは眉を高く上げる
       const tilt = expr === 'anger' ? 0.08 : expr === 'sadness' || expr === 'anxiety' || crying ? -0.07 : 0;
       tg.line([[bx + sd * r * 0.12, by + r * 0.035 - tilt * r * 0.3], [bx + sd * r * 0.02, by - r * 0.015], [bx - sd * r * 0.11, by + r * 0.03 + tilt * r]], { lw: fl * 0.8, seed: seed + 102 + sd, amp: 0.35, stroke: browCol });
       if (cos.glasses) tg.ellipse(x, y, r * 0.18, r * 0.2, { lw: fl * 0.7, seed: seed + 104 + sd, amp: 0.4 });
@@ -1232,6 +1232,12 @@
       // 泣く：口を開けて、両目から涙が流れる
       tg.shape([[mx - mw * 0.7, my + r * 0.07], [mx + mw * 0.7, my + r * 0.07], [mx + mw * 0.9, my - r * 0.01], [mx - mw * 0.9, my - r * 0.01]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
       for (const sd of [-1, 1]) { const tx = dx + sd * ex, ph = (t * 1.6 + (sd > 0 ? 0.5 : 0)) % 1; tg.line([[tx, ey + r * 0.06], [tx + sd * r * 0.02, ey + r * 0.3]], { lw: fl * 1.2, seed: seed + 116 + sd, stroke: 'rgba(140,200,240,.85)' }); tg.ellipse(tx + sd * r * 0.02, ey + r * 0.3 + ph * r * 0.35, r * 0.04, r * 0.06, { fill: '#A8D8F0', lw: fl * 0.4, seed: seed + 118 + sd, alpha: 1 - ph }); }
+    } else if (expr === 'surprise') {
+      // 驚き：口を小さく丸く開け、頭の横に「！」
+      tg.ellipse(mx, my + r * 0.03, r * 0.06, r * 0.08, { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.25 });
+      const qx = r * 1.05, qy = hy - r * 0.95, jump = Math.abs(Math.sin(t * 5)) * r * 0.06;
+      tg.line([[qx, qy - r * 0.42 - jump], [qx - r * 0.04, qy - jump]], { lw: fl * 2.2, seed: seed + 120, stroke: '#D04040', amp: 0.2 });
+      tg.ellipse(qx - r * 0.05, qy + r * 0.15 - jump, r * 0.055, r * 0.055, { fill: '#D04040', stroke: null, seed: seed + 121 });
     } else if (expr === 'joy' || mouth) tg.shape([[mx - mw, my - r * 0.02], [mx + mw, my - r * 0.02], [mx + mw * 0.5, my + r * 0.09], [mx - mw * 0.5, my + r * 0.09]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
     else if (expr === 'sadness' || expr === 'anger') tg.line([[mx - mw * 0.8, my + r * 0.03], [mx, my - r * 0.015], [mx + mw * 0.8, my + r * 0.03]], { lw: fl * 0.8, seed: seed + 109, amp: 0.3, stroke: ink });
     else if (expr === 'anxiety') tg.line([[mx - mw, my], [mx - mw * 0.4, my - r * 0.025], [mx + mw * 0.2, my + r * 0.015], [mx + mw, my - r * 0.01]], { lw: fl * 0.8, seed: seed + 110, amp: 0.3, stroke: ink });
@@ -1548,6 +1554,16 @@
       const c = tg.ctx; c.save(); c.globalCompositeOperation = 'lighter'; const g = c.createRadialGradient(L.W / 2, L.H * 0.6, 0, L.W / 2, L.H * 0.6, L.H * 0.55); g.addColorStop(0, `rgba(255,110,60,${0.25 + 0.25 * pulse})`); g.addColorStop(1, 'rgba(255,110,60,0)'); c.fillStyle = g; c.fillRect(0, 0, L.W, L.H); c.restore();
       // 外から刺さるぎざぎざ線
       for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2 + 0.2, R0 = Math.max(L.W, L.H) * 0.75, R1 = R0 * (0.55 - 0.08 * pulse), cx = L.W / 2, cy = L.H * 0.55; const pts = []; for (let i = 0; i <= 4; i++) { const rr = lerp(R0, R1, i / 4), off = (i % 2 ? 1 : -1) * 0.04; pts.push([cx + Math.cos(a + off) * rr, cy + Math.sin(a + off) * rr]); } tg.line(pts, { lw: 4 * U, seed: 3400 + k, stroke: 'rgba(255,150,100,.55)', amp: 2 }); }
+    },
+    surprise(tg, L, t) {
+      // 驚き：明るい黄色の地に、中心へ向かう集中線と、はじける星
+      const U = L.U; grad(tg, L, ['#FFF2B0', '#F6D27A', '#E8A85A'], true);
+      const cx = L.W / 2, cy = L.H * 0.5, R0 = Math.hypot(L.W, L.H) * 0.6, c = tg.ctx;
+      c.save(); c.fillStyle = 'rgba(120,70,20,.22)';
+      for (let k = 0; k < 40; k++) { const a = k / 40 * Math.PI * 2 + hash(k, 1) * 0.05, w = 0.012 + hash(k, 2) * 0.02, r1 = R0 * (0.32 + 0.06 * Math.sin(t * 6 + k)); c.beginPath(); c.moveTo(cx + Math.cos(a - w) * R0, cy + Math.sin(a - w) * R0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.lineTo(cx + Math.cos(a + w) * R0, cy + Math.sin(a + w) * R0); c.fill(); }
+      c.restore();
+      const pop = (t * 1.2) % 1;
+      for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, rr = L.H * (0.12 + pop * 0.3); tg.star(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8, (10 + 10 * (1 - pop)) * U, { fill: '#FFFBEA', lw: 2.5 * U, seed: 3500 + k, alpha: 1 - pop, amp: 0.5 }); }
     },
   };
   function emotion(tg, L, id, t, alpha) {
