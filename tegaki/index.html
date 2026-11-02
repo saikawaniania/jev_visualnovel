@@ -1623,9 +1623,16 @@ JV.Schema = {
       options: [
         { id: 'stand', label: '立っている', desc: '立っている・佇む' },
         { id: 'sit', label: '座っている', desc: '座る・腰をおろす・正座' },
-        { id: 'walk', label: '歩く・走る', desc: '歩く・走る・駆ける・移動している' },
+        { id: 'walk', label: '歩く', desc: '歩く・歩いて移動している・散歩' },
+        { id: 'run', label: '走る', desc: '走る・駆ける・急いで逃げる・追いかける' },
         { id: 'lie', label: '倒れる・横たわる', desc: '倒れる・横になる・眠っている' },
         { id: 'talk', label: '向き合って話す', desc: '相手と向き合って会話している' },
+        { id: 'crouch', label: 'しゃがむ', desc: 'しゃがむ・うずくまる・かがむ' },
+        { id: 'wave', label: '手を振る', desc: '手を振る・呼びかける・別れのあいさつ' },
+        { id: 'cry', label: '泣く', desc: '泣く・涙を流す・顔を覆って泣く' },
+        { id: 'hug', label: '抱き合う', desc: '抱き合う・抱きしめる・抱きつく（2人）' },
+        { id: 'sword', label: '剣を振る', desc: '剣・刀を振る・斬りかかる・剣で戦う' },
+        { id: 'punch', label: '拳を突き出す', desc: '殴る・拳を突き出す・殴りかかる・素手で戦う' },
       ],
     },
     animal: {
@@ -1850,7 +1857,14 @@ JV.Adapters.mock = {
     pose: {
       '立っている': ['立っ', '佇', 'たたず', '見下ろ', '立ち'],
       '座っている': ['座', '坐', '腰をおろ', '腰掛', '正座', '座席'],
-      '歩く・走る': ['歩', '走', '駆', '急い', '下りきった', '向かっ'],
+      '歩く': ['歩', '散歩', '足を運', '進ん', '下りきった', '向かっ'],
+      '走る': ['走', '駆け', '駆', '逃げ', '追いかけ', '急いだ'],
+      'しゃがむ': ['しゃが', 'うずくま', 'かがみ', 'かがん', '屈'],
+      '手を振る': ['手を振', '手をふ'],
+      '泣く': ['泣', '涙', '嗚咽', 'すすり'],
+      '抱き合う': ['抱き合', '抱きし', '抱きつ', '抱擁'],
+      '剣を振る': ['剣', '刀', '斬', '太刀'],
+      '拳を突き出す': ['殴', '拳', 'こぶし', 'パンチ'],
       '倒れる・横たわる': ['倒れ', '横たわ', '寝', '眠'],
       '向き合って話す': ['振り向', '向き合', '話しかけ', '声をかけ', '語り'],
     },
@@ -2031,7 +2045,7 @@ JV.Adapters.mock = {
       // 会話がなく、心の動きを表す言葉が多く、場所や動作の言葉が少ないほど「心の中だけ」
       const narr = cur.replace(/「[^」]*」|『[^』]*』/g, '');
       const hits = this.count(narr, K.inner) + 0.6 * Object.values(K.emotion).reduce((n, kws) => n + this.count(narr, kws), 0);
-      const outer = Object.values(K.location).reduce((n, kws) => n + this.count(narr, kws), 0) + 0.5 * this.count(narr, K.pose['歩く・走る']);
+      const outer = Object.values(K.location).reduce((n, kws) => n + this.count(narr, kws), 0) + 0.5 * this.count(narr, [...K.pose['歩く'], ...K.pose['走る']]);
       const per100 = (x) => x / Math.max(1, narr.length / 100);
       const p = 0.08 + 0.3 * per100(hits) - 0.25 * dialogues - 0.15 * per100(outer);
       answers.inner = { type: 'noul', noul: Math.max(0.02, Math.min(0.95, p)) };

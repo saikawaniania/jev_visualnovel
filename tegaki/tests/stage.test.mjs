@@ -207,6 +207,21 @@ check(ani.dog === 'dog' && ani.none === null, `動物は読み取れた段落だ
 check(ani.dragonF === 'dragon' && ani.dragonP === 'monster' && !ani.opts.includes('dragon'), `ドラゴンはファンタジーだけ。ほかの時代ではモンスターに (${ani.dragonP})`);
 const pb = await page.evaluate(() => ['man', 'woman', 'boy', 'girl', 'oldman', 'oldwoman', 'unknown'].map((type) => { const a = Draw.costume(type, 'present', 1, 'A'), b = Draw.costume(type, 'present', 1, 'B'); return a.hair !== b.hair && a.top !== b.top ? '' : type; }).filter(Boolean));
 check(pb.length === 0, `7種類のパターンBは髪型と服の色が違う (${pb})`);
+const mv = await page.evaluate(() => {
+  const L = { W: 1280, H: 720, U: 0.8, floor: 648 };
+  const f = (pose, layout = 'two') => ({ layout, main: 'man', sub: 'woman', pose });
+  const xs = (pose, t, layout) => Draw.placement(L, f(pose, layout), t).map((p) => Math.round(p.x));
+  const fig = { figures: f('walk'), location: 'field' }, line = { text: 'まって', speaker: 'main', importance: 0.6 };
+  const b0 = Draw.bubbleLayout(L, line, fig, 'chair', 0), b1 = Draw.bubbleLayout(L, line, fig, 'chair', 2);
+  let wrapped = false, prev = xs('run', 0, 'one')[0];
+  for (let t = 0.1; t < 8; t += 0.1) { const x = xs('run', t, 'one')[0]; if (x > prev + 100) wrapped = true; prev = x; }
+  return { w0: xs('walk', 0), w1: xs('walk', 1), r1: xs('run', 1, 'one'), s1: xs('stand', 1), s0: xs('stand', 0), wrapped, b0: Math.round(b0.x), b1: Math.round(b1.x), facing: Draw.placement(L, f('walk'), 0).map((p) => p.facing) };
+});
+check(mv.w1[0] < mv.w0[0] && mv.w1[1] < mv.w0[1] && mv.w0[0] - mv.w1[0] === mv.w0[1] - mv.w1[1], `歩くと2人並んで左へ進む (${mv.w0} → ${mv.w1})`);
+check(mv.facing.join() === '-1,-1', `歩くときは2人とも左向き (${mv.facing})`);
+check(mv.r1[0] < mv.w1[1] && mv.s1.join() === mv.s0.join(), `走るほうが速く、立っている人は動かない (${mv.r1})`);
+check(mv.wrapped, '左端から出たら右端から出直す');
+check(mv.b1 < mv.b0, `吹き出しも一緒に動く (${mv.b0} → ${mv.b1})`);
 
 console.log('吹き出し（セリフ・話し手・重要度）');
 const bub = await page.evaluate(async () => {

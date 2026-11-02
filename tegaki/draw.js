@@ -816,6 +816,54 @@
       J.armL.hand[0] -= s * 0.05 * h; J.armL.el[0] -= s * 0.025 * h;
       J.armR.hand[0] += s * 0.05 * h; J.armR.el[0] += s * 0.025 * h;
       J.rot = 0.03;
+    } else if (pose === 'run') {
+      // 走る：大きな歩幅・前かがみ・腕を曲げて振る
+      const w = ph * 11, sn = Math.sin(w);
+      J.dy = -Math.abs(Math.sin(w)) * 0.03 * h;
+      J.legL = leg(-0.03 * h, -0.03 * h + sn * 0.13 * h, -Math.max(0, Math.cos(w)) * 0.07 * h);
+      J.legR = leg(0.03 * h, 0.03 * h - sn * 0.13 * h, -Math.max(0, -Math.cos(w)) * 0.07 * h);
+      J.legL.knee[0] += 0.05 * h; J.legR.knee[0] += 0.05 * h;
+      J.armL.el = [-d.sw - sn * 0.06 * h, lerp(d.shY, hipY, 0.45)]; J.armL.hand = [-d.sw - sn * 0.06 * h + 0.07 * h, lerp(d.shY, hipY, 0.3)];
+      J.armR.el = [d.sw + sn * 0.06 * h, lerp(d.shY, hipY, 0.45)]; J.armR.hand = [d.sw + sn * 0.06 * h + 0.07 * h, lerp(d.shY, hipY, 0.3)];
+      J.rot = 0.13;
+    } else if (pose === 'crouch') {
+      // しゃがむ：腰を落とし、ひざを抱える（椅子のときと同じく脚は元の高さに描く）
+      const sy = -0.16 * h, drop = sy - hipY; J.drop = drop; hipY = sy; J.chair = true; J.noChair = true;
+      J.legL = { hip: [-0.03 * h, sy], knee: [0.09 * h, sy - 0.09 * h], foot: [0.04 * h, 0] };
+      J.legR = { hip: [0.03 * h, sy], knee: [0.13 * h, sy - 0.08 * h], foot: [0.09 * h, 0] };
+      J.armL.el = [d.sw * 0.6, lerp(d.shY, d.hipY, 0.7)]; J.armL.hand = [0.1 * h, sy - 0.1 * h - drop];
+      J.armR.el = [d.sw * 1.1, lerp(d.shY, d.hipY, 0.7)]; J.armR.hand = [0.14 * h, sy - 0.09 * h - drop];
+    } else if (pose === 'wave') {
+      // 手を振る：手前の手を上げて左右に
+      J.armR.el = [d.sw + 0.07 * h, d.shY - 0.02 * h];
+      J.armR.hand = [d.sw + 0.07 * h + Math.sin(ph * 7) * 0.04 * h, d.shY - 0.14 * h];
+    } else if (pose === 'cry') {
+      // 泣く：両手を顔に当てて肩をふるわせる
+      J.dy = Math.sin(ph * 14) * 0.003 * h;
+      J.armL.el = [-d.sw * 0.2, lerp(d.shY, hipY, 0.35)]; J.armR.el = [d.sw * 0.9, lerp(d.shY, hipY, 0.35)];
+      J.armL.hand = [-d.r * 0.45 + d.r * 0.1, d.hy + d.r * 0.5]; J.armR.hand = [d.r * 0.65 + d.r * 0.1, d.hy + d.r * 0.5];
+      J.handsFront = true;
+    } else if (pose === 'hug') {
+      // 抱き合う：両腕を前へ回す
+      J.armL.el = [d.sw + 0.05 * h, d.shY + 0.07 * h]; J.armL.hand = [d.sw + 0.13 * h, d.shY + 0.03 * h];
+      J.armR.el = [d.sw + 0.08 * h, d.shY + 0.1 * h]; J.armR.hand = [d.sw + 0.15 * h, d.shY + 0.06 * h];
+      J.rot = 0.05;
+    } else if (pose === 'sword') {
+      // 剣を振る：手前の腕を肩から弧を描いて振り下ろす（剣は手から描く）
+      const k = (Math.sin(ph * 3.2) + 1) / 2, a = lerp(-2.3, 0.5, k * k);
+      const L1 = 0.12 * h, sh = [d.sw, d.shY];
+      J.armR.el = [sh[0] + Math.cos(a) * L1 * 0.9, sh[1] + Math.sin(a) * L1 * 0.9];
+      J.armR.hand = [sh[0] + Math.cos(a) * L1 * 1.7, sh[1] + Math.sin(a) * L1 * 1.7];
+      J.sword = a; J.rot = 0.04;
+      J.legL = leg(-0.06 * h, -0.08 * h, 0); J.legR = leg(0.05 * h, 0.1 * h, 0);
+    } else if (pose === 'punch') {
+      // 拳を突き出す：手前の腕をまっすぐ前へ、繰り返し
+      const e = Math.max(0, Math.sin(ph * 5));
+      J.armR.el = [d.sw + (0.07 + 0.05 * e) * h, d.shY + 0.035 * h];
+      J.armR.hand = [d.sw + (0.14 + 0.1 * e) * h, d.shY + 0.03 * h];
+      J.armL.el = [-d.sw * 0.2, d.shY + 0.1 * h]; J.armL.hand = [d.sw * 0.4, d.shY + 0.05 * h];
+      J.fist = true; J.rot = 0.06 * e;
+      J.legL = leg(-0.07 * h, -0.09 * h, 0); J.legR = leg(0.05 * h, 0.1 * h, 0);
     } else if (pose === 'talk') {
       J.armR.el = [d.sw + 0.07 * h, d.shY + 0.11 * h];
       J.armR.hand = [d.sw + 0.12 * h, d.shY + 0.03 * h + Math.sin(ph * 3.2) * 0.018 * h];
@@ -876,7 +924,7 @@
     // 横たわる：足を右、頭を左にして床に寝かせる
     if (pose === 'lie') { c.translate(h * 0.5, -h * 0.085); c.rotate(-Math.PI / 2); }
     // 椅子・座布団（体より奥）
-    if (J.chair) { tg.rrect(-0.1 * h, -0.28 * h, 0.24 * h, 0.03 * h, 3, { fill: S('#8A6444'), lw, seed: seed + 1 }); tg.line([[-0.08 * h, -0.25 * h], [-0.08 * h, 0]], { lw: lw * 1.6, seed: seed + 2 }); tg.line([[0.12 * h, -0.25 * h], [0.12 * h, 0]], { lw: lw * 1.6, seed: seed + 3 }); tg.rrect(-0.11 * h, -0.5 * h, 0.03 * h, 0.25 * h, 3, { fill: S('#8A6444'), lw, seed: seed + 4 }); }
+    if (J.chair && !J.noChair) { tg.rrect(-0.1 * h, -0.28 * h, 0.24 * h, 0.03 * h, 3, { fill: S('#8A6444'), lw, seed: seed + 1 }); tg.line([[-0.08 * h, -0.25 * h], [-0.08 * h, 0]], { lw: lw * 1.6, seed: seed + 2 }); tg.line([[0.12 * h, -0.25 * h], [0.12 * h, 0]], { lw: lw * 1.6, seed: seed + 3 }); tg.rrect(-0.11 * h, -0.5 * h, 0.03 * h, 0.25 * h, 3, { fill: S('#8A6444'), lw, seed: seed + 4 }); }
     if (J.seiza) tg.rrect(-0.15 * h, -0.025 * h, 0.32 * h, 0.035 * h, 8, { fill: S('#A8484A'), lw, seed: seed + 5 });
     c.translate(0, J.dy + (J.drop || 0));
     c.rotate(J.rot);
@@ -920,19 +968,28 @@
       const sleeveW = sleeveOf();
       if (cos.kind === 'robe') { const m = lerpP(a.sh, a.el, 0.6); tg.poly([[a.sh[0], a.sh[1]], [m[0] + sd * 0.03 * h, m[1] + 0.02 * h], [a.el[0] + sd * 0.035 * h, a.el[1] + 0.07 * h], [a.el[0] - sd * 0.01 * h, a.el[1] + 0.06 * h]], { fill: top, lw, seed: seed + 20 + sd }); }
       tg.limb([a.sh, a.el, a.hand], { color: cos.kind === 'shorts' || (cos.kind === 'dress' && cos.length !== 'gown') ? (sd ? top : top) : top, lw: sleeveW, seed: seed + 22 + sd });
-      tg.ellipse(a.hand[0], a.hand[1], d.limb * 0.62, d.limb * 0.66, { fill: skin, lw, seed: seed + 24 + sd });
+      const fk = J.fist && sd ? 1.25 : 1;
+      tg.ellipse(a.hand[0], a.hand[1], d.limb * 0.62 * fk, d.limb * 0.66 * fk, { fill: skin, lw, seed: seed + 24 + sd });
     };
     drawArm(J.armL, 0);
     // 杖（手前の手で持つ）
     if (cos.cane && pose !== 'lie' && pose !== 'sit') tg.line([[J.armR.hand[0] + 0.01 * h, J.armR.hand[1]], [J.armR.hand[0] + 0.03 * h, -J.dy]], { lw: lw * 2, seed: seed + 26, stroke: S('#6A4A32') });
     drawArm(J.armR, 1);
+    if (J.sword != null) {
+      // 剣：柄から刃先まで、腕の向きにそって
+      const a = J.sword + 0.5, hx = J.armR.hand[0], hy0 = J.armR.hand[1], len = 0.34 * h;
+      tg.line([[hx, hy0], [hx + Math.cos(a) * len, hy0 + Math.sin(a) * len]], { lw: lw * 2.6, seed: seed + 27, stroke: '#D8DEE6' });
+      tg.line([[hx - Math.cos(a + 1.57) * 0.03 * h, hy0 - Math.sin(a + 1.57) * 0.03 * h], [hx + Math.cos(a + 1.57) * 0.03 * h, hy0 + Math.sin(a + 1.57) * 0.03 * h]], { lw: lw * 2.2, seed: seed + 28, stroke: S('#8A6A3A') });
+    }
     // 首と頭
     // 顔のベース（持ち主の手描きの見本から）：輪郭・耳・眉・縦長の目・点の鼻・一本線の口
     const base = HEAD[type] || HEAD.unknown;
     tg.rrect(-r * 0.2, hy + r * 0.6, r * 0.4, shY - hy - r * 0.5, 4, { fill: skin, lw, seed: seed + 30, second: false });
     headBase(tg, base, d, skin, lw, seed);
     hairBase(tg, base, cos, d, S, lw, seed);
-    faceBase(tg, base, d, o.expr || 'normal', J.mouth, t, seed, lw, cos, S, pose);
+    faceBase(tg, base, d, pose === 'cry' ? 'cry' : o.expr || 'normal', J.mouth, t, seed, lw, cos, S, pose);
+    // 泣くときは手を顔の前に
+    if (J.handsFront) for (const a of [J.armL, J.armR]) tg.ellipse(a.hand[0], a.hand[1], d.limb * 0.62, d.limb * 0.66, { fill: skin, lw, seed: seed + 24 });
     hat(tg, cos, d, S, lw, seed);
     c.restore();
   }
@@ -1128,7 +1185,8 @@
     const { r, hy } = d, dx = r * B.turn, E = B.eye, ey = hy + E.y * r, ex = r * E.x;
     const ink = '#2A2320', fl = Math.max(1.6, r * 0.06);
     const blink = ((t + seed * 0.37) % 4.3) < 0.12;
-    const closed = expr === 'sleep' || pose === 'lie' || blink;
+    const crying = expr === 'cry';
+    const closed = expr === 'sleep' || pose === 'lie' || blink || crying;
     if (expr === 'sleep' || pose === 'lie') expr = 'sleep';
     // 頬（ほんのり）
     for (const sd of [-1, 1]) tg.ellipse(dx + sd * (ex + r * 0.1), hy + B.cheek * r, r * 0.12, r * 0.06, { fill: '#F0A0A0', stroke: null, seed: seed + 90 + sd, amp: 0.3, alpha: d.old ? 0.25 : 0.4 });
@@ -1159,7 +1217,7 @@
       }
       // 眉：細い弧。怒りは内側を下げ、悲しみ・不安は内側を上げる
       const by = hy + B.brow * r, bx = x + sd * r * 0.02;
-      const tilt = expr === 'anger' ? 0.08 : expr === 'sadness' || expr === 'anxiety' ? -0.07 : 0;
+      const tilt = expr === 'anger' ? 0.08 : expr === 'sadness' || expr === 'anxiety' || crying ? -0.07 : 0;
       tg.line([[bx + sd * r * 0.12, by + r * 0.035 - tilt * r * 0.3], [bx + sd * r * 0.02, by - r * 0.015], [bx - sd * r * 0.11, by + r * 0.03 + tilt * r]], { lw: fl * 0.8, seed: seed + 102 + sd, amp: 0.35, stroke: browCol });
       if (cos.glasses) tg.ellipse(x, y, r * 0.18, r * 0.2, { lw: fl * 0.7, seed: seed + 104 + sd, amp: 0.4 });
     }
@@ -1170,7 +1228,11 @@
     // 鼻は口の線の前の端から 20% の位置（左向きなら口の左端から）
     const nx = mx + mw * 0.8 - 0.2 * mw * 1.7;
     tg.ellipse(nx, hy + B.nose * r, r * 0.022, r * 0.02, { fill: ink, stroke: null, seed: seed + 107, amp: 0.1 });
-    if (expr === 'joy' || mouth) tg.shape([[mx - mw, my - r * 0.02], [mx + mw, my - r * 0.02], [mx + mw * 0.5, my + r * 0.09], [mx - mw * 0.5, my + r * 0.09]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
+    if (crying) {
+      // 泣く：口を開けて、両目から涙が流れる
+      tg.shape([[mx - mw * 0.7, my + r * 0.07], [mx + mw * 0.7, my + r * 0.07], [mx + mw * 0.9, my - r * 0.01], [mx - mw * 0.9, my - r * 0.01]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
+      for (const sd of [-1, 1]) { const tx = dx + sd * ex, ph = (t * 1.6 + (sd > 0 ? 0.5 : 0)) % 1; tg.line([[tx, ey + r * 0.06], [tx + sd * r * 0.02, ey + r * 0.3]], { lw: fl * 1.2, seed: seed + 116 + sd, stroke: 'rgba(140,200,240,.85)' }); tg.ellipse(tx + sd * r * 0.02, ey + r * 0.3 + ph * r * 0.35, r * 0.04, r * 0.06, { fill: '#A8D8F0', lw: fl * 0.4, seed: seed + 118 + sd, alpha: 1 - ph }); }
+    } else if (expr === 'joy' || mouth) tg.shape([[mx - mw, my - r * 0.02], [mx + mw, my - r * 0.02], [mx + mw * 0.5, my + r * 0.09], [mx - mw * 0.5, my + r * 0.09]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
     else if (expr === 'sadness' || expr === 'anger') tg.line([[mx - mw * 0.8, my + r * 0.03], [mx, my - r * 0.015], [mx + mw * 0.8, my + r * 0.03]], { lw: fl * 0.8, seed: seed + 109, amp: 0.3, stroke: ink });
     else if (expr === 'anxiety') tg.line([[mx - mw, my], [mx - mw * 0.4, my - r * 0.025], [mx + mw * 0.2, my + r * 0.015], [mx + mw, my - r * 0.01]], { lw: fl * 0.8, seed: seed + 110, amp: 0.3, stroke: ink });
     else if (expr === 'sleep') tg.ellipse(mx, my + r * 0.01, r * 0.035, r * 0.03, { fill: '#B5484A', lw: fl * 0.6, seed: seed + 111, amp: 0.2 });
@@ -1187,12 +1249,27 @@
     const unit = Math.min(L.H, L.W * 1.25);
     return unit * (type === 'baby' ? 0.28 : type === 'boy' || type === 'girl' ? 0.44 : type === 'oldman' || type === 'oldwoman' ? 0.55 : type === 'ghost' ? 0.5 : 0.58);
   }
-  function placement(L, f) {
+  // 歩く・走るは実際に左へ進む。左端から出たら右端から出直す（2人なら並んで一緒に）
+  const MOVE = { walk: 0.07, run: 0.2 }; // 1秒に進む距離（画面幅に対して）
+  // 2人目の姿勢：一緒にするもの（歩く・走る・話す・抱き合う）以外は立って見ている
+  const SUB_POSE = { walk: 'walk', run: 'run', talk: 'talk', hug: 'hug', sit: 'sit' };
+  function moveX(L, pose, x, t) {
+    const v = MOVE[pose]; if (!v) return x;
+    const m = L.W * 0.18, span = L.W + m * 2;
+    return ((((x + m - v * L.W * t) % span) + span) % span) - m;
+  }
+  function placement(L, f, t = 0) {
     if (!f || f.layout === 'none') return [];
-    const one = (role, type, x, facing, pose) => (type ? [{ role, type, x, facing, pose, h: heightOf(L, type) }] : []);
-    if (f.layout === 'many') return one('main', f.main, L.W * 0.62, -1, f.pose === 'talk' ? 'stand' : f.pose);
-    if (f.layout === 'two') return [...one('sub', f.sub, L.W * 0.32, 1, f.pose === 'lie' ? 'stand' : f.pose), ...one('main', f.main, L.W * 0.68, -1, f.pose)];
-    return one('main', f.main, f.pose === 'lie' ? L.W * 0.62 : L.W * 0.6, -1, f.pose);
+    const one = (role, type, x, facing, pose) => (type ? [{ role, type, x: moveX(L, pose, x, t), facing, pose, h: heightOf(L, type) }] : []);
+    const solo = (p) => (p === 'talk' || p === 'hug' ? 'stand' : p);
+    if (f.layout === 'many') return one('main', f.main, L.W * 0.62, -1, solo(f.pose));
+    if (f.layout === 'two') {
+      const sp = SUB_POSE[f.pose] || 'stand';
+      if (MOVE[f.pose]) return [...one('sub', f.sub, L.W * 0.72, -1, sp), ...one('main', f.main, L.W * 0.52, -1, f.pose)];
+      if (f.pose === 'hug') return [...one('sub', f.sub, L.W * 0.44, 1, sp), ...one('main', f.main, L.W * 0.56, -1, f.pose)];
+      return [...one('sub', f.sub, L.W * 0.32, 1, sp), ...one('main', f.main, L.W * 0.68, -1, f.pose)];
+    }
+    return one('main', f.main, f.pose === 'lie' ? L.W * 0.62 : L.W * 0.6, -1, solo(f.pose));
   }
   /** 頭の位置（中心 x, y と半径）。姿勢で変わる */
   function headOf(L, p, seat) {
@@ -1200,6 +1277,7 @@
     if (p.pose === 'lie') return { x: p.x + p.facing * (0.5 * h + d.hy), y: L.floor - 0.085 * h, r: d.r };
     let drop = 0;
     if (p.pose === 'sit') drop = seat === 'seiza' ? -0.12 * h - d.hipY : -0.27 * h - d.hipY;
+    if (p.pose === 'crouch') drop = -0.16 * h - d.hipY;
     return { x: p.x, y: L.floor + d.hy + drop, r: d.r };
   }
 
@@ -1225,7 +1303,7 @@
         c.restore();
       }
     }
-    for (const p of placement(L, f)) {
+    for (const p of placement(L, f, t)) {
       const main = p.role === 'main';
       // 同じ種類の人が2人並ぶときは、2人目をパターンB（髪型・服の色違い）にする
       const variant = !main && f.sub === f.main ? 'B' : 'A';
@@ -1339,12 +1417,12 @@
   const toFull = (t) => t.replace(/!/g, '！').replace(/\?/g, '？');
 
   /** 吹き出しの大きさと向きを決める（縦書きが収まれば縦、だめなら横） */
-  function bubbleLayout(L, line, fig, seat) {
+  function bubbleLayout(L, line, fig, seat, t = 0) {
     const U = L.U, imp = line.importance ?? 0.5;
     const fs = clamp(Math.min(L.H * 0.036, L.W * 0.045), 13, 28) * (imp >= 0.75 ? 1.12 : 1);
     let text = toFull(line.text.replace(/[\s　]+/g, ''));
     if (text.length > 44) text = text.slice(0, 43) + '…';
-    const people = fig ? placement(L, fig.figures) : [];
+    const people = fig ? placement(L, fig.figures, t) : []; // 歩いている人には吹き出しもついていく
     const who = people.find((p) => p.role === line.speaker) || (line.speaker === 'other' ? null : null);
     const head = who ? headOf(L, who, seat) : null;
     const m = Math.max(10, L.H * 0.035), top = Math.max(m, L.topInset || 0), pad = fs * 0.75;
@@ -1386,7 +1464,7 @@
   function bubble(tg, L, line, fig, t, alpha = 1, pop = 1) {
     if (!line || !line.text || alpha <= 0.003) return;
     const seat = fig && fig.location === 'washitsu' ? 'seiza' : 'chair';
-    const B = bubbleLayout(L, line, fig, seat), c = tg.ctx, U = L.U;
+    const B = bubbleLayout(L, line, fig, seat, t), c = tg.ctx, U = L.U;
     const cx = B.x + B.w / 2, cy = B.y + B.h / 2;
     c.save(); c.globalAlpha *= alpha;
     c.translate(cx, cy); c.scale(pop, pop); c.translate(-cx, -cy);
