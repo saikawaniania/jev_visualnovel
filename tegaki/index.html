@@ -472,9 +472,10 @@ body.debug #center-line {
       <legend>表示</legend>
       <label>表示モード
         <select data-key="displayMode" onchange="JV.SettingsUI.change(this)">
-          <option value="illust">挿絵（スマホ縦：上に絵・下に本文／横向き・PC：左に絵・右に本文）</option>
-          <option value="novel">ノベル（絵を全画面、本文を半透明の帯に）</option>
+          <option value="illust">絵と文を分けて読む</option>
+          <option value="novel">絵を背景にする</option>
         </select>
+        <small>絵と文を分けて読む：スマホを縦に持つと上に絵・下に本文、横向きや PC では左に絵・右に本文。絵を背景にする：絵を画面いっぱいに出し、本文は半透明の帯に重ねる。</small>
       </label>
       <label>書字方向
         <select data-key="writingMode" onchange="JV.SettingsUI.change(this)">
