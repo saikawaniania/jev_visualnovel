@@ -551,7 +551,7 @@
     // マント（いちばん奥）
     if (cos.cloak) tg.poly([[-sw * 1.05, shY], [sw * 1.05, shY], [sw * 1.6, -0.08 * h + up], [-sw * 1.7, -0.06 * h + up]], { fill: S(cos.cloak), lw, seed: seed + 6, hatch: { gap: 10, angle: 1.4 } });
     // 後ろ髪
-    hairBack(tg, cos, d, S, lw, seed);
+    hairBack(tg, cos, d, S, lw, seed, (HEAD[type] || HEAD.unknown).w);
     // 脚
     const longSkirt = cos.kind === 'robe' || (cos.kind === 'dress' && (cos.length === 'ankle' || cos.length === 'gown'));
     const legCol = cos.kind === 'shorts' || cos.kind === 'dress' ? skin : bottom;
@@ -587,20 +587,12 @@
     if (cos.cane && pose !== 'lie' && pose !== 'sit') tg.line([[J.armR.hand[0] + 0.01 * h, J.armR.hand[1]], [J.armR.hand[0] + 0.03 * h, -J.dy]], { lw: lw * 2, seed: seed + 26, stroke: S('#6A4A32') });
     drawArm(J.armR, 1);
     // 首と頭
-    const base = HEAD[type];
-    if (base) {
-      // 新しい顔のベース（成人男性・男の子）：手描きの見本どおりの輪郭・耳・縦長の目
-      tg.rrect(-r * 0.2, hy + r * 0.6, r * 0.4, shY - hy - r * 0.5, 4, { fill: skin, lw, seed: seed + 30, second: false });
-      headBase(tg, base, d, skin, lw, seed);
-      hairBase(tg, base, cos, d, S, lw, seed);
-      faceBase(tg, base, d, o.expr || 'normal', J.mouth, t, seed, lw, cos, S, pose);
-    } else {
-      tg.rrect(-r * 0.22, hy + r * 0.7, r * 0.44, shY - hy - r * 0.6, 4, { fill: skin, lw, seed: seed + 30, second: false });
-      tg.ellipse(0, hy, r * 0.98, r, { fill: skin, lw: lw * 1.1, seed: seed + 31 });
-      tg.ellipse(-r * 0.93, hy + r * 0.12, r * 0.15, r * 0.2, { fill: skin, lw, seed: seed + 32 });
-      hairFront(tg, cos, d, S, lw, seed, type);
-      face(tg, d, o.expr || 'normal', J.mouth, t, seed, lw, cos, S, pose);
-    }
+    // 顔のベース（持ち主の手描きの見本から）：輪郭・耳・眉・縦長の目・点の鼻・一本線の口
+    const base = HEAD[type] || HEAD.unknown;
+    tg.rrect(-r * 0.2, hy + r * 0.6, r * 0.4, shY - hy - r * 0.5, 4, { fill: skin, lw, seed: seed + 30, second: false });
+    headBase(tg, base, d, skin, lw, seed);
+    hairBase(tg, base, cos, d, S, lw, seed);
+    faceBase(tg, base, d, o.expr || 'normal', J.mouth, t, seed, lw, cos, S, pose);
     hat(tg, cos, d, S, lw, seed);
     c.restore();
   }
@@ -640,31 +632,13 @@
     if (cos.kind === 'tunic') tg.rrect(-sw * 1.02, waist - 0.01 * h, sw * 2.04, 0.035 * h, 3, { fill: S('#5A3E2A'), lw, seed: seed + 51 });
   }
 
-  function hairBack(tg, cos, d, S, lw, seed) {
-    const { r, hy } = d, col = S(cos.hairColor);
-    if (cos.hair === 'long') tg.rrect(-r * 1.08, hy - r * 0.5, r * 2.16, r * 2.5, r * 0.9, { fill: col, lw, seed: seed + 60, hatch: { gap: 7, angle: 1.45 } });
-    if (cos.hair === 'bob') tg.rrect(-r * 1.1, hy - r * 0.6, r * 2.2, r * 1.55, r * 0.8, { fill: col, lw, seed: seed + 60, hatch: { gap: 7, angle: 1.45 } });
-    if (cos.hair === 'pigtails') for (const sd of [-1, 1]) { tg.ellipse(sd * r * 1.12, hy + r * 0.45, r * 0.32, r * 0.55, { fill: col, lw, seed: seed + 61 + sd, hatch: { gap: 6, angle: 1.4 } }); }
+  // 後ろ髪（W＝頭の横幅。大人の顔は細いので、そのぶん髪も細くする）
+  function hairBack(tg, cos, d, S, lw, seed, W = 1) {
+    const { r: R, hy } = d, r = R, col = S(cos.hairColor), w = R * W;
+    if (cos.hair === 'long') tg.rrect(-w * 1.1, hy - r * 0.5, w * 2.2, r * 2.5, r * 0.9, { fill: col, lw, seed: seed + 60, hatch: { gap: 7, angle: 1.45 } });
+    if (cos.hair === 'bob') tg.rrect(-w * 1.14, hy - r * 0.6, w * 2.28, r * 1.55, r * 0.8, { fill: col, lw, seed: seed + 60, hatch: { gap: 7, angle: 1.45 } });
+    if (cos.hair === 'pigtails') for (const sd of [-1, 1]) { tg.ellipse(sd * w * 1.14, hy + r * 0.45, r * 0.32, r * 0.55, { fill: col, lw, seed: seed + 61 + sd, hatch: { gap: 6, angle: 1.4 } }); }
     if (cos.hair === 'bun') tg.ellipse(-r * 0.15, hy - r * 1.0, r * 0.5, r * 0.4, { fill: col, lw, seed: seed + 64, hatch: { gap: 6 } });
-  }
-  function hairFront(tg, cos, d, S, lw, seed, type) {
-    const { r, hy } = d, col = S(cos.hairColor);
-    if (cos.hair === 'bald') {
-      for (const sd of [-1, 1]) tg.ellipse(sd * r * 0.88, hy - r * 0.05, r * 0.2, r * 0.32, { fill: col, lw, seed: seed + 70 + sd });
-      if (cos.beard === 'long') tg.poly([[-r * 0.55, hy + r * 0.45], [r * 0.65, hy + r * 0.45], [r * 0.15, hy + r * 2.0]], { fill: col, lw, seed: seed + 73, hatch: { gap: 6, angle: 1.5 } });
-      else if (cos.beard === 'short') tg.ellipse(r * 0.08, hy + r * 0.78, r * 0.5, r * 0.28, { fill: col, lw, seed: seed + 73 });
-      return;
-    }
-    // 頭頂を覆う髪＋前髪（ぎざぎざの量は髪型で変える）
-    const cyc = hy - r * 0.06, R = r * 1.07, pts = [];
-    const a0 = Math.PI * 0.94, a1 = Math.PI * 2.06;
-    for (let k = 0; k <= 14; k++) { const a = lerp(a0, a1, k / 14); const spike = cos.hair === 'spiky' && k % 2 ? 1.18 : 1; pts.push([Math.cos(a) * R * spike, cyc + Math.sin(a) * R * spike]); }
-    const fy = hy - r * (cos.hair === 'bob' || cos.hair === 'pigtails' ? 0.12 : 0.22), n = 7;
-    for (let k = n; k >= 0; k--) { const x = lerp(-R * 0.98, R * 0.98, k / n); pts.push([x, fy + (k % 2 ? r * 0.16 : 0) + (Math.abs(x) > R * 0.8 ? r * 0.25 : 0)]); }
-    tg.shape(pts, { fill: col, lw, seed: seed + 75, hatch: { gap: 6, angle: 1.3 } });
-    if (cos.hair === 'long' || cos.hair === 'bob') for (const sd of [-1, 1]) tg.poly([[sd * r * 0.95, hy - r * 0.2], [sd * r * 1.08, hy + r * (cos.hair === 'long' ? 1.1 : 0.7)], [sd * r * 0.78, hy + r * (cos.hair === 'long' ? 0.9 : 0.6)]], { fill: col, lw, seed: seed + 77 + sd, step: 10 });
-    if (cos.hair === 'bun') tg.line([[-r * 0.6, hy - r * 1.15], [r * 0.3, hy - r * 0.85]], { lw: lw * 1.2, seed: seed + 80, stroke: S('#C9A24B') });
-    if (cos.ribbon && (cos.hair === 'pigtails' || cos.hair === 'bob' || cos.hair === 'long')) for (const sd of cos.hair === 'pigtails' ? [-1, 1] : [1]) tg.poly([[sd * r * 0.85, hy - r * 0.7], [sd * r * 1.25, hy - r * 0.95], [sd * r * 1.2, hy - r * 0.45]], { fill: S(cos.ribbon), lw, seed: seed + 82 + sd, step: 10 });
   }
   function hat(tg, cos, d, S, lw, seed) {
     const { r, hy } = d;
@@ -673,29 +647,36 @@
     if (cos.hat === 'wizard') { tg.ellipse(0, hy - r * 0.75, r * 1.4, r * 0.24, { fill: S('#2E3A7A'), lw, seed: seed + 85 }); tg.poly([[-r * 0.95, hy - r * 0.8], [r * 0.4, hy - r * 2.9], [r * 0.95, hy - r * 0.8]], { fill: S('#2E3A7A'), lw, seed: seed + 86, step: 14 }); tg.star(0, hy - r * 1.4, r * 0.22, { fill: S('#F2D06A'), lw: lw * 0.7, seed: seed + 87 }); }
   }
 
-  /* ---- 新しい顔のベース（持ち主の手描きの見本から。数値は頭の半分の高さ r を 1 とする。y は頭の中心から下向き） ----
+  /* ---- 顔のベース（持ち主の手描きの見本から。数値は頭の半分の高さ r を 1 とする。y は頭の中心から下向き） ----
    * 大人：縦長の卵形。頭頂は丸く、頬からあごへ細くなり、あご先は広く丸い。眉は中心よりわずかに上、目はその下で縦長
    * 子供：ほぼ真円で横にわずかに広い。顔の部品は低い位置にまとまり、耳は大きく丸い
    * 目鼻は少し前（+x）に寄せ、あごも前へ少し出す（見本の、わずかに振り向いた感じ） */
+  const ADULT = {
+    outline: [[0, -1], [0.6, -0.8], [0.84, -0.3], [0.84, 0.05], [0.75, 0.48], [0.53, 0.82], [0.2, 0.985], [-0.2, 0.985], [-0.53, 0.82], [-0.75, 0.48], [-0.84, 0.05], [-0.84, -0.3], [-0.6, -0.8]],
+    w: 0.84, turn: 0.1, chin: 0.1,
+    ear: { y: 0.27, back: [0.2, 0.25], front: [0.12, 0.22], inner: true },
+    brow: -0.05, eye: { y: 0.25, x: 0.34, rx: 0.05, ry: 0.15 }, nose: 0.49, mouth: { y: 0.66, w: 0.09 }, cheek: 0.45,
+    // 前髪（前 +x → 後ろ −x）。短髪は額を広めに、女性の前髪は眉の上まで、まとめ髪は後ろへなでつける
+    fringe: [[0.88, 0.04], [0.76, -0.22], [0.52, -0.36], [0.3, -0.32], [0.1, -0.44], [-0.16, -0.38], [-0.42, -0.36], [-0.68, -0.2], [-0.88, 0.04]],
+    fringeSoft: [[0.9, 0.1], [0.8, -0.14], [0.6, -0.22], [0.4, -0.16], [0.2, -0.25], [0, -0.18], [-0.2, -0.26], [-0.42, -0.18], [-0.62, -0.24], [-0.8, -0.12], [-0.9, 0.1]],
+    fringeUp: [[0.87, 0.02], [0.72, -0.34], [0.42, -0.54], [0, -0.6], [-0.42, -0.54], [-0.72, -0.34], [-0.87, 0.02]],
+    hairCut: 0.04, hairScale: 1.05,
+  };
+  const CHILD = {
+    outline: [[0, -1], [0.62, -0.84], [0.92, -0.45], [0.98, 0], [0.86, 0.45], [0.62, 0.8], [0.3, 0.97], [-0.3, 0.97], [-0.62, 0.8], [-0.86, 0.45], [-0.98, 0], [-0.92, -0.45], [-0.62, -0.84]],
+    w: 0.98, turn: 0.1, chin: 0.06,
+    ear: { y: 0.28, back: [0.25, 0.25], front: [0.16, 0.22], inner: false },
+    brow: 0.09, eye: { y: 0.38, x: 0.42, rx: 0.055, ry: 0.13 }, nose: 0.59, mouth: { y: 0.76, w: 0.1 }, cheek: 0.6,
+    // 前髪は眉のすぐ上まで下ろす
+    fringe: [[1.0, 0.08], [0.84, -0.14], [0.62, -0.04], [0.42, -0.16], [0.2, -0.05], [0, -0.17], [-0.22, -0.05], [-0.44, -0.16], [-0.66, -0.04], [-0.86, -0.13], [-1.0, 0.08]],
+    fringeSoft: [[1.0, 0.12], [0.86, -0.06], [0.64, -0.01], [0.42, -0.09], [0.2, -0.01], [0, -0.09], [-0.22, -0.01], [-0.44, -0.09], [-0.66, -0.01], [-0.86, -0.06], [-1.0, 0.12]],
+    hairCut: 0.08, hairScale: 1.04,
+  };
+  CHILD.fringeUp = CHILD.fringeSoft;
+  // 女性は目だけ前の描き方（丸い目に白い光）
   const HEAD = {
-    man: {
-      outline: [[0, -1], [0.6, -0.8], [0.84, -0.3], [0.84, 0.05], [0.75, 0.48], [0.53, 0.82], [0.2, 0.985], [-0.2, 0.985], [-0.53, 0.82], [-0.75, 0.48], [-0.84, 0.05], [-0.84, -0.3], [-0.6, -0.8]],
-      turn: 0.1, chin: 0.1,
-      ear: { y: 0.27, back: [0.2, 0.25], front: [0.12, 0.22], inner: true },
-      brow: -0.05, eye: { y: 0.25, x: 0.34, rx: 0.05, ry: 0.15 }, nose: 0.49, mouth: { y: 0.66, w: 0.09 }, cheek: 0.45,
-      // 前髪（前 +x → 後ろ −x）。額は広めに見せる
-      fringe: [[0.88, 0.04], [0.76, -0.22], [0.52, -0.36], [0.3, -0.32], [0.1, -0.44], [-0.16, -0.38], [-0.42, -0.36], [-0.68, -0.2], [-0.88, 0.04]],
-      hairCut: 0.04, hairScale: 1.05,
-    },
-    boy: {
-      outline: [[0, -1], [0.62, -0.84], [0.92, -0.45], [0.98, 0], [0.86, 0.45], [0.62, 0.8], [0.3, 0.97], [-0.3, 0.97], [-0.62, 0.8], [-0.86, 0.45], [-0.98, 0], [-0.92, -0.45], [-0.62, -0.84]],
-      turn: 0.1, chin: 0.06,
-      ear: { y: 0.28, back: [0.25, 0.25], front: [0.16, 0.22], inner: false },
-      brow: 0.09, eye: { y: 0.38, x: 0.42, rx: 0.055, ry: 0.13 }, nose: 0.59, mouth: { y: 0.76, w: 0.1 }, cheek: 0.6,
-      // 前髪は眉のすぐ上まで下ろす（ぎざぎざは髪型で）
-      fringe: [[1.0, 0.08], [0.84, -0.14], [0.62, -0.04], [0.42, -0.16], [0.2, -0.05], [0, -0.17], [-0.22, -0.05], [-0.44, -0.16], [-0.66, -0.04], [-0.86, -0.13], [-1.0, 0.08]],
-      hairCut: 0.08, hairScale: 1.04,
-    },
+    man: ADULT, oldman: ADULT, unknown: ADULT, boy: CHILD,
+    woman: { ...ADULT, roundEyes: true }, oldwoman: { ...ADULT, roundEyes: true }, girl: { ...CHILD, roundEyes: true },
   };
 
   // 閉じたなめらかな曲線（Catmull-Rom）を細かい点列に
@@ -740,11 +721,19 @@
   }
 
   function hairBase(tg, B, cos, d, S, lw, seed) {
-    if (cos.hair !== 'short' && cos.hair !== 'spiky') return hairFront(tg, cos, d, S, lw, seed);
-    const { r, hy } = d, col = S(cos.hairColor), spiky = cos.hair === 'spiky';
+    const { r, hy } = d, col = S(cos.hairColor), hair = cos.hair, spiky = hair === 'spiky', w = r * B.w;
+    const pts = headPts(B, d);
+    if (hair === 'bald') {
+      // はげ頭：耳の上に横の髪だけ。ひげはあごに
+      for (const sd of [-1, 1]) tg.ellipse(sideX(pts, hy - r * 0.16, sd) - sd * r * 0.03, hy - r * 0.16, r * 0.12, r * 0.18, { fill: col, lw, seed: seed + 70 + sd });
+      const bx = B.turn * r;
+      if (cos.beard === 'long') tg.poly([[bx - r * 0.6, hy + r * 0.55], [bx + r * 0.6, hy + r * 0.55], [bx + r * 0.1, hy + r * 1.9]], { fill: col, lw, seed: seed + 73, hatch: { gap: 6, angle: 1.5 } });
+      else if (cos.beard === 'short') tg.ellipse(bx, hy + r * 0.84, r * 0.46, r * 0.24, { fill: col, lw, seed: seed + 73 });
+      return;
+    }
     // 頭頂：輪郭を少し外へ広げて、生え際より上だけを使う（後ろ → 頭頂 → 前の順）
     const cy = hy + r * 0.1, cut = hy + B.hairCut * r;
-    const arc = headPts(B, d).filter((p) => p[1] < cut).map(([x, y]) => [x * B.hairScale, cy + (y - cy) * B.hairScale]);
+    const arc = pts.filter((p) => p[1] < cut).map(([x, y]) => [x * B.hairScale, cy + (y - cy) * B.hairScale]);
     const ang = ([x, y]) => { const a = Math.atan2(y - cy, x); return a > Math.PI / 2 ? a - Math.PI * 2 : a; };
     arc.sort((a, b) => ang(a) - ang(b));
     let top = arc;
@@ -753,8 +742,16 @@
       const n = 16; top = [];
       for (let k = 0; k <= n; k++) { const p = arc[Math.round(k / n * (arc.length - 1))], up = p[1] < hy - r * 0.35 && k % 2 ? 1.07 : 1; top.push([p[0] * up, cy + (p[1] - cy) * up]); }
     }
-    const fr = B.fringe.map(([x, y], k) => [x * r, hy + (y + (spiky && k % 2 ? 0.05 : 0)) * r]);
+    const F = hair === 'short' || spiky ? B.fringe : hair === 'bun' ? B.fringeUp : B.fringeSoft;
+    const fr = F.map(([x, y], k) => [x * r, hy + (y + (spiky && k % 2 ? 0.05 : 0)) * r]);
     tg.shape([...top, ...fr], { fill: col, lw, seed: seed + 75, hatch: { gap: 6, angle: 1.3 } });
+    // 顔の横に垂らす髪
+    if (hair === 'long' || hair === 'bob') {
+      const long = hair === 'long';
+      for (const sd of [-1, 1]) tg.poly([[sd * w * 1.0, hy - r * 0.2], [sd * w * 1.12, hy + r * (long ? 1.1 : 0.7)], [sd * w * 0.86, hy + r * (long ? 0.95 : 0.6)]], { fill: col, lw, seed: seed + 77 + sd, step: 10 });
+    }
+    if (hair === 'bun') tg.line([[-r * 0.6, hy - r * 1.15], [r * 0.3, hy - r * 0.85]], { lw: lw * 1.2, seed: seed + 80, stroke: S('#C9A24B') });
+    if (cos.ribbon && (hair === 'pigtails' || hair === 'bob' || hair === 'long')) for (const sd of hair === 'pigtails' ? [-1, 1] : [1]) tg.poly([[sd * w * 0.85, hy - r * 0.7], [sd * w * 1.25, hy - r * 0.95], [sd * w * 1.2, hy - r * 0.45]], { fill: S(cos.ribbon), lw, seed: seed + 82 + sd, step: 10 });
   }
 
   function faceBase(tg, B, d, expr, mouth, t, seed, lw, cos, S, pose) {
@@ -764,11 +761,23 @@
     const closed = expr === 'sleep' || pose === 'lie' || blink;
     if (expr === 'sleep' || pose === 'lie') expr = 'sleep';
     // 頬（ほんのり）
-    for (const sd of [-1, 1]) tg.ellipse(dx + sd * (ex + r * 0.1), hy + B.cheek * r, r * 0.12, r * 0.06, { fill: '#F0A0A0', stroke: null, seed: seed + 90 + sd, amp: 0.3, alpha: 0.4 });
+    for (const sd of [-1, 1]) tg.ellipse(dx + sd * (ex + r * 0.1), hy + B.cheek * r, r * 0.12, r * 0.06, { fill: '#F0A0A0', stroke: null, seed: seed + 90 + sd, amp: 0.3, alpha: d.old ? 0.25 : 0.4 });
     const browCol = S(cos.hairColor === '#D9D6CF' ? '#9A968E' : cos.hairColor);
     for (const sd of [-1, 1]) {
       const x = dx + sd * ex, y = ey;
-      if (expr === 'joy' || expr === 'calm') {
+      if (B.roundEyes) {
+        // 女性：前の丸い目（白い光つき）
+        if (expr === 'joy' || expr === 'calm') {
+          const k = expr === 'joy' ? -1 : 1;
+          tg.line([[x - r * 0.13, y + (expr === 'joy' ? r * 0.03 : -r * 0.01)], [x, y + k * r * 0.09], [x + r * 0.13, y + (expr === 'joy' ? r * 0.03 : -r * 0.01)]], { lw: fl, seed: seed + 92 + sd, amp: 0.5, stroke: ink });
+        } else if (closed) {
+          tg.line([[x - r * 0.12, y], [x, y + r * 0.05], [x + r * 0.12, y]], { lw: fl, seed: seed + 94 + sd, amp: 0.5, stroke: ink });
+        } else {
+          const sy = expr === 'anger' ? 0.1 : expr === 'anxiety' ? 0.12 : 0.15;
+          tg.ellipse(x, y, r * 0.11, r * sy, { fill: ink, lw: fl * 0.6, seed: seed + 96 + sd, amp: 0.3 });
+          tg.ellipse(x + r * 0.04, y - r * sy * 0.45, r * 0.045, r * 0.045, { fill: '#FFFFFF', stroke: null, seed: seed + 98 + sd, amp: 0.2 });
+        }
+      } else if (expr === 'joy' || expr === 'calm') {
         const k = expr === 'joy' ? -1 : 1;
         tg.line([[x - r * 0.09, y + (expr === 'joy' ? r * 0.04 : -r * 0.01)], [x, y + k * r * 0.07], [x + r * 0.09, y + (expr === 'joy' ? r * 0.04 : -r * 0.01)]], { lw: fl, seed: seed + 92 + sd, amp: 0.4, stroke: ink });
       } else if (closed) {
@@ -797,53 +806,6 @@
     // 気持ちの記号
     if (expr === 'sadness') { const ph = (t * 0.7 + seed) % 1, tx = dx - ex, ty = ey + E.ry * r + ph * r * 0.3; tg.shape([[tx, ty], [tx + r * 0.05, ty + r * 0.12], [tx, ty + r * 0.17], [tx - r * 0.05, ty + r * 0.12]], { fill: '#A8D8F0', lw: fl * 0.5, seed: seed + 113, amp: 0.2, alpha: 1 - ph }); }
     if (expr === 'anxiety') tg.shape([[-r * 1.05, hy - r * 0.5], [-r * 0.95, hy - r * 0.25], [-r * 1.05, hy - r * 0.15], [-r * 1.15, hy - r * 0.25]], { fill: '#BFE3F2', lw: fl * 0.6, seed: seed + 114, amp: 0.3 });
-    if (expr === 'anger') { const px = r * 0.75, py = hy - r * 0.85, q = r * 0.12; for (const [a, b] of [[[px - q, py - q * 0.3], [px - q * 0.3, py - q * 0.3]], [[px + q * 0.3, py - q * 0.3], [px + q, py - q * 0.3]], [[px - q * 0.3, py + q * 0.3], [px - q, py + q * 0.3]], [[px + q, py + q * 0.3], [px + q * 0.3, py + q * 0.3]]]) tg.line([a, b], { lw: fl, seed: seed + 115, stroke: '#D04040', amp: 0.3 }); }
-    if (expr === 'sleep' && pose === 'lie') for (let k = 0; k < 3; k++) { const a = (t * 0.5 + k / 3) % 1; tg.text('z', r * 1.2 + a * r * 1.2, hy - r * 0.8 - a * r * 2, { size: r * (0.4 + k * 0.12), color: '#FFFDF6', strokeW: r * 0.08, boilAmp: 0.4 }); }
-  }
-
-  // 顔：目は顔の中心より下・間隔広め・小さな口と頬の赤み
-  function face(tg, d, expr, mouth, t, seed, lw, cos, S, pose) {
-    const { r, hy } = d, dx = r * 0.1, ey = hy + r * 0.2, ex = r * 0.36;
-    const ink = '#2A2320', fl = Math.max(1.6, r * 0.065);
-    const blink = ((t + seed * 0.37) % 4.3) < 0.12;
-    const closed = expr === 'sleep' || pose === 'lie' || blink;
-    if (expr === 'sleep' || pose === 'lie') expr = 'sleep';
-    // 頬
-    for (const sd of [-1, 1]) tg.ellipse(dx + sd * r * 0.58, hy + r * 0.45, r * 0.15, r * 0.08, { fill: '#F0A0A0', stroke: null, seed: seed + 90 + sd, amp: 0.3, alpha: d.old ? 0.35 : 0.6 });
-    for (const sd of [-1, 1]) {
-      const x = dx + sd * ex, y = ey;
-      if (expr === 'joy' || expr === 'calm') {
-        // 笑った目（∩）／穏やかな目（‿）
-        const k = expr === 'joy' ? -1 : 1;
-        tg.line([[x - r * 0.13, y + (expr === 'joy' ? r * 0.03 : -r * 0.01)], [x, y + k * r * 0.09], [x + r * 0.13, y + (expr === 'joy' ? r * 0.03 : -r * 0.01)]], { lw: fl, seed: seed + 92 + sd, amp: 0.5, stroke: ink });
-      } else if (closed) {
-        tg.line([[x - r * 0.12, y], [x, y + r * 0.05], [x + r * 0.12, y]], { lw: fl, seed: seed + 94 + sd, amp: 0.5, stroke: ink });
-      } else {
-        const sy = expr === 'anger' ? 0.1 : expr === 'anxiety' ? 0.12 : 0.15;
-        tg.ellipse(x, y, r * 0.11, r * sy, { fill: ink, lw: fl * 0.6, seed: seed + 96 + sd, amp: 0.3 });
-        tg.ellipse(x + r * 0.04, y - r * sy * 0.45, r * 0.045, r * 0.045, { fill: '#FFFFFF', stroke: null, seed: seed + 98 + sd, amp: 0.2 });
-      }
-      // 眉
-      const by = hy - r * 0.16;
-      // 眉：怒りは内側を下げ、悲しみ・不安は内側を上げる
-      const tilt = expr === 'anger' ? 0.09 : expr === 'sadness' || expr === 'anxiety' ? -0.08 : 0;
-      const inner = [x - sd * r * 0.12, by + tilt * r], outer = [x + sd * r * 0.12, by - tilt * r * 0.3];
-      tg.line([outer, inner], { lw: fl * 0.9, seed: seed + 102 + sd, amp: 0.4, stroke: S(cos.hairColor === '#D9D6CF' ? '#9A968E' : cos.hairColor) });
-      if (cos.glasses) tg.ellipse(x, y, r * 0.2, r * 0.18, { lw: fl * 0.7, seed: seed + 104 + sd, amp: 0.4 });
-    }
-    if (cos.glasses) tg.line([[dx - ex + r * 0.2, ey], [dx + ex - r * 0.2, ey]], { lw: fl * 0.7, seed: seed + 106 });
-    // 鼻（ほんの少し）
-    tg.line([[dx * 1.8 + r * 0.03, hy + r * 0.38], [dx * 1.8 + r * 0.06, hy + r * 0.42]], { lw: fl * 0.7, seed: seed + 107, amp: 0.2, stroke: '#C08A70' });
-    // 口
-    const mx = dx * 1.5, my = hy + r * 0.58, mw = r * 0.12;
-    if (expr === 'joy' || mouth) tg.shape([[mx - mw, my - r * 0.02], [mx + mw, my - r * 0.02], [mx + mw * 0.5, my + r * 0.1], [mx - mw * 0.5, my + r * 0.1]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
-    else if (expr === 'sadness' || expr === 'anger') tg.line([[mx - mw * 0.8, my + r * 0.04], [mx, my - r * 0.02], [mx + mw * 0.8, my + r * 0.04]], { lw: fl * 0.8, seed: seed + 109, amp: 0.3, stroke: ink });
-    else if (expr === 'anxiety') tg.line([[mx - mw, my], [mx - mw * 0.4, my - r * 0.03], [mx + mw * 0.2, my + r * 0.02], [mx + mw, my - r * 0.01]], { lw: fl * 0.8, seed: seed + 110, amp: 0.3, stroke: ink });
-    else if (expr === 'sleep') tg.ellipse(mx, my + r * 0.02, r * 0.04, r * 0.035, { fill: '#B5484A', lw: fl * 0.6, seed: seed + 111, amp: 0.2 });
-    else tg.line([[mx - mw * 0.7, my - r * 0.01], [mx, my + r * 0.04], [mx + mw * 0.7, my - r * 0.01]], { lw: fl * 0.8, seed: seed + 112, amp: 0.3, stroke: ink });
-    // 気持ちの記号
-    if (expr === 'sadness') { const ph = (t * 0.7 + seed) % 1; tg.shape([[dx - ex + r * 0.05, ey + r * 0.15 + ph * r * 0.35], [dx - ex + r * 0.1, ey + r * 0.28 + ph * r * 0.35], [dx - ex + r * 0.05, ey + r * 0.33 + ph * r * 0.35], [dx - ex, ey + r * 0.28 + ph * r * 0.35]], { fill: '#A8D8F0', lw: fl * 0.5, seed: seed + 113, amp: 0.2, alpha: 1 - ph }); }
-    if (expr === 'anxiety') tg.shape([[-r * 1.0, hy - r * 0.5], [-r * 0.9, hy - r * 0.25], [-r * 1.0, hy - r * 0.15], [-r * 1.1, hy - r * 0.25]], { fill: '#BFE3F2', lw: fl * 0.6, seed: seed + 114, amp: 0.3 });
     if (expr === 'anger') { const px = r * 0.75, py = hy - r * 0.85, q = r * 0.12; for (const [a, b] of [[[px - q, py - q * 0.3], [px - q * 0.3, py - q * 0.3]], [[px + q * 0.3, py - q * 0.3], [px + q, py - q * 0.3]], [[px - q * 0.3, py + q * 0.3], [px - q, py + q * 0.3]], [[px + q, py + q * 0.3], [px + q * 0.3, py + q * 0.3]]]) tg.line([a, b], { lw: fl, seed: seed + 115, stroke: '#D04040', amp: 0.3 }); }
     if (expr === 'sleep' && pose === 'lie') for (let k = 0; k < 3; k++) { const a = (t * 0.5 + k / 3) % 1; tg.text('z', r * 1.2 + a * r * 1.2, hy - r * 0.8 - a * r * 2, { size: r * (0.4 + k * 0.12), color: '#FFFDF6', strokeW: r * 0.08, boilAmp: 0.4 }); }
   }
