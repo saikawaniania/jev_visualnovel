@@ -70,6 +70,58 @@ w = await page.evaluate(() => ({ era: JV.App.work.era, ok: JV.App.work.eraOk, se
 check(w.sent.length === 1 && w.sent[0] <= 1500, `判定し直しで Jev に送るのは 1,500 字まで (${w.sent})`);
 check(w.era === 'fantasy' && w.ok === true, `Jev で決まらなければキーワードで決める (${w.era})`);
 
+console.log('短い作品（全文を最初に読んでしまい、読み進めても判定し直せない）');
+// Jev の時代の答えを差し替える：probs は表示名 → 確率
+const fakeEra = (probs) => page.evaluate((probs) => {
+  JV.Judge.adapter = () => ({
+    name: 'fake-jev',
+    async judge(state, questions) {
+      const a = await JV.Adapters.mock.judge(state, questions);
+      if (questions.era) { const top = Object.entries(probs).sort((x, y) => y[1] - x[1])[0]; a.era = { type: 'choice', choice: top[0], probabilities: probs, confidence: top[1] }; }
+      return a;
+    },
+  });
+}, probs);
+const short = (title, body) => `${title}\n試作\n\n${body}\n`;
+const kage = '　王国の城の玉座の間で、若い騎士は深く頭を下げた。鎧が小さく鳴った。\n　騎士は北の洞窟へ向かった。\n';
+const plainBody = '　わたしは歩いた。風が吹いて、遠くで誰かが笑った。\n'.repeat(5);
+
+await fakeEra({ '近代日本': 0.08, '現代日本': 0.02, '西洋風': 0.48, 'ファンタジー': 0.42 });
+await page.evaluate((t) => JV.App.openText(t, 'west.txt'), short('西洋の試験', kage));
+await page.waitForTimeout(1000);
+w = await page.evaluate(() => ({ era: JV.App.work.era, ok: JV.App.work.eraOk, src: JV.App.work.eraSource }));
+check(w.era === 'western' && w.ok === true, `西洋風とファンタジーで迷ったら、合わせて西洋寄りとし、高いほうを選ぶ (${w.era}, ${w.src})`);
+
+await fakeEra({ '近代日本': 0.05, '現代日本': 0.05, '西洋風': 0.42, 'ファンタジー': 0.48 });
+await page.evaluate((t) => JV.App.openText(t, 'west2.txt'), short('西洋の試験2', kage));
+await page.waitForTimeout(1000);
+w = await page.evaluate(() => ({ era: JV.App.work.era, ok: JV.App.work.eraOk }));
+check(w.era === 'fantasy' && w.ok === true, `ファンタジーが高ければファンタジー (${w.era})`);
+
+await fakeEra({ '近代日本': 0.4, '現代日本': 0.3, '西洋風': 0.15, 'ファンタジー': 0.15 });
+await page.evaluate((t) => JV.App.openText(t, 'west3.txt'), short('西洋の試験3', kage));
+await page.waitForTimeout(1000);
+w = await page.evaluate(() => ({ era: JV.App.work.era, ok: JV.App.work.eraOk, src: JV.App.work.eraSource }));
+check(w.era === 'fantasy' && w.ok === true && w.src === 'キーワードで', `短い作品で決まらなければ、その場でキーワードで決める (${w.era}, ${w.src})`);
+
+await page.evaluate((t) => JV.App.openText(t, 'plain.txt'), short('手がかりなし', plainBody));
+await page.waitForTimeout(1000);
+w = await page.evaluate(() => ({ era: JV.App.work.era, ok: JV.App.work.eraOk }));
+check(w.era === 'modern' && w.ok === false, `キーワードでも決まらなければ近代日本のまま未確定 (${w.era}, ${w.ok})`);
+
+// 前の版で「未確定」のまま保存された判定は、開き直したときに今の決め方で決め直す
+await page.evaluate(async () => {
+  const k = JV.Judge.key('work'), rec = await JV.Store.get('judgments', k);
+  rec.work.raw.era = { type: 'choice', choice: '近代日本', probabilities: { '近代日本': 0.3, '現代日本': 0.1, '西洋風': 0.25, 'ファンタジー': 0.35 }, confidence: 0.3 };
+  await JV.Store.put('judgments', rec);
+});
+await page.evaluate(() => JV.App.showHome());
+await page.waitForTimeout(1300);
+await page.evaluate((t) => JV.App.openText(t, 'plain.txt'), short('手がかりなし', plainBody));
+await page.waitForTimeout(1000);
+w = await page.evaluate(() => ({ era: JV.App.work.era, ok: JV.App.work.eraOk, cached: !!JV.App.work.cached }));
+check(w.era === 'fantasy' && w.ok === true, `未確定で保存された判定も、開き直すと決め直す (${w.era}, キャッシュ ${w.cached})`);
+
 console.log('最初の判定で決まったとき');
 await page.evaluate(() => { window.__jev = []; JV.Judge.adapter = () => JV.Adapters.mock; });
 await page.evaluate(() => JV.App.openText('魔法の国\n\n' + '　王国の魔法使いが呪文を唱えた。竜が空を渡った。\n'.repeat(80), 'era3.txt'));
