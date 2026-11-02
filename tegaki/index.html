@@ -2555,6 +2555,9 @@ JV.Director = {
     const P = a.people, M = a.figure_main, S = a.figure_sub, Po = a.pose;
     const f = s.figures ? { ...s.figures } : { layout: 'one', main: null, sub: null, pose: 'stand' };
     if (P && P.confidence >= locTh) f.layout = P.id;
+    // 群衆は残りやすいので、抜けるときは確信度が低めでも判定の人数に戻す（人の少ない段落の「1人」「2人」は確信度が低く出やすい）。
+    // 場所が替わったときも、前の場面の人数を持ち越さない
+    else if (P && P.id !== f.layout && (bg || (f.layout === 'many' && P.confidence >= 0.3))) { if (f.layout === 'many') why.push(`群衆おわり → ${P.label}`); f.layout = P.id; }
     // 主人公（作品判定で冒頭から決めた見た目）。途中から読んでも変わらない
     const pro = protagonist && protagonist !== 'unknown' ? protagonist : null;
     const first = narration === 'first';
@@ -2776,13 +2779,21 @@ JV.Judge = {
   async work(doc) {
     const k = this.key('work');
     const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
-    if (saved && saved.work) return { ...saved.work, cached: true };
+    if (saved && saved.work) {
+      // 前の版で「未確定」のまま保存した判定は、今の決め方（西洋寄りの2つを合わせる・短い作品はキーワード）で決め直す
+      if (saved.work.eraOk === false && saved.work.raw) {
+        const { head, whole } = this.workText(doc);
+        const r = await this.settleEra(saved.work.raw, head, whole);
+        if (r.era) { const w = { ...saved.work, era: r.era, eraOk: true, eraSource: r.source }; this.saveWork(w); return { ...w, cached: true }; }
+      }
+      return { ...saved.work, cached: true };
+    }
     const w = await this.judgeWork(doc);
     this.saveWork(w);
     return w;
   },
   saveWork(w) {
-    if (this.hashKey) JV.Store.put('judgments', { k: this.key('work'), hash: this.hashKey, unit: -1, work: { era: w.era, eraOk: w.eraOk, narration: w.narration, protagonist: w.protagonist, raw: w.raw }, at: Date.now() });
+    if (this.hashKey) JV.Store.put('judgments', { k: this.key('work'), hash: this.hashKey, unit: -1, work: { era: w.era, eraOk: w.eraOk, eraSource: w.eraSource || null, narration: w.narration, protagonist: w.protagonist, raw: w.raw }, at: Date.now() });
   },
 
   /* 時代の判定し直し：最初の判定で時代が決まらなかった（失敗・確信度が低い）ときだけ、読み進めてからもう一度 */
@@ -2796,6 +2807,37 @@ JV.Judge = {
     return o && Number(a.confidence ?? 1) >= this.ERA_MIN ? o.id : null;
   },
   /**
+   * 西洋風とファンタジーで迷ったとき：2つの確率を合わせて ERA_MIN 以上なら「西洋寄りなのは確か」として、高いほうを選ぶ。
+   * （どちらも城・騎士・教会が出るので、Jev の確率が2つに分かれて、どちらも 0.5 に届かないことがある）
+   */
+  eraWest(answers) {
+    const a = answers && answers.era, probs = (a && a.probabilities) || {};
+    const pr = (id) => { const o = JV.Schema.byId('work', 'era', id); return Number(probs[o.label] ?? probs[id] ?? 0); };
+    const w = pr('western'), f = pr('fantasy');
+    return w + f >= this.ERA_MIN ? (f > w ? 'fantasy' : 'western') : null;
+  },
+  /**
+   * 作品判定の答えから時代を決める。決まらなければ、西洋寄りの2つを合わせて決める。
+   * それでも決まらず、作品の全文をもう読んでいる（短い作品で、読み進めても判定し直せない）なら、その場でキーワードで決める
+   */
+  async settleEra(answers, text, whole, { signal } = {}) {
+    let era = this.eraOf(answers);
+    if (era) return { era, source: null };
+    era = this.eraWest(answers);
+    if (era) return { era, source: '西洋風とファンタジーを合わせて' };
+    if (whole && this.adapter() !== JV.Adapters.mock) {
+      era = this.eraOf(await JV.Adapters.mock.judge(text, { era: this.questions('work').era }, { signal }));
+      if (era) return { era, source: 'キーワードで' };
+    }
+    return { era: null, source: null };
+  },
+  /** 作品判定に送る本文（冒頭約3,000字）と、それが全文かどうか */
+  workText(doc) {
+    const full = doc.paragraphs.map((p) => p.text.replace(/^[\s　]+/, '')).join('\n');
+    const head = full.slice(0, 3000);
+    return { head, whole: full.length <= head.length };
+  },
+  /**
    * 読んだところまで（from〜to 字）で時代だけを判定し直す。
    * Jev が使えるなら新しく読んだ部分の最後の 1,500 字だけを送る。Jev で決まらなければ、
    * 読んだところ全部をモック（キーワード）で調べる（API を使わないので重くない）。決まらなければ null
@@ -2806,7 +2848,8 @@ JV.Judge = {
     const adapter = this.adapter();
     if (adapter !== JV.Adapters.mock) {
       try {
-        const era = this.eraOf(await adapter.judge(all.slice(Math.max(from, to - this.ERA_JEV_CHARS), to), q, { signal }));
+        const ans = await adapter.judge(all.slice(Math.max(from, to - this.ERA_JEV_CHARS), to), q, { signal });
+        const era = this.eraOf(ans) || this.eraWest(ans);
         if (era) return { era, source: 'Jev' };
       } catch (err) { if (JV.util.isAbort(err)) throw err; }
     }
@@ -2816,15 +2859,15 @@ JV.Judge = {
 
   /** 作品判定：冒頭約3,000字 */
   async judgeWork(doc, { signal } = {}) {
-    const head = doc.paragraphs.map((p) => p.text.replace(/^[\s　]+/, '')).join('\n').slice(0, 3000);
+    const { head, whole } = this.workText(doc);
     const answers = await this.adapter().judge(head, this.questions('work'), { signal });
     const pick = (key, fallback) => {
       const a = answers[key];
       const o = a && (JV.Schema.byLabel('work', key, a.choice) || JV.Schema.byId('work', key, a.choice));
       return o ? o.id : fallback;
     };
-    const era = this.eraOf(answers);
-    return { era: era || 'modern', eraOk: !!era, eraTo: head.length, narration: pick('narration', 'third'), protagonist: pick('protagonist', 'unknown'), raw: answers };
+    const { era, source } = await this.settleEra(answers, head, whole, { signal });
+    return { era: era || 'modern', eraOk: !!era, eraSource: source, eraTo: head.length, narration: pick('narration', 'third'), protagonist: pick('protagonist', 'unknown'), raw: answers };
   },
 
   /** 場面判定の state：時代・前の場面・直前2段落・現段落 */
@@ -3204,7 +3247,7 @@ JV.App = {
         if (w.eraOk === undefined) w.eraOk = true;
         this.eraRetry.from = Math.min(w.eraTo || 3000, 3000);
         const pro = JV.Schema.byId('work', 'protagonist', this.protagonist());
-        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}${w.eraOk ? '' : '・時代は未確定（読み進めてから判定し直す）'}`);
+        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}${w.eraOk ? (w.eraSource ? `・時代は${w.eraSource}決めた` : '') : '・時代は未確定（読み進めてから判定し直す）'}`);
       })
       .catch((err) => {
         if (this.handlePublicClosed(err)) return;

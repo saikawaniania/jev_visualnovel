@@ -123,6 +123,13 @@ const rules = await page.evaluate(() => {
   r.push(inn({ inner: 0.85, emo: '不明' }));                 // 15 気持ちが不明なら出さない
   r.push(inn({ inner: 0.3, emo: '悲しみ' }));                // 16 心の中だけでなければ出さない
   r.push(inn({ inner: 0.9, emo: '悲しみ', emoP: 0.3 }));     // 17 気持ちの確信度が低ければ出さない
+  // 群衆：人の少ない段落になったら、確信度が低めでも群衆をやめる。場所が替われば人数を持ち越さない
+  t += 6000; r.push(run({ loc: '和室', people: '3人以上', peopleP: 0.8 }, 1));  // 18 群衆
+  t += 100; r.push(run({ loc: '和室', people: '1人', peopleP: 0.4 }, 1));       // 19 確信度0.4でも群衆をやめる
+  t += 100; r.push(run({ loc: '和室', people: '2人', peopleP: 0.4 }, 1));       // 20 群衆でなければ、確信度不足は引き継ぐ
+  t += 100; r.push(run({ loc: '和室', people: '3人以上', peopleP: 0.8 }, 1));
+  t += 100; r.push(run({ loc: '和室', people: '1人', peopleP: 0.2 }, 1));       // 22 確信度があまりに低ければ群衆のまま
+  t += 6000; r.push(run({ loc: '海辺', locP: 0.9, people: '2人', peopleP: 0.4 }, 1)); // 23 場所が替われば人数を持ち越さない
   return r;
 });
 const R = rules;
@@ -145,6 +152,12 @@ check(R[14].inner === 'joy' && !R[14].flag, `同じ気持ちなら替えない (
 check(R[15].inner === null && R[15].flag && R[15].why.includes('心象おわり'), `気持ちが不明なら心象を消す (${R[15].why})`);
 check(R[16].inner === null && !R[16].flag, `inner がしきい値未満なら出さない (${R[16].inner})`);
 check(R[17].inner === null, `emotion の確信度が低ければ出さない (${R[17].inner})`);
+
+check(R[18].fig === 'many', `3人以上なら群衆 (${R[18].fig})`);
+check(R[19].fig === 'one' && R[19].why.includes('群衆おわり'), `人の少ない段落になれば、確信度が低めでも群衆をやめる (${R[19].fig}: ${R[19].why})`);
+check(R[20].fig === 'one', `群衆でなければ、確信度不足の人数は引き継ぐ (${R[20].fig})`);
+check(R[22].fig === 'many', `確信度があまりに低い（0.3未満）なら群衆のまま (${R[22].fig})`);
+check(R[23].bg && R[23].fig === 'two', `場所が替われば、前の場面の人数を持ち越さない (${R[23].fig})`);
 
 console.log('心象の背景');
 const emo = await page.evaluate(() => {
