@@ -2745,9 +2745,6 @@ JV.Director = {
     const P = a.people, M = a.figure_main, S = a.figure_sub, Po = a.pose;
     const f = s.figures ? { ...s.figures } : { layout: 'one', main: null, sub: null, pose: 'stand' };
     if (P && P.confidence >= locTh) f.layout = P.id;
-    // 群衆は残りやすいので、抜けるときは確信度が低めでも判定の人数に戻す（人の少ない段落の「1人」「2人」は確信度が低く出やすい）。
-    // 場所が替わったときも、前の場面の人数を持ち越さない
-    else if (P && P.id !== f.layout && (bg || (f.layout === 'many' && P.confidence >= 0.3))) { if (f.layout === 'many') why.push(`群衆おわり → ${P.label}`); f.layout = P.id; }
     // 主人公（作品判定で冒頭から決めた見た目）。途中から読んでも変わらない
     const pro = protagonist && protagonist !== 'unknown' ? protagonist : null;
     const first = narration === 'first';
