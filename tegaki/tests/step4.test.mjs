@@ -3,6 +3,8 @@ import { openApp, check, done } from './harness.mjs';
 
 const app = await openApp({ viewport: { width: 1000, height: 800 } });
 const { page } = app;
+// 停止の位置はノベルモード（本文が画面いっぱい）の前提で組んである。既定は挿絵モードなので切り替えておく
+await page.evaluate(() => { JV.Settings.set('displayMode', 'novel'); JV.App.applySettings(); });
 
 // 判定器を「呼ばれた単位と中断」を記録するものに差し替える
 const instrument = () => page.evaluate(() => {

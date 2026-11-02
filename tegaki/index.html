@@ -472,8 +472,8 @@ body.debug #center-line {
       <legend>表示</legend>
       <label>表示モード
         <select data-key="displayMode" onchange="JV.SettingsUI.change(this)">
-          <option value="novel">ノベル（絵を全画面、本文を半透明の帯に）</option>
           <option value="illust">挿絵（スマホ縦：上に絵・下に本文／横向き・PC：左に絵・右に本文）</option>
+          <option value="novel">ノベル（絵を全画面、本文を半透明の帯に）</option>
         </select>
       </label>
       <label>書字方向
@@ -1086,7 +1086,7 @@ JV.Settings = {
     hideNarrator: false,   // 一人称の作品で主人物（語り手）を出さず相手だけを描く
     effects: true,         // 演出オン／オフ
     debug: false,          // デバッグ表示
-    displayMode: 'novel',  // 表示モード：novel（挿絵モードは拡張）
+    displayMode: 'illust', // 表示モード：illust（挿絵と本文を分ける・既定）| novel（絵を全画面に）
     writingMode: 'horizontal', // 横書き（縦書きは拡張）
     fontSize: 18,          // 文字サイズ(px)
   },
