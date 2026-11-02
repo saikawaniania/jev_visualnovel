@@ -571,8 +571,13 @@
     // 胴体・裾
     torso(tg, cos, d, h, J, S, lw, seed, up);
     // 腕
+    // 腕は太い線なので、関節の位置から描くと上端が肩の線より上に出て、肩が上がって見える。
+    // 腕の長さはそのままで、腕全体を「太さの半分＋縁取り」だけ下げて、上端を肩の線にそろえる
+    const sleeveOf = () => d.limb * (cos.kind === 'robe' ? 1.5 : 1.05);
+    const armDrop = sleeveOf() / 2 + 4.5;
+    for (const a of [J.armL, J.armR]) for (const k of ['sh', 'el', 'hand']) a[k] = [a[k][0], a[k][1] + armDrop];
     const drawArm = (a, sd) => {
-      const sleeveW = d.limb * (cos.kind === 'robe' ? 1.5 : 1.05);
+      const sleeveW = sleeveOf();
       if (cos.kind === 'robe') { const m = lerpP(a.sh, a.el, 0.6); tg.poly([[a.sh[0], a.sh[1]], [m[0] + sd * 0.03 * h, m[1] + 0.02 * h], [a.el[0] + sd * 0.035 * h, a.el[1] + 0.07 * h], [a.el[0] - sd * 0.01 * h, a.el[1] + 0.06 * h]], { fill: top, lw, seed: seed + 20 + sd }); }
       tg.limb([a.sh, a.el, a.hand], { color: cos.kind === 'shorts' || (cos.kind === 'dress' && cos.length !== 'gown') ? (sd ? top : top) : top, lw: sleeveW, seed: seed + 22 + sd });
       tg.ellipse(a.hand[0], a.hand[1], d.limb * 0.62, d.limb * 0.66, { fill: skin, lw, seed: seed + 24 + sd });
