@@ -675,7 +675,8 @@
   CHILD.fringeUp = CHILD.fringeSoft;
   // 女性は目だけ前の描き方（丸い目に白い光）
   const HEAD = {
-    man: ADULT, oldman: ADULT, unknown: ADULT, boy: CHILD,
+    // 成人男性・男の子：鼻を口の線の前の端から 20% の位置に（左向きなら口の左端から）
+    man: { ...ADULT, noseOnMouth: 0.2 }, oldman: ADULT, unknown: ADULT, boy: { ...CHILD, noseOnMouth: 0.2 },
     woman: { ...ADULT, roundEyes: true }, oldwoman: { ...ADULT, roundEyes: true }, girl: { ...CHILD, roundEyes: true },
   };
 
@@ -795,9 +796,10 @@
     }
     if (cos.glasses) tg.line([[dx - ex + r * 0.18, ey], [dx + ex - r * 0.18, ey]], { lw: fl * 0.7, seed: seed + 106 });
     // 鼻：小さな点
-    tg.ellipse(dx, hy + B.nose * r, r * 0.022, r * 0.02, { fill: ink, stroke: null, seed: seed + 107, amp: 0.1 });
-    // 口：ふだんは短い一本線
+    // 口：ふだんは短い一本線（後ろの端 mx − 0.9mw 〜 前の端 mx + 0.8mw）
     const mx = dx, my = hy + B.mouth.y * r, mw = r * B.mouth.w;
+    const nx = B.noseOnMouth != null ? mx + mw * 0.8 - B.noseOnMouth * mw * 1.7 : dx;
+    tg.ellipse(nx, hy + B.nose * r, r * 0.022, r * 0.02, { fill: ink, stroke: null, seed: seed + 107, amp: 0.1 });
     if (expr === 'joy' || mouth) tg.shape([[mx - mw, my - r * 0.02], [mx + mw, my - r * 0.02], [mx + mw * 0.5, my + r * 0.09], [mx - mw * 0.5, my + r * 0.09]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
     else if (expr === 'sadness' || expr === 'anger') tg.line([[mx - mw * 0.8, my + r * 0.03], [mx, my - r * 0.015], [mx + mw * 0.8, my + r * 0.03]], { lw: fl * 0.8, seed: seed + 109, amp: 0.3, stroke: ink });
     else if (expr === 'anxiety') tg.line([[mx - mw, my], [mx - mw * 0.4, my - r * 0.025], [mx + mw * 0.2, my + r * 0.015], [mx + mw, my - r * 0.01]], { lw: fl * 0.8, seed: seed + 110, amp: 0.3, stroke: ink });
