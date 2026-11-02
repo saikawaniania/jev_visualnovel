@@ -45,10 +45,11 @@
     main: ['主人物', FIG], sub: ['相手', [['woman', '成人女性'], ...FIG.filter(([k]) => k !== 'woman')]],
     pose: ['姿勢', [['stand', '立つ'], ['sit', '座る'], ['walk', '歩く'], ['lie', '横たわる'], ['talk', '話す']]],
     expr: ['表情', [['normal', 'ふつう'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anxiety', '不安'], ['anger', '怒り']]],
+    animal: ['動物', [['', 'なし'], ['dog', '犬'], ['cat', '猫'], ['bird', '鳥'], ['horse', '馬'], ['rabbit', 'うさぎ'], ['dragon', 'ドラゴン'], ['monster', 'モンスター']]],
     weather: ['天候', [['none', 'なし'], ['cloudy', '曇り'], ['rain', '雨'], ['snow', '雪'], ['fog', '霧']]],
     inner: ['心象', [['', 'なし'], ['anxiety', '不安'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anger', '怒り']]],
   };
-  const st = { location: 'washitsu', time: 'day', era: 'modern', layout: 'two', main: 'man', sub: 'woman', pose: 'talk', expr: 'joy', weather: 'none', inner: '' };
+  const st = { location: 'washitsu', time: 'day', era: 'modern', layout: 'two', main: 'man', sub: 'woman', pose: 'talk', expr: 'joy', animal: '', weather: 'none', inner: '' };
   const ctrl = document.getElementById('controls');
   for (const [k, [label, opts]] of Object.entries(F)) {
     const l = document.createElement('label'); l.textContent = label;
@@ -59,7 +60,7 @@
     const L = Draw.layout(tg);
     Draw.background(tg, L, s, t);
     if (s.inner) Draw.emotion(tg, L, s.inner, t, 1);
-    Draw.figures(tg, L, { figures: { layout: s.layout, main: s.main, sub: s.sub, pose: s.pose }, era: s.era, time: s.time, location: s.location, expr: s.expr, innerK: s.inner ? 1 : 0 }, t);
+    Draw.figures(tg, L, { figures: { layout: s.layout, main: s.main, sub: s.sub, pose: s.pose, animal: s.animal || null }, era: s.era, time: s.time, location: s.location, expr: s.expr, innerK: s.inner ? 1 : 0 }, t);
     if (!s.inner) Draw.weather(tg, L, { rain: s.weather === 'rain' ? 1 : 0, snow: s.weather === 'snow' ? 1 : 0, cloudy: s.weather === 'cloudy' ? 1 : s.weather === 'rain' || s.weather === 'snow' ? 0.6 : 0, fog: s.weather === 'fog' ? 1 : 0 }, t);
   }
   const tg = Tegaki.create(document.getElementById('c'), { style: 'paper' });

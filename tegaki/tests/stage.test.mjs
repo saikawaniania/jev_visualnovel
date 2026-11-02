@@ -17,7 +17,7 @@ const q = await page.evaluate(() => {
     alt: [['station', 'fantasy'], ['castle', 'present'], ['shrine', 'western'], ['washitsu', 'fantasy'], ['church', 'modern']].map(([id, era]) => JV.Schema.locFor(id, era)),
   };
 });
-check(q.keys.join() === 'scene_changed,location,time,weather,people,figure_main,figure_sub,pose,mood,inner,emotion', `場面判定の質問キー ${q.keys}`);
+check(q.keys.join() === 'scene_changed,location,time,weather,people,figure_main,figure_sub,pose,animal,mood,inner,emotion', `場面判定の質問キー ${q.keys}`);
 check(q.locN === 29 && q.mood === 3, `location 29択（時代で絞る前）・mood 3段階 (${q.locN}, ${q.mood})`);
 check(!q.byEra.fantasy.includes('station') && !q.byEra.fantasy.includes('shrine') && q.byEra.fantasy.includes('castle') && q.byEra.fantasy.includes('cave'), `ファンタジーでは駅・神社を聞かず、城・洞窟を聞く (${q.byEra.fantasy.length}択)`);
 check(!q.byEra.modern.includes('castle') && q.byEra.modern.includes('shrine') && !q.byEra.present.includes('church') && q.byEra.present.includes('rooftop'), `日本の時代では城・教会を聞かず、神社を聞く (近代 ${q.byEra.modern.length}択・現代 ${q.byEra.present.length}択)`);
@@ -192,11 +192,19 @@ const all = await page.evaluate(() => {
       try { tg.renderAt(2.3, (t) => Draw.person(tg, L, { type, era, pose, expr, x: 240, y: 280, h: 200, facing: -1, variant: n % 2 ? 'B' : 'A' }, t)); n++; } catch (e) { bad.push(`${era}/${type}/${pose}/${expr}: ${e.message}`); }
     }
   }
+  for (const era of ['present', 'fantasy']) for (const animal of Draw.ANIMALS) for (const layout of ['none', 'one', 'two']) { try { tg.renderAt(1.1, (t) => Draw.figures(tg, L, { figures: { layout, main: 'man', sub: 'woman', pose: 'stand', animal }, era, time: 'day', location: 'field', expr: 'normal' }, t)); n++; } catch (e) { bad.push(`animal ${animal}/${layout}: ${e.message}`); } }
   for (const id of Draw.EMOTIONS) { try { tg.renderAt(0.5, (t) => Draw.emotion(tg, L, id, t, 1)); n++; } catch (e) { bad.push(`emo ${id}: ${e.message}`); } }
   return { n, bad, missing: JV.Schema.options('scene', 'location').map((o) => o.id).filter((id) => !Draw.LOCATIONS.includes(id)) };
 });
 check(all.bad.length === 0 && all.n > 1000, `${all.n} 通りを描いてエラーなし ${all.bad.slice(0, 3)}`);
 check(all.missing.length === 0, `スキーマの場所はすべて描き方がある (${all.missing})`);
+const ani = await page.evaluate(() => {
+  const ch = (label, p) => ({ type: 'choice', choice: label, probabilities: { [label]: p }, confidence: p });
+  const D = JV.Director, run = (animal, era) => { D.reset(); return D.decide({ location: ch('和室', 0.9), people: ch('1人', 0.9), figure_main: ch('成人男性', 0.8), animal: ch(animal, 0.8) }, { chapter: 0, era }).scene.figures.animal; };
+  return { dog: run('犬', 'present'), none: run('いない', 'present'), dragonF: run('ドラゴン', 'fantasy'), dragonP: run('ドラゴン', 'present'), opts: Object.keys(JV.Schema.toQuestions('scene', { era: 'modern', asciiKeys: true }).animal.criteria) };
+});
+check(ani.dog === 'dog' && ani.none === null, `動物は読み取れた段落だけ出す (${ani.dog}, ${ani.none})`);
+check(ani.dragonF === 'dragon' && ani.dragonP === 'monster' && !ani.opts.includes('dragon'), `ドラゴンはファンタジーだけ。ほかの時代ではモンスターに (${ani.dragonP})`);
 const pb = await page.evaluate(() => ['man', 'woman', 'boy', 'girl', 'oldman', 'oldwoman', 'unknown'].map((type) => { const a = Draw.costume(type, 'present', 1, 'A'), b = Draw.costume(type, 'present', 1, 'B'); return a.hair !== b.hair && a.top !== b.top ? '' : type; }).filter(Boolean));
 check(pb.length === 0, `7種類のパターンBは髪型と服の色が違う (${pb})`);
 

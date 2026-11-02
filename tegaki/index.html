@@ -1628,6 +1628,20 @@ JV.Schema = {
         { id: 'talk', label: '向き合って話す', desc: '相手と向き合って会話している' },
       ],
     },
+    animal: {
+      type: 'choice',
+      instructions: '現在の段落(current)で、場面に実際に居る動物・生き物。話題に出ただけなら「いない」。人物は数えない',
+      options: [
+        { id: 'none', label: 'いない', desc: '動物は居ない・読み取れない' },
+        { id: 'dog', label: '犬', desc: '犬・子犬・猟犬' },
+        { id: 'cat', label: '猫', desc: '猫・子猫' },
+        { id: 'bird', label: '鳥', desc: '鳥・小鳥・雀・鳩・烏・鷹など、鳥全般' },
+        { id: 'horse', label: '馬', desc: '馬・ロバ・馬車を引く馬' },
+        { id: 'rabbit', label: 'うさぎ', desc: 'うさぎ・野うさぎ' },
+        { id: 'dragon', label: 'ドラゴン', desc: '竜・ドラゴン・飛竜', eras: ['fantasy'] },
+        { id: 'monster', label: 'モンスター', desc: '怪物・魔物・化け物・得体の知れない影・正体不明の生き物' },
+      ],
+    },
     mood: {
       type: 'score',
       instructions: '現在の段落(current)の場面の緊張感',
@@ -1701,6 +1715,8 @@ JV.Schema = {
   allowed(o, era) { return !era || !o.eras || o.eras.includes(era); },
   /** その時代にない場所を、近い場所に読み替える（前の時代で判定した結果が残っていたとき） */
   LOC_ALT: { classroom: 'yoshitsu', station: 'street', office: 'yoshitsu', hospital: 'bedroom', shrine: 'garden', church: 'castle', castle: 'yoshitsu', park: 'garden', rooftop: 'street' },
+  /** その時代にいない動物（ドラゴンはファンタジーだけ）は、モンスターに読み替える */
+  animalFor(id, era) { const o = this.byId('scene', 'animal', id); return !o || this.allowed(o, era) ? id : 'monster'; },
   locFor(id, era) {
     for (let k = 0; k < 4 && id; k++) { const o = this.byId('scene', 'location', id); if (!o || this.allowed(o, era)) return id; id = this.LOC_ALT[id]; }
     return id || 'unknown';
@@ -1821,6 +1837,15 @@ JV.Adapters.mock = {
       '兵士・騎士': ['兵士', '兵隊', '騎士', '軍人', '衛兵', '剣士', '将校'],
       '僧侶・聖職者': ['僧', '和尚', '住職', '神主', '神父', '牧師', '司祭', '修道士'],
       'おばけ・幽霊': ['幽霊', 'おばけ', 'お化け', '亡霊', '妖怪', '亡者'],
+    },
+    animal: {
+      '犬': ['犬', '子犬', '仔犬', 'ワン', '吠え'],
+      '猫': ['猫', '子猫', '仔猫', 'ニャ'],
+      '鳥': ['鳥', '小鳥', '雀', '鳩', '烏', 'カラス', '鷹', '鳶', 'さえず'],
+      '馬': ['馬', 'ロバ', '蹄', 'いななき'],
+      'うさぎ': ['兎', 'うさぎ', 'ウサギ'],
+      'ドラゴン': ['竜', '龍', 'ドラゴン', '飛竜'],
+      'モンスター': ['怪物', '魔物', '化け物', 'モンスター', '異形'],
     },
     pose: {
       '立っている': ['立っ', '佇', 'たたず', '見下ろ', '立ち'],
@@ -1958,6 +1983,7 @@ JV.Adapters.mock = {
         }
         if (key === 'pose' && dialogues >= 2) scores['向き合って話す'] = (scores['向き合って話す'] || 0) + 0.8;
         if (key === 'pose') fallback = '立っている';
+        if (key === 'animal') fallback = 'いない';
         if (key === 'figure_sub') {
           // 主人物に選ばれたものを除いた2番手
           const main = answers.figure_main ? toLabel(answers.figure_main.choice) : null;
@@ -2211,7 +2237,7 @@ JV.Stage = {
   },
 
   fade() { return Number(JV.Settings.get('fadeScale')) || 1; },
-  figuresKey(s) { return s.figures ? `${s.figures.layout}|${s.figures.main || ''}|${s.figures.sub || ''}|${s.figures.pose}` : ''; },
+  figuresKey(s) { return s.figures ? `${s.figures.layout}|${s.figures.main || ''}|${s.figures.sub || ''}|${s.figures.pose}|${s.figures.animal || ''}` : ''; },
 
   /** 表情：心の中の気持ち（emotion）があればそれ、なければ緊張感から */
   exprOf(s) {
@@ -2345,7 +2371,7 @@ JV.Stage = {
       const aOld = out ? 1 - Math.min(1, fk / 0.2) : 1 - fk, aNew = out ? Math.max(0, Math.min(1, (fk - 0.67) / 0.33)) : fk;
       const time = this.world.to ? this.world.to.time : 'day';
       const draw = (snap, a) => {
-        if (!snap || a <= 0.003 || !snap.figures || snap.figures.layout === 'none') return;
+        if (!snap || a <= 0.003 || !snap.figures || (snap.figures.layout === 'none' && !snap.figures.animal)) return;
         const f = this.ftg, fc = f.ctx; f.setTime(t);
         fc.setTransform(1, 0, 0, 1, 0, 0); fc.globalAlpha = 1; fc.clearRect(0, 0, L.W, L.H);
         Draw.figures(f, L, Object.assign({}, snap, { time, innerK }), t);
@@ -2536,6 +2562,10 @@ JV.Director = {
       }
       if (f.layout === 'many') f.main = null;
     }
+    // 動物（登場人物とは別。読み取れた段落だけ出す）
+    const An = a.animal;
+    f.animal = An && An.id !== 'none' && An.confidence >= 0.4 ? JV.Schema.animalFor(An.id, era) : null;
+    if (f.animal !== (prev && prev.figures ? prev.figures.animal || null : null)) why.push(f.animal ? `動物 → ${An.label}` : '動物おわり');
     s.figures = f;
 
     // 吹き出し：代表のセリフを1つ。重要度が「さりげない」寄りなら出さない

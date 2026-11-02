@@ -1205,10 +1205,17 @@
 
   /* 人数・配置ごとに描く */
   function figures(tg, L, st, t) {
-    const f = st.figures; if (!f || f.layout === 'none') return;
+    const f = st.figures; if (!f) return;
     const S = shader(st.time || 'day', st.innerK != null ? 0.6 * (1 - st.innerK) : 0.6);
     const seat = st.location === 'washitsu' ? 'seiza' : 'chair';
     const y = L.floor;
+    // 動物：大きいもの（馬・ドラゴン・モンスター）は人物より奥、小さいものは手前
+    const an = f.animal ? animalSpot(L, f) : null;
+    if (an && an.back) animal(tg, L, f.animal, an, t, S);
+    if (f.layout !== 'none') figuresPeople(tg, L, st, t, f, S, seat, y);
+    if (an && !an.back) animal(tg, L, f.animal, an, t, S);
+  }
+  function figuresPeople(tg, L, st, t, f, S, seat, y) {
     if (f.layout === 'many') {
       for (let k = 0; k < 4; k++) {
         const types = ['man', 'woman', 'oldman', 'girl', 'woman', 'boy', 'oldwoman', 'man'];
@@ -1224,6 +1231,104 @@
       const variant = !main && f.sub === f.main ? 'B' : 'A';
       person(tg, L, { type: p.type, era: st.era, pose: p.pose, expr: main ? st.expr : st.subExpr || 'normal', x: p.x, y, h: p.h, facing: p.facing, slot: main ? 0 : 1, variant, shade: S, seat }, t);
     }
+  }
+
+  /* ================= 動物（登場人物とは別。動きは息づかい程度） ================= */
+  const ANIMALS = ['dog', 'cat', 'bird', 'horse', 'rabbit', 'dragon', 'monster'];
+  /** 動物を置く場所：人物の顔ぶれから、空いているところへ */
+  function animalSpot(L, f) {
+    const h0 = heightOf(L, 'man'), kind = f.animal, n = f.layout === 'none' ? 0 : f.layout === 'two' ? 2 : 1;
+    const back = kind === 'horse' || kind === 'dragon' || kind === 'monster';
+    let x = n === 0 ? L.W * 0.5 : n === 2 ? L.W * 0.5 : L.W * 0.36, facing = n === 1 ? 1 : -1;
+    if (back && n === 1) x = L.W * 0.3;
+    if (kind === 'dragon') x = n === 1 ? L.W * 0.3 : L.W * 0.5;
+    return { x, y: L.floor, h0, facing, back };
+  }
+  function animal(tg, L, kind, o, t, S) {
+    const c = tg.ctx, h0 = o.h0, lw = Math.max(2, h0 * 0.007), seed = 3000 + ANIMALS.indexOf(kind) * 50, br = Math.sin(t * 2.2) * 0.01;
+    const ink = '#2A2320';
+    c.save(); c.translate(o.x, o.y);
+    const shadow = (w) => { c.save(); c.fillStyle = 'rgba(20,10,20,.16)'; c.beginPath(); c.ellipse(0, 0, w, w * 0.14, 0, 0, Math.PI * 2); c.fill(); c.restore(); };
+    c.scale(o.facing, 1);
+    const eye = (x, y, r) => tg.ellipse(x, y, r * 0.7, r, { fill: ink, stroke: null, seed: seed + 49, amp: 0.2 });
+    if (kind === 'dog') {
+      const u = h0 * 0.28; shadow(u * 0.7);
+      for (const [x, k] of [[-0.35, 0], [-0.2, 1], [0.25, 2], [0.4, 3]]) tg.rrect(x * u - u * 0.05, -u * 0.32, u * 0.1, u * 0.32, 4, { fill: S('#B8865A'), lw, seed: seed + k });
+      const wag = Math.sin(t * 8) * 0.25;
+      tg.line([[-u * 0.45, -u * 0.5], [-u * 0.6 + Math.sin(wag) * u * 0.1, -u * 0.72], [-u * 0.62 + Math.sin(wag) * u * 0.25, -u * 0.85]], { lw: lw * 3, seed: seed + 5, stroke: S('#B8865A') });
+      tg.ellipse(0, -u * 0.48 * (1 + br), u * 0.52, u * 0.2, { fill: S('#C89A6A'), lw, seed: seed + 6 });
+      tg.ellipse(u * 0.48, -u * 0.72, u * 0.2, u * 0.18, { fill: S('#C89A6A'), lw, seed: seed + 7 });
+      tg.ellipse(u * 0.66, -u * 0.66, u * 0.11, u * 0.08, { fill: S('#E8D0B0'), lw, seed: seed + 8 });
+      tg.ellipse(u * 0.76, -u * 0.68, u * 0.035, u * 0.03, { fill: ink, stroke: null, seed: seed + 9 });
+      tg.ellipse(u * 0.4, -u * 0.72, u * 0.07, u * 0.16, { fill: S('#8A5A3A'), lw, seed: seed + 10 });
+      eye(u * 0.55, -u * 0.77, u * 0.03);
+    } else if (kind === 'cat') {
+      const u = h0 * 0.22; shadow(u * 0.5);
+      tg.line([[-u * 0.25, -u * 0.05], [-u * 0.55, -u * 0.05], [-u * 0.65 + Math.sin(t * 1.5) * u * 0.05, -u * 0.3]], { lw: lw * 2.6, seed: seed + 1, stroke: S('#D8944A') });
+      tg.shape([[-u * 0.3, 0], [-u * 0.32, -u * 0.35], [-u * 0.1, -u * 0.62 * (1 + br)], [u * 0.12, -u * 0.6], [u * 0.25, -u * 0.3], [u * 0.25, 0]], { fill: S('#E2A35A'), lw, seed: seed + 2 });
+      for (let k = 0; k < 3; k++) tg.line([[-u * 0.25, -u * (0.18 + k * 0.12)], [-u * 0.08, -u * (0.2 + k * 0.12)]], { lw: lw * 0.9, seed: seed + 3 + k, stroke: S('#A8642A') });
+      const hx = u * 0.05, hy = -u * 0.75;
+      for (const sd of [-1, 1]) tg.poly([[hx + sd * u * 0.06, hy - u * 0.1], [hx + sd * u * 0.18, hy - u * 0.28], [hx + sd * u * 0.2, hy - u * 0.04]], { fill: S('#E2A35A'), lw, seed: seed + 8 + sd, step: 8 });
+      tg.ellipse(hx, hy, u * 0.21, u * 0.18, { fill: S('#E2A35A'), lw, seed: seed + 11 });
+      for (const sd of [-1, 1]) eye(hx + u * 0.04 + sd * u * 0.08, hy - u * 0.01, u * 0.035);
+      tg.ellipse(hx + u * 0.04, hy + u * 0.06, u * 0.02, u * 0.015, { fill: '#D07070', stroke: null, seed: seed + 12 });
+    } else if (kind === 'rabbit') {
+      const u = h0 * 0.18; shadow(u * 0.45);
+      tg.ellipse(-u * 0.32, -u * 0.25, u * 0.1, u * 0.1, { fill: S('#FFFFFF'), lw, seed: seed + 1 });
+      tg.ellipse(0, -u * 0.28 * (1 + br), u * 0.32, u * 0.28, { fill: S('#F4F2EE'), lw, seed: seed + 2 });
+      for (const [dx, k] of [[0.12, 0], [0.24, 1]]) tg.ellipse(u * dx, -u * 0.95, u * 0.06, u * 0.26, { fill: S('#F4F2EE'), lw, seed: seed + 3 + k });
+      tg.ellipse(u * 0.2, -u * 0.6, u * 0.18, u * 0.16, { fill: S('#F4F2EE'), lw, seed: seed + 5 });
+      eye(u * 0.28, -u * 0.63, u * 0.03);
+      tg.ellipse(u * 0.37, -u * 0.56, u * 0.02, u * 0.018, { fill: '#D07070', stroke: null, seed: seed + 6 });
+    } else if (kind === 'bird') {
+      // 茶色の鳥：空を飛ぶ（羽ばたき）
+      const u = h0 * 0.18, fy = -h0 * 0.95 + Math.sin(t * 1.4) * h0 * 0.03, fx = Math.sin(t * 0.6) * h0 * 0.08, flap = Math.sin(t * 9);
+      c.translate(fx, fy);
+      tg.poly([[-u * 0.4, 0], [-u * 0.75, -u * 0.12], [-u * 0.72, u * 0.12]], { fill: S('#6A4A2E'), lw, seed: seed + 1, step: 8 });
+      tg.ellipse(0, 0, u * 0.48, u * 0.22, { fill: S('#8A6440'), lw, seed: seed + 2 });
+      tg.ellipse(u * 0.05, u * 0.07, u * 0.3, u * 0.1, { fill: S('#D8B890'), stroke: null, seed: seed + 3 });
+      tg.ellipse(u * 0.42, -u * 0.12, u * 0.17, u * 0.15, { fill: S('#8A6440'), lw, seed: seed + 4 });
+      tg.poly([[u * 0.56, -u * 0.14], [u * 0.72, -u * 0.08], [u * 0.56, -u * 0.04]], { fill: '#E8A040', lw: lw * 0.8, seed: seed + 5, step: 6 });
+      eye(u * 0.46, -u * 0.15, u * 0.03);
+      tg.poly([[-u * 0.12, -u * 0.08], [u * 0.2, -u * 0.08], [-u * 0.05, -u * 0.08 - flap * u * 0.55]], { fill: S('#6A4A2E'), lw, seed: seed + 6, step: 8 });
+    } else if (kind === 'horse') {
+      const u = h0 * 0.62; shadow(u * 0.55);
+      for (const [x, k] of [[-0.4, 0], [-0.28, 1], [0.24, 2], [0.36, 3]]) { tg.rrect(x * u - u * 0.04, -u * 0.5, u * 0.08, u * 0.5, 4, { fill: S(k % 2 ? '#7A4A2E' : '#8A5A3A'), lw, seed: seed + k }); tg.rrect(x * u - u * 0.05, -u * 0.05, u * 0.1, u * 0.05, 2, { fill: S('#3A2A22'), lw: lw * 0.8, seed: seed + 4 + k }); }
+      tg.line([[-u * 0.5, -u * 0.78], [-u * 0.62, -u * 0.6], [-u * 0.6 + Math.sin(t * 1.3) * u * 0.03, -u * 0.38]], { lw: lw * 5, seed: seed + 8, stroke: S('#3A2A22') });
+      tg.ellipse(0, -u * 0.68 * (1 + br * 0.5), u * 0.55, u * 0.22, { fill: S('#8A5A3A'), lw, seed: seed + 9 });
+      tg.poly([[u * 0.3, -u * 0.8], [u * 0.52, -u * 1.15], [u * 0.66, -u * 1.08], [u * 0.5, -u * 0.62]], { fill: S('#8A5A3A'), lw, seed: seed + 10 });
+      tg.line([[u * 0.36, -u * 0.86], [u * 0.52, -u * 1.16]], { lw: lw * 4, seed: seed + 11, stroke: S('#3A2A22') });
+      tg.ellipse(u * 0.68, -u * 1.08, u * 0.18, u * 0.08, { fill: S('#8A5A3A'), lw, seed: seed + 12 });
+      tg.poly([[u * 0.56, -u * 1.15], [u * 0.58, -u * 1.26], [u * 0.63, -u * 1.15]], { fill: S('#8A5A3A'), lw, seed: seed + 13, step: 6 });
+      eye(u * 0.64, -u * 1.11, u * 0.018);
+    } else if (kind === 'dragon') {
+      // ドラゴン：空中で羽ばたく（人物より奥・大きい）
+      const u = h0 * 0.9, fy = -h0 * 1.05 + Math.sin(t * 1.1) * h0 * 0.04, flap = Math.sin(t * 2.2);
+      c.translate(0, fy);
+      const body = S('#4E8A5A'), dark = S('#3A6A44');
+      tg.poly([[-u * 0.1, -u * 0.05], [-u * 0.55, -u * 0.35 - flap * u * 0.25], [-u * 0.42, -u * 0.05 - flap * u * 0.1], [-u * 0.3, 0]], { fill: dark, lw, seed: seed + 1, step: 14 });
+      tg.line([[-u * 0.35, u * 0.05], [-u * 0.6, u * 0.12], [-u * 0.8, u * 0.02 + Math.sin(t * 1.6) * u * 0.05]], { lw: lw * 6, seed: seed + 2, stroke: body });
+      tg.poly([[-u * 0.8, u * 0.02], [-u * 0.92, -u * 0.04], [-u * 0.88, u * 0.08]], { fill: body, lw, seed: seed + 3, step: 8 });
+      tg.ellipse(0, 0, u * 0.38, u * 0.15, { fill: body, lw, seed: seed + 4, hatch: { gap: 8, angle: 1.2 } });
+      tg.ellipse(u * 0.02, u * 0.06, u * 0.28, u * 0.07, { fill: S('#D8C88A'), stroke: null, seed: seed + 5 });
+      for (const [x, k] of [[-0.15, 0], [0.18, 1]]) tg.line([[x * u, u * 0.1], [x * u + u * 0.04, u * 0.22], [x * u + u * 0.08, u * 0.24]], { lw: lw * 3, seed: seed + 6 + k, stroke: body });
+      tg.line([[u * 0.3, -u * 0.05], [u * 0.42, -u * 0.22], [u * 0.5, -u * 0.3]], { lw: lw * 7, seed: seed + 8, stroke: body });
+      tg.ellipse(u * 0.56, -u * 0.32, u * 0.12, u * 0.08, { fill: body, lw, seed: seed + 9 });
+      tg.ellipse(u * 0.66, -u * 0.3, u * 0.07, u * 0.05, { fill: body, lw, seed: seed + 10 });
+      for (const k of [0, 1]) tg.poly([[u * (0.5 + k * 0.04), -u * 0.38], [u * (0.44 + k * 0.04), -u * 0.5], [u * (0.55 + k * 0.04), -u * 0.39]], { fill: S('#E8E0C4'), lw: lw * 0.8, seed: seed + 11 + k, step: 6 });
+      tg.ellipse(u * 0.58, -u * 0.34, u * 0.02, u * 0.025, { fill: '#F2D06A', lw: lw * 0.5, seed: seed + 13 });
+      tg.poly([[u * 0.1, -u * 0.08], [u * 0.45, -u * 0.55 - flap * u * 0.3], [u * 0.3, -u * 0.12 - flap * u * 0.08], [u * 0.2, -u * 0.02]], { fill: body, lw, seed: seed + 14, step: 14 });
+      for (let k = 0; k < 4; k++) tg.poly([[-u * 0.25 + k * u * 0.12, -u * 0.13], [-u * 0.2 + k * u * 0.12, -u * 0.22], [-u * 0.15 + k * u * 0.12, -u * 0.13]], { fill: dark, lw: lw * 0.7, seed: seed + 20 + k, step: 6 });
+    } else if (kind === 'monster') {
+      // モンスター：形の定まらない黒い影。輪郭がゆらぎ、目だけが光る
+      const u = h0 * 0.8; shadow(u * 0.5);
+      const pts = [], n = 28;
+      for (let k = 0; k < n; k++) { const a = Math.PI * 2 * k / n, wob = 1 + 0.12 * Math.sin(a * 3 + t * 1.7) + 0.08 * Math.sin(a * 5 - t * 2.3); const rx = u * 0.42 * wob, ry = u * 0.48 * wob; let y = -u * 0.48 + Math.sin(a) * ry; if (y > 0) y = Math.sin(k * 1.7 + t * 3) * u * 0.03; pts.push([Math.cos(a) * rx, y]); }
+      tg.shape(pts, { fill: S('#2A2236'), lw: lw * 1.2, seed: seed + 1, alpha: 0.94, hatch: { gap: 9, angle: 0.9, color: 'rgba(120,100,160,.25)' } });
+      const blink = (t % 3.7) < 0.12;
+      for (const [x, y, r] of [[-0.12, -0.6, 0.06], [0.12, -0.62, 0.07], [0.0, -0.45, 0.045]]) { if (!blink) tg.ellipse(x * u, y * u, r * u, r * u * 0.7, { fill: '#F2D06A', lw: lw * 0.6, seed: seed + 5 + x * 10 }); glow(tg, x * u, y * u, r * u * 3, 'rgba(242,208,106,0.25)'); }
+    }
+    c.restore();
   }
 
   /* ================= 吹き出し ================= */
@@ -1389,7 +1494,7 @@
     if (w.fog > 0) { c.save(); const g = c.createLinearGradient(0, L.H, 0, 0); g.addColorStop(0, `rgba(228,230,234,${0.8 * w.fog})`); g.addColorStop(0.55, `rgba(222,226,232,${0.4 * w.fog})`); g.addColorStop(1, `rgba(222,226,232,${0.15 * w.fog})`); c.fillStyle = g; c.fillRect(0, 0, L.W, L.H); c.restore(); }
   }
 
-  const Draw = { layout, background, person, figures, placement, headOf, bubble, bubbleLayout, emotion, weather, costume, mix, shader, LOCATIONS: Object.keys(BG), EMOTIONS: Object.keys(EMO), COSTUME };
+  const Draw = { layout, background, person, figures, placement, headOf, bubble, bubbleLayout, emotion, weather, costume, mix, shader, LOCATIONS: Object.keys(BG), EMOTIONS: Object.keys(EMO), COSTUME, ANIMALS };
   if (typeof module !== 'undefined' && module.exports) module.exports = Draw;
   root.Draw = Draw;
 })(typeof window !== 'undefined' ? window : globalThis);
