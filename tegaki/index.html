@@ -3035,7 +3035,8 @@ JV.App = {
     JV.Stage.init();
     JV.HomeScene.init();
     this.applySettings();
-    this.fetchPublicStatus();
+    // 一般公開中かどうか。分かるまで（最長3秒）作品判定を待つ：公開中なら最初から本物の Jev で判定する
+    this.publicReady = this.fetchPublicStatus();
     JV.Debug.set('assets', '描画: 手描き（tegaki.js・canvas）');
     this.renderSamples();
     this.renderRecent();
@@ -3193,7 +3194,8 @@ JV.App = {
     const doc = this.doc;
     this.work = { era: 'modern', eraOk: false, narration: 'third', protagonist: 'unknown' };
     this.eraRetry = { tries: 0, from: 0, busy: false };
-    this.workReady = this.hashReady
+    const statusKnown = Promise.race([this.publicReady || Promise.resolve(), JV.util.sleep(3000).catch(() => {})]);
+    this.workReady = Promise.all([this.hashReady, statusKnown])
       .then(() => JV.Judge.work(doc))
       .then((w) => {
         if (this.doc !== doc) return;

@@ -79,6 +79,21 @@ await page.waitForTimeout(300);
 w = await page.evaluate(() => ({ era: JV.App.work.era, ok: JV.App.work.eraOk, tries: JV.App.eraRetry.tries }));
 check(w.era === 'fantasy' && w.ok === true && w.tries === 0, `決まっていれば判定し直さない (${w.era}, ${w.tries}回)`);
 
+console.log('一般公開中は最初から本物の Jev');
+// 公開状況が分かる前に作品を開いても、作品判定は公開状況が分かるのを待ってから始まる
+const route = await page.evaluate(async () => {
+  const seen = [];
+  const base = JV.Adapters.mock;
+  JV.Judge.adapter = () => ({ name: 'probe', async judge(st, q, o) { if (q.protagonist) seen.push(JV.Settings.route()); return base.judge(st, q, o); } });
+  JV.Settings.set('route', 'mock'); JV.Settings.set('routeChosen', false);
+  JV.App.publicRelay = null;
+  JV.App.publicReady = new Promise((r) => setTimeout(() => { JV.App.publicRelay = { open: true, reason: 'open', until: '2026-11-30' }; r(); }, 600));
+  JV.App.openText('公開の試験\n\n' + '　王国の魔法使いが呪文を唱えた。\n'.repeat(40), 'pub.txt');
+  await new Promise((r) => setTimeout(r, 1500));
+  return seen;
+});
+check(route[0] === 'relay', `公開状況を待ってから作品判定する（${route[0]}）`);
+
 check(app.errors.length === 0, `コンソールエラーなし ${app.errors.join(' / ')}`);
 await app.close();
 done();
