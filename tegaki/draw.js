@@ -123,7 +123,7 @@
     }
   }
 
-  /* ---------------- 場所（16種＋無地） ---------------- */
+  /* ---------------- 場所（28種＋無地） ---------------- */
   const BG = {
     none(tg, L, s, t) { tg.background(s.time === 'night' ? '#2B2F55' : '#F2EADB'); },
 
@@ -410,8 +410,288 @@
       tg.poly([[-40, gy + 20 * U], [L.W * 0.3, gy - 80 * U], [L.W * 0.65, gy - 30 * U], [L.W + 40, gy - 110 * U], [L.W + 40, L.H + 40], [-40, L.H + 40]], { fill: C('#1E2A3A'), lw: 5 * U, seed: 1032, hatch: { gap: 14, color: 'rgba(255,255,255,.04)' } });
     },
   };
+
+  /* ---------------- 足した場所（13種）。時代で作りを変えるものもある ---------------- */
+  const JP = (era) => era === 'modern' || era === 'present';
+  // 本棚（列ごとに色の違う背表紙）
+  function shelf(tg, L, x, top, w, h, C, seed) {
+    const U = L.U, rows = Math.max(2, Math.round(h / (100 * U)));
+    tg.rrect(x, top, w, h, 4, { fill: C('#7A5638'), lw: 5 * U, seed });
+    for (let r = 0; r < rows; r++) {
+      const ry = top + (r + 1) * h / rows;
+      tg.line([[x, ry], [x + w, ry]], { lw: 4 * U, seed: seed + 1 + r });
+      const n = Math.max(3, Math.floor(w / (34 * U)));
+      for (let k = 0; k < n; k++) { const bh = h / rows - 14 * U - hash(seed, r, k) * 18 * U; tg.rrect(x + 8 * U + k * (w - 16 * U) / n, ry - bh - 4 * U, (w - 16 * U) / n - 6 * U, bh, 2, { fill: C(['#B5485A', '#3F7A8A', '#C9A24B', '#5A6A3A', '#6A4A8A'][(r * 3 + k) % 5]), lw: 2.5 * U, seed: seed + 10 + r * 9 + k, second: false }); }
+    }
+  }
+  function torch(tg, L, x, y, t, seed) {
+    const U = L.U, f = Math.sin(t * 9 + seed) * 6 * U;
+    tg.rrect(x - 6 * U, y, 12 * U, 60 * U, 3, { fill: '#5A3E2A', lw: 3 * U, seed });
+    tg.poly([[x - 14 * U, y], [x, y - 40 * U - f], [x + 14 * U, y]], { fill: '#F2A040', lw: 3 * U, seed: seed + 1 });
+    glow(tg, x, y - 14 * U, 180 * U, 'rgba(255,160,70,0.35)');
+  }
+  function bush(tg, L, x, y, s, C, seed) { tg.ellipse(x, y, 70 * s, 40 * s, { fill: C('#4E8A50'), lw: 4, seed, hatch: { gap: 9 } }); }
+
+  Object.assign(BG, {
+    bedroom(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.7;
+      if (s.era === 'modern') {
+        // 和室に布団と行灯
+        wallFill(tg, L, C('#EADCBF'), fy, 1100);
+        tg.rrect(L.W * 0.08, fy - 400 * U, L.W * 0.36, 400 * U, 2, { fill: s.time === 'night' ? C('#E8DDC0') : '#FBF6EA', lw: 6 * U, seed: 1101 });
+        for (let k = 1; k < 4; k++) tg.line([[L.W * (0.08 + 0.09 * k), fy - 400 * U], [L.W * (0.08 + 0.09 * k), fy]], { lw: 3 * U, seed: 1102 + k });
+        ground(tg, L, fy, C('#C9C27A'), 1106, { gap: 7, angle: 0.02, color: 'rgba(90,90,30,.18)' });
+        tg.rrect(L.W * 0.5, fy + 40 * U, L.W * 0.38, 120 * U, 18, { fill: C('#F2EEE4'), lw: 5 * U, seed: 1107 });
+        tg.rrect(L.W * 0.56, fy + 50 * U, L.W * 0.32, 104 * U, 18, { fill: C('#B5485A'), lw: 5 * U, seed: 1108, hatch: { gap: 12 } });
+        tg.ellipse(L.W * 0.53, fy + 90 * U, 40 * U, 22 * U, { fill: C('#F8F4EA'), lw: 4 * U, seed: 1109 });
+        const ax = L.W * 0.9; tg.rrect(ax - 30 * U, fy - 40 * U, 60 * U, 90 * U, 4, { fill: s.time === 'night' ? '#FFD58A' : C('#F4EEDC'), lw: 4 * U, seed: 1110 });
+        if (s.time === 'night' || s.time === 'evening') glow(tg, ax, fy, 260 * U, 'rgba(255,200,120,0.35)');
+        return;
+      }
+      wallFill(tg, L, C(s.era === 'present' ? '#DCE2E6' : '#D8C4A8'), fy, 1100);
+      windowFrame(tg, L, s.time, t, L.W * 0.1, fy - 430 * U, 240 * U, 260 * U, C, 1111);
+      ground(tg, L, fy, C('#9A6A44'), 1115, { gap: 40, angle: 0, color: 'rgba(60,30,10,.25)' });
+      const bx = L.W * 0.5, bw = L.W * 0.4;
+      tg.rrect(bx, fy - 210 * U, 30 * U, 260 * U, 6, { fill: C('#7A5638'), lw: 5 * U, seed: 1116 });
+      tg.rrect(bx, fy - 60 * U, bw, 110 * U, 10, { fill: C('#F2EEE4'), lw: 5 * U, seed: 1117 });
+      tg.rrect(bx + bw * 0.25, fy - 70 * U, bw * 0.75, 120 * U, 10, { fill: C(s.era === 'fantasy' ? '#6A5AA8' : '#5B7FA6'), lw: 5 * U, seed: 1118, hatch: { gap: 12 } });
+      tg.ellipse(bx + 80 * U, fy - 70 * U, 50 * U, 24 * U, { fill: C('#FFFFFF'), lw: 4 * U, seed: 1119 });
+      const nx = L.W * 0.36; tg.rrect(nx, fy - 120 * U, 90 * U, 120 * U, 4, { fill: C('#8A6444'), lw: 4 * U, seed: 1120 });
+      tg.poly([[nx + 20 * U, fy - 190 * U], [nx + 70 * U, fy - 190 * U], [nx + 85 * U, fy - 140 * U], [nx + 5 * U, fy - 140 * U]], { fill: s.time === 'night' ? '#FFD58A' : C('#F4E2B8'), lw: 3 * U, seed: 1121 });
+      if (s.time === 'night') glow(tg, nx + 45 * U, fy - 160 * U, 240 * U, 'rgba(255,210,130,0.35)');
+    },
+
+    library(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C('#CDB894'), fy, 1200);
+      const n = Math.max(3, Math.round(L.W / (330 * U)));
+      for (let k = 0; k < n; k++) shelf(tg, L, k * L.W / n + 20 * U, fy - 560 * U, L.W / n - 40 * U, 560 * U, C, 1201 + k * 80);
+      ground(tg, L, fy, C('#8A5A3A'), 1290, { gap: 40, angle: 0, color: 'rgba(60,30,10,.25)' });
+      tg.rrect(L.W * 0.3, fy + 30 * U, L.W * 0.4, 30 * U, 4, { fill: C('#6A4A32'), lw: 5 * U, seed: 1291 });
+      for (const k of [0.33, 0.67]) tg.line([[L.W * k, fy + 60 * U], [L.W * k, fy + 150 * U]], { lw: 6 * U, seed: 1292 + k * 10 });
+      const lx = L.W * 0.5; tg.rrect(lx - 22 * U, fy - 10 * U, 44 * U, 40 * U, 6, { fill: C('#3F7A4A'), lw: 3 * U, seed: 1295 });
+      glow(tg, lx, fy, 200 * U, 'rgba(255,220,140,0.3)');
+    },
+
+    office(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.7, pres = s.era === 'present';
+      wallFill(tg, L, C(pres ? '#E2E4E2' : '#D6C6A6'), fy, 1300);
+      const wx = L.W * 0.08, ww = L.W * 0.5;
+      windowFrame(tg, L, s.time, t, wx, fy - 440 * U, ww, 280 * U, C, 1301, { cross: false });
+      if (pres) for (let k = 1; k < 8; k++) tg.line([[wx, fy - 440 * U + k * 35 * U], [wx + ww, fy - 440 * U + k * 35 * U]], { lw: 2 * U, seed: 1302 + k, stroke: 'rgba(80,80,90,.45)' });
+      ground(tg, L, fy, C(pres ? '#8A8E96' : '#7A5A3E'), 1310, { gap: 40, angle: 0, color: 'rgba(0,0,0,.15)' });
+      for (let k = 0; k < 2; k++) {
+        const dx = L.W * (0.12 + k * 0.5), dw = L.W * 0.32;
+        tg.rrect(dx, fy - 10 * U, dw, 26 * U, 3, { fill: C(pres ? '#C8CCD2' : '#7A5638'), lw: 5 * U, seed: 1311 + k });
+        tg.rrect(dx + 10 * U, fy + 16 * U, dw - 20 * U, 90 * U, 3, { fill: C(pres ? '#B0B6BE' : '#6A4A32'), lw: 4 * U, seed: 1313 + k });
+        if (pres) { tg.rrect(dx + dw * 0.3, fy - 110 * U, dw * 0.4, 90 * U, 4, { fill: '#2A2E38', lw: 4 * U, seed: 1315 + k }); tg.rrect(dx + dw * 0.33, fy - 102 * U, dw * 0.34, 74 * U, 2, { fill: s.time === 'night' ? '#9AD0F0' : '#6A90B0', lw: 2 * U, seed: 1317 + k }); }
+        else { tg.rrect(dx + dw * 0.2, fy - 30 * U, dw * 0.3, 20 * U, 2, { fill: C('#F4EEDC'), lw: 3 * U, seed: 1315 + k }); tg.rrect(dx + dw * 0.7, fy - 80 * U, 12 * U, 70 * U, 3, { fill: C('#C9A24B'), lw: 3 * U, seed: 1317 + k }); }
+      }
+      tg.rrect(L.W * 0.7, fy - 470 * U, 120 * U, 90 * U, 4, { fill: C('#F4EEDC'), lw: 4 * U, seed: 1320 });
+      tg.ellipse(L.W * 0.7 + 60 * U, fy - 425 * U, 34 * U, 34 * U, { fill: C('#FFFFFF'), lw: 3 * U, seed: 1321 });
+    },
+
+    hospital(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.7;
+      wallFill(tg, L, C('#D4E6DC'), fy, 1400);
+      windowFrame(tg, L, s.time, t, L.W * 0.62, fy - 430 * U, 260 * U, 260 * U, C, 1401);
+      ground(tg, L, fy, C('#C8CCC4'), 1405, { gap: 50, angle: 0, color: 'rgba(0,0,0,.08)' });
+      // カーテン
+      const cx = L.W * 0.08; tg.line([[cx - 20 * U, fy - 520 * U], [cx + L.W * 0.3, fy - 520 * U]], { lw: 5 * U, seed: 1406 });
+      tg.poly([[cx, fy - 515 * U], [cx + L.W * 0.18, fy - 515 * U], [cx + L.W * 0.17, fy], [cx - 10 * U, fy]], { fill: C('#EAF0F2'), lw: 4 * U, seed: 1407, hatch: { gap: 18, angle: 1.55, color: 'rgba(80,110,130,.25)' } });
+      // ベッド
+      const bx = L.W * 0.3, bw = L.W * 0.36;
+      tg.rrect(bx, fy - 40 * U, bw, 90 * U, 8, { fill: C('#FFFFFF'), lw: 5 * U, seed: 1408 });
+      tg.rrect(bx + bw * 0.3, fy - 50 * U, bw * 0.7, 100 * U, 8, { fill: C('#BFD8E8'), lw: 5 * U, seed: 1409 });
+      tg.line([[bx, fy - 150 * U], [bx, fy + 90 * U]], { lw: 8 * U, seed: 1410, stroke: C('#9AA4AC') });
+      tg.line([[bx + bw, fy - 80 * U], [bx + bw, fy + 90 * U]], { lw: 8 * U, seed: 1411, stroke: C('#9AA4AC') });
+      // 点滴
+      const ix = bx - 60 * U; tg.line([[ix, fy - 300 * U], [ix, fy + 80 * U]], { lw: 4 * U, seed: 1412, stroke: C('#9AA4AC') });
+      tg.rrect(ix - 20 * U, fy - 300 * U, 40 * U, 60 * U, 8, { fill: 'rgba(220,240,255,.8)', lw: 3 * U, seed: 1413 });
+    },
+
+    shrine(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.66;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 2 });
+      for (const [x, sc] of [[0.06, 1.4], [0.94, 1.5]]) tree(tg, L, L.W * x, gy + 10 * U, sc * U, C, t, 1500 + x * 100, 'pine');
+      // 本堂
+      const hx = L.W * 0.5, hw = L.W * 0.4;
+      tg.rrect(hx, gy - 220 * U, hw, 230 * U, 3, { fill: C('#8A5A3A'), lw: 5 * U, seed: 1501, hatch: { gap: 14, angle: 1.55, color: 'rgba(0,0,0,.12)' } });
+      tg.poly([[hx - 60 * U, gy - 200 * U], [hx + hw / 2, gy - 340 * U], [hx + hw + 60 * U, gy - 200 * U]], { fill: C('#4A4A52'), lw: 5 * U, seed: 1502, hatch: { gap: 8, angle: 0.15 } });
+      tg.rrect(hx + hw * 0.3, gy - 150 * U, hw * 0.4, 150 * U, 2, { fill: C('#3A2A22'), lw: 4 * U, seed: 1503 });
+      tg.ellipse(hx + hw / 2, gy - 190 * U, 26 * U, 26 * U, { fill: C('#E8C66A'), lw: 3 * U, seed: 1504 });
+      ground(tg, L, gy, C('#D8D0BE'), 1505, { gap: 9, angle: 0.3, color: 'rgba(90,80,60,.15)' });
+      // 鳥居
+      const tx = L.W * 0.22, tw = L.W * 0.2, red = C('#C8402E');
+      for (const k of [0, 1]) tg.rrect(tx + k * tw - 14 * U, gy - 330 * U, 28 * U, 400 * U, 4, { fill: red, lw: 5 * U, seed: 1506 + k });
+      tg.poly([[tx - 60 * U, gy - 350 * U], [tx + tw + 60 * U, gy - 350 * U], [tx + tw + 70 * U, gy - 380 * U], [tx - 70 * U, gy - 380 * U]], { fill: C('#2A2320'), lw: 4 * U, seed: 1508 });
+      tg.rrect(tx - 40 * U, gy - 350 * U, tw + 80 * U, 30 * U, 3, { fill: red, lw: 4 * U, seed: 1509 });
+      tg.rrect(tx - 20 * U, gy - 285 * U, tw + 40 * U, 22 * U, 3, { fill: red, lw: 4 * U, seed: 1510 });
+      // 石灯籠
+      const lx = L.W * 0.47; tg.rrect(lx - 14 * U, gy - 60 * U, 28 * U, 120 * U, 3, { fill: C('#A8A49A'), lw: 4 * U, seed: 1511 }); tg.rrect(lx - 34 * U, gy - 110 * U, 68 * U, 50 * U, 4, { fill: C('#B8B4AA'), lw: 4 * U, seed: 1512 }); tg.poly([[lx - 50 * U, gy - 110 * U], [lx, gy - 150 * U], [lx + 50 * U, gy - 110 * U]], { fill: C('#9A968C'), lw: 4 * U, seed: 1513 });
+      if (s.time === 'night' || s.time === 'evening') glow(tg, lx, gy - 85 * U, 140 * U, 'rgba(255,190,110,0.4)');
+    },
+
+    church(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C('#C8BCA8'), fy, 1600);
+      const c = tg.ctx; c.save(); c.globalAlpha = 0.3; for (let y = 40 * U; y < fy; y += 60 * U) tg.line([[0, y], [L.W, y]], { lw: 3 * U, seed: 1601 + y, stroke: C('#8A7E6A'), amp: 0.6 }); c.restore();
+      // ステンドグラスの窓
+      const n = 3;
+      for (let k = 0; k < n; k++) {
+        const wx = L.W * (0.18 + k * 0.32) - 60 * U, wy = fy - 520 * U, ww = 120 * U, wh = 300 * U;
+        tg.shape([[wx, wy + wh], [wx, wy + 60 * U], [wx + ww * 0.15, wy + 15 * U], [wx + ww / 2, wy], [wx + ww * 0.85, wy + 15 * U], [wx + ww, wy + 60 * U], [wx + ww, wy + wh]], { fill: s.time === 'night' ? '#2A3270' : '#F2E2A8', lw: 5 * U, seed: 1610 + k });
+        const cols = ['#C8402E', '#3A6AB0', '#E8C04A', '#4A9A5A'];
+        for (let r = 0; r < 4; r++) for (let q = 0; q < 2; q++) tg.rrect(wx + 10 * U + q * (ww - 20 * U) / 2, wy + 70 * U + r * 55 * U, (ww - 30 * U) / 2, 48 * U, 2, { fill: C(cols[(r + q + k) % 4]), lw: 2.5 * U, seed: 1620 + k * 10 + r * 2 + q, alpha: s.time === 'night' ? 0.5 : 0.85, second: false });
+        if (s.time !== 'night') glow(tg, wx + ww / 2, wy + wh / 2, 200 * U, 'rgba(255,230,170,0.22)');
+      }
+      ground(tg, L, fy, C('#9A8A72'), 1650, { gap: 50, angle: 0, color: 'rgba(0,0,0,.1)' });
+      // 祭壇と十字架
+      const ax = L.W * 0.5;
+      tg.rrect(ax - 120 * U, fy - 90 * U, 240 * U, 90 * U, 3, { fill: C('#F2EEE4'), lw: 5 * U, seed: 1651 });
+      tg.rrect(ax - 10 * U, fy - 260 * U, 20 * U, 150 * U, 2, { fill: C('#C9A24B'), lw: 4 * U, seed: 1652 });
+      tg.rrect(ax - 50 * U, fy - 220 * U, 100 * U, 20 * U, 2, { fill: C('#C9A24B'), lw: 4 * U, seed: 1653 });
+      for (const sd of [-1, 1]) { tg.rrect(ax + sd * 90 * U - 6 * U, fy - 130 * U, 12 * U, 40 * U, 2, { fill: '#F8F2E0', lw: 2 * U, seed: 1654 + sd }); glow(tg, ax + sd * 90 * U, fy - 136 * U, 60 * U, 'rgba(255,200,110,0.4)'); }
+      // 長椅子
+      for (let k = 0; k < 2; k++) for (const sd of [-1, 1]) tg.rrect(ax + sd * (180 + k * 0) * U - (sd < 0 ? L.W * 0.35 : 0), fy + 50 * U + k * 90 * U, L.W * 0.35 - 180 * U, 40 * U, 4, { fill: C('#7A5638'), lw: 5 * U, seed: 1660 + k * 2 + sd });
+    },
+
+    castle(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C('#A8A094'), fy, 1700);
+      for (let r = 0; r * 70 * U < fy; r++) for (let k = -1; k * 140 * U < L.W; k++) tg.rrect(k * 140 * U + (r % 2) * 70 * U, r * 70 * U, 140 * U, 70 * U, 2, { lw: 2 * U, seed: 1701 + r * 31 + k, stroke: 'rgba(60,50,40,.35)', second: false, amp: 0.8 });
+      // 旗
+      for (const x of [0.2, 0.8]) tg.poly([[L.W * x - 60 * U, fy - 560 * U], [L.W * x + 60 * U, fy - 560 * U], [L.W * x + 60 * U, fy - 300 * U], [L.W * x, fy - 340 * U], [L.W * x - 60 * U, fy - 300 * U]], { fill: C(s.era === 'fantasy' ? '#3A5A8A' : '#9A2E2E'), lw: 5 * U, seed: 1790 + x * 10, hatch: { gap: 12, angle: 1.55, color: 'rgba(0,0,0,.2)' } });
+      for (const x of [0.2, 0.8]) tg.star(L.W * x, fy - 460 * U, 30 * U, { fill: C('#E8C66A'), lw: 3 * U, seed: 1795 + x * 10 });
+      // 柱
+      for (const x of [0.06, 0.94]) tg.rrect(L.W * x - 40 * U, 0, 80 * U, fy, 4, { fill: C('#C8C0B4'), lw: 5 * U, seed: 1797 + x * 10, hatch: { gap: 16, angle: 1.57, color: 'rgba(0,0,0,.1)' } });
+      ground(tg, L, fy, C('#8A847A'), 1799, { gap: 60, angle: 0, color: 'rgba(0,0,0,.1)' });
+      // 玉座と赤い絨毯
+      const ax = L.W * 0.5;
+      tg.poly([[ax - 90 * U, fy], [ax + 90 * U, fy], [ax + 220 * U, L.H + 10], [ax - 220 * U, L.H + 10]], { fill: C('#A8323A'), lw: 5 * U, seed: 1800 });
+      tg.rrect(ax - 80 * U, fy - 320 * U, 160 * U, 260 * U, 30, { fill: C('#9A2E3A'), lw: 5 * U, seed: 1801 });
+      tg.rrect(ax - 100 * U, fy - 110 * U, 200 * U, 110 * U, 8, { fill: C('#C9A24B'), lw: 5 * U, seed: 1802 });
+      tg.star(ax, fy - 330 * U, 30 * U, { fill: C('#E8C66A'), lw: 3 * U, seed: 1803 });
+      if (s.era === 'fantasy' || s.time === 'night') for (const x of [0.33, 0.67]) torch(tg, L, L.W * x, fy - 300 * U, t, 1810 + x * 10);
+    },
+
+    park(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.64;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      tree(tg, L, L.W * 0.12, gy + 30 * U, 1.5 * U, C, t, 1900);
+      tree(tg, L, L.W * 0.9, gy + 20 * U, 1.3 * U, C, t, 1905);
+      ground(tg, L, gy, C('#8CC07A'), 1910, { gap: 16, angle: -0.2 });
+      tg.poly([[L.W * 0.42, gy], [L.W * 0.58, gy], [L.W * 0.8, L.H + 10], [L.W * 0.2, L.H + 10]], { fill: C('#D8C49A'), lw: 4 * U, seed: 1911 });
+      if (s.era === 'western') {
+        // 噴水
+        const fx = L.W * 0.5, fy2 = gy + 40 * U;
+        tg.ellipse(fx, fy2, 170 * U, 40 * U, { fill: C('#B8B4AA'), lw: 5 * U, seed: 1912 });
+        tg.ellipse(fx, fy2 - 6 * U, 140 * U, 28 * U, { fill: C('#7AB8D8'), lw: 3 * U, seed: 1913 });
+        tg.rrect(fx - 16 * U, fy2 - 120 * U, 32 * U, 110 * U, 4, { fill: C('#B8B4AA'), lw: 4 * U, seed: 1914 });
+        for (const sd of [-1, 1]) tg.line([[fx, fy2 - 120 * U], [fx + sd * 50 * U, fy2 - 160 * U - Math.sin(t * 4) * 6 * U], [fx + sd * 100 * U, fy2 - 30 * U]], { lw: 4 * U, seed: 1915 + sd, stroke: '#CFEAF6' });
+      } else {
+        // すべり台とブランコ
+        const sx = L.W * 0.66;
+        tg.line([[sx, gy + 60 * U], [sx, gy - 140 * U]], { lw: 8 * U, seed: 1916, stroke: C('#D0503A') });
+        tg.poly([[sx, gy - 140 * U], [sx + 30 * U, gy - 140 * U], [sx + 200 * U, gy + 50 * U], [sx + 170 * U, gy + 60 * U]], { fill: C('#E8B04A'), lw: 4 * U, seed: 1917 });
+        const bx = L.W * 0.26;
+        tg.line([[bx, gy + 40 * U], [bx + 40 * U, gy - 160 * U], [bx + 200 * U, gy - 160 * U], [bx + 240 * U, gy + 40 * U]], { lw: 7 * U, seed: 1918, stroke: C('#4A7AB0') });
+        for (const k of [0, 1]) { const sw = Math.sin(t * 1.6 + k) * 14 * U, x0 = bx + 80 * U + k * 80 * U; tg.line([[x0, gy - 160 * U], [x0 + sw, gy - 20 * U]], { lw: 3 * U, seed: 1919 + k }); tg.rrect(x0 + sw - 20 * U, gy - 22 * U, 40 * U, 10 * U, 2, { fill: C('#8A6444'), lw: 3 * U, seed: 1921 + k }); }
+      }
+      // ベンチ
+      const bx = L.W * 0.06; tg.rrect(bx, gy + 90 * U, 200 * U, 18 * U, 3, { fill: C('#8A6444'), lw: 4 * U, seed: 1923 }); tg.rrect(bx, gy + 40 * U, 200 * U, 18 * U, 3, { fill: C('#8A6444'), lw: 4 * U, seed: 1924 });
+      for (const k of [0.1, 0.9]) tg.line([[bx + 200 * U * k, gy + 108 * U], [bx + 200 * U * k, gy + 150 * U]], { lw: 5 * U, seed: 1925 + k * 10 });
+    },
+
+    rooftop(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.7;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      for (let k = 0; k < 6; k++) { const bw = (120 + hash(k, 41) * 120) * U, bh = (80 + hash(k, 42) * 160) * U, bx = k * L.W / 6 + hash(k, 43) * 40 * U; tg.rrect(bx, gy - bh, bw, bh + 10, 2, { fill: C('#9AA4B4'), lw: 3 * U, seed: 2000 + k, alpha: 0.7, second: false }); }
+      ground(tg, L, gy, C('#B8B8B4'), 2010, { gap: 60, angle: 0, color: 'rgba(0,0,0,.1)' });
+      // 給水塔
+      const wx = L.W * 0.8; tg.rrect(wx, gy - 240 * U, 160 * U, 150 * U, 20, { fill: C('#C8CCD0'), lw: 5 * U, seed: 2011 }); for (const k of [0.15, 0.85]) tg.line([[wx + 160 * U * k, gy - 90 * U], [wx + 160 * U * k, gy + 10 * U]], { lw: 6 * U, seed: 2012 + k * 10 });
+      // フェンス
+      const top = gy - 160 * U, c = tg.ctx; c.save(); c.globalAlpha = 0.75;
+      for (let x = 0; x <= L.W; x += 46 * U) { tg.line([[x, top], [x + 46 * U, gy]], { lw: 2 * U, seed: 2020 + x, stroke: C('#5A6A6A'), amp: 0.5 }); tg.line([[x + 46 * U, top], [x, gy]], { lw: 2 * U, seed: 2021 + x, stroke: C('#5A6A6A'), amp: 0.5 }); }
+      c.restore();
+      tg.line([[-10, top], [L.W + 10, top]], { lw: 7 * U, seed: 2030, stroke: C('#5A6A6A') });
+      for (let x = 0; x <= L.W; x += 230 * U) tg.line([[x, top], [x, gy]], { lw: 7 * U, seed: 2031 + x, stroke: C('#5A6A6A') });
+    },
+
+    ship(tg, L, s, t, C) {
+      const U = L.U, hz = L.H * 0.5, dy = L.H * 0.7, bob = Math.sin(t * 1.3) * 6 * U;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, hz, { clouds: 3 });
+      tg.rrect(-40, hz, L.W + 80, dy - hz + 40, 0, { fill: C('#3E7AA8'), lw: 4 * U, seed: 2100, hatch: { gap: 14, angle: 0.05, color: 'rgba(255,255,255,.18)' } });
+      for (let k = 0; k < 5; k++) { const x = ((k * 330 + t * 30) % (L.W + 200)) - 100; tg.line([[x, hz + 40 * U + k * 22 * U], [x + 40 * U, hz + 30 * U + k * 22 * U], [x + 80 * U, hz + 40 * U + k * 22 * U]], { lw: 3 * U, seed: 2101 + k, stroke: '#FFFFFF' }); }
+      const c = tg.ctx; c.save(); c.translate(0, bob);
+      // 帆柱と帆（近代以前は帆、現代は煙突）
+      if (s.era === 'present' || s.era === 'modern') {
+        const fx = L.W * 0.72; tg.rrect(fx, dy - 300 * U, 110 * U, 300 * U, 6, { fill: C('#2A2E3A'), lw: 5 * U, seed: 2110 }); tg.rrect(fx, dy - 300 * U, 110 * U, 40 * U, 4, { fill: C('#C8402E'), lw: 4 * U, seed: 2111 });
+        for (let k = 0; k < 3; k++) { const a = (t * 0.4 + k / 3) % 1; tg.ellipse(fx + 55 * U + a * 80 * U, dy - 330 * U - a * 160 * U, (24 + a * 30) * U, (18 + a * 22) * U, { fill: 'rgba(200,200,210,.7)', stroke: null, seed: 2112 + k }); }
+      } else {
+        const mx = L.W * 0.62;
+        tg.rrect(mx - 14 * U, -20, 28 * U, dy + 20, 6, { fill: C('#7A5638'), lw: 5 * U, seed: 2110 });
+        tg.poly([[mx + 20 * U, 40 * U], [mx + 300 * U + Math.sin(t) * 8 * U, 90 * U], [mx + 340 * U, dy - 170 * U], [mx + 20 * U, dy - 150 * U]], { fill: C('#F4EEDC'), lw: 5 * U, seed: 2111, hatch: { gap: 18, angle: 1.4, color: 'rgba(120,100,70,.18)' } });
+        tg.line([[mx, 20 * U], [L.W + 20, dy - 40 * U]], { lw: 3 * U, seed: 2112 });
+      }
+      // 甲板と手すり
+      ground(tg, L, dy, C('#B88A5A'), 2120, { gap: 40, angle: 0, color: 'rgba(80,50,20,.3)' });
+      tg.line([[-10, dy - 90 * U], [L.W + 10, dy - 90 * U]], { lw: 8 * U, seed: 2121, stroke: C('#7A5638') });
+      for (let x = 20 * U; x < L.W; x += 90 * U) tg.line([[x, dy - 90 * U], [x, dy]], { lw: 6 * U, seed: 2122 + x, stroke: C('#7A5638') });
+      c.restore();
+    },
+
+    snowmountain(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.66;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 2 });
+      tg.poly([[-40, gy], [L.W * 0.25, gy - 380 * U], [L.W * 0.5, gy - 120 * U], [L.W * 0.72, gy - 460 * U], [L.W + 40, gy - 100 * U], [L.W + 40, gy + 10], [-40, gy + 10]], { fill: C('#8A9AB4'), lw: 5 * U, seed: 2200, hatch: { gap: 12, angle: 0.8, color: 'rgba(40,50,80,.15)' } });
+      tg.poly([[L.W * 0.25 - 80 * U, gy - 300 * U], [L.W * 0.25, gy - 380 * U], [L.W * 0.25 + 70 * U, gy - 310 * U], [L.W * 0.25 + 20 * U, gy - 280 * U]], { fill: C('#FFFFFF'), lw: 4 * U, seed: 2201 });
+      tg.poly([[L.W * 0.72 - 100 * U, gy - 360 * U], [L.W * 0.72, gy - 460 * U], [L.W * 0.72 + 110 * U, gy - 350 * U], [L.W * 0.72 + 10 * U, gy - 330 * U]], { fill: C('#FFFFFF'), lw: 4 * U, seed: 2202 });
+      ground(tg, L, gy, C('#F4F6FA'), 2203, { gap: 22, angle: -0.15, color: 'rgba(120,140,180,.18)' });
+      for (const [x, sc] of [[0.08, 1.2], [0.2, 0.9], [0.86, 1.3]]) { tree(tg, L, L.W * x, gy + 40 * U, sc * U, (h) => mix(C(h), '#E8EEF6', 0.25), t, 2210 + x * 100, 'pine'); tg.ellipse(L.W * x, gy - 230 * sc * U, 50 * sc * U, 16 * sc * U, { fill: '#FFFFFF', lw: 3 * U, seed: 2220 + x * 100 }); }
+    },
+
+    graveyard(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.64;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      ground(tg, L, gy, C(JP(s.era) ? '#C8C0AA' : '#6A8A5A'), 2300, { gap: 14, angle: -0.25 });
+      if (JP(s.era)) {
+        tree(tg, L, L.W * 0.9, gy + 10 * U, 1.4 * U, C, t, 2301, 'pine');
+        for (let k = 0; k < 5; k++) {
+          const x = L.W * (0.1 + k * 0.17), y = gy + (k % 2) * 60 * U + 40 * U, sc = k % 2 ? 1 : 0.85;
+          tg.rrect(x - 70 * sc * U, y - 20 * U, 140 * sc * U, 40 * U, 3, { fill: C('#9A968C'), lw: 4 * U, seed: 2310 + k * 4 });
+          tg.rrect(x - 40 * sc * U, y - 190 * sc * U, 80 * sc * U, 175 * sc * U, 4, { fill: C('#B8B4AA'), lw: 4 * U, seed: 2311 + k * 4, hatch: { gap: 14, angle: 1.55, color: 'rgba(0,0,0,.08)' } });
+          for (const d of [-1, 0, 1]) tg.rrect(x + 80 * sc * U + d * 14 * U, y - 200 * sc * U + Math.abs(d) * 10 * U, 10 * U, 190 * sc * U, 2, { fill: C('#D8CCAA'), lw: 2 * U, seed: 2312 + k * 4 + d, second: false });
+        }
+      } else {
+        // 枯れ木と十字架・丸い墓石
+        const tx = L.W * 0.88; tg.line([[tx, gy + 40 * U], [tx, gy - 260 * U]], { lw: 18 * U, seed: 2301, stroke: C('#4A3A32') });
+        for (const [a, l] of [[-0.8, 120], [-2.3, 140], [-1.4, 90]]) tg.line([[tx, gy - 180 * U], [tx + Math.cos(a) * l * U, gy - 180 * U + Math.sin(a) * l * U]], { lw: 8 * U, seed: 2302 + a * 10, stroke: C('#4A3A32') });
+        for (let k = 0; k < 5; k++) {
+          const x = L.W * (0.1 + k * 0.17), y = gy + (k % 2) * 60 * U + 40 * U, sc = k % 2 ? 1 : 0.85;
+          if (k % 2) { tg.rrect(x - 10 * U, y - 170 * sc * U, 20 * U, 170 * sc * U, 2, { fill: C('#A8A49A'), lw: 4 * U, seed: 2310 + k }); tg.rrect(x - 50 * U, y - 130 * sc * U, 100 * U, 20 * U, 2, { fill: C('#A8A49A'), lw: 4 * U, seed: 2320 + k }); }
+          else tg.rrect(x - 50 * sc * U, y - 140 * sc * U, 100 * sc * U, 140 * sc * U, 45 * sc * U, { fill: C('#A8A49A'), lw: 4 * U, seed: 2310 + k, hatch: { gap: 14, angle: 1.55, color: 'rgba(0,0,0,.08)' } });
+        }
+      }
+    },
+
+    cave(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      tg.background(C('#2E2A2E'));
+      // 奥の明かり（出口）
+      tg.ellipse(L.W * 0.7, fy - 180 * U, 170 * U, 200 * U, { fill: s.time === 'night' ? '#2A3270' : C('#E8E0C4'), lw: 5 * U, seed: 2400 });
+      if (s.time !== 'night') glow(tg, L.W * 0.7, fy - 180 * U, 420 * U, 'rgba(255,240,200,0.25)');
+      // 岩肌
+      tg.poly([[-40, -40], [L.W * 0.5, -40], [L.W * 0.42, 140 * U], [L.W * 0.22, 260 * U], [L.W * 0.12, fy - 120 * U], [-40, fy]], { fill: C('#4A4448'), lw: 5 * U, seed: 2401, hatch: { gap: 12, angle: 0.9, color: 'rgba(0,0,0,.25)' } });
+      tg.poly([[L.W * 0.5, -40], [L.W + 40, -40], [L.W + 40, fy], [L.W * 0.92, fy - 160 * U], [L.W * 0.86, 160 * U]], { fill: C('#524A4E'), lw: 5 * U, seed: 2402, hatch: { gap: 12, angle: -0.9, color: 'rgba(0,0,0,.25)' } });
+      for (let k = 0; k < 7; k++) { const x = L.W * (0.15 + k * 0.12), l = (50 + hash(k, 51) * 90) * U; tg.poly([[x - 22 * U, -10], [x, l], [x + 22 * U, -10]], { fill: C('#5A5258'), lw: 4 * U, seed: 2410 + k }); }
+      ground(tg, L, fy, C('#3E383C'), 2420, { gap: 16, angle: -0.3, color: 'rgba(0,0,0,.3)' });
+      for (let k = 0; k < 4; k++) tg.ellipse(L.W * (0.1 + k * 0.27), fy + (30 + k % 2 * 50) * U, (50 + k * 8) * U, 26 * U, { fill: C('#5A5258'), lw: 4 * U, seed: 2430 + k });
+      torch(tg, L, L.W * 0.2, fy - 260 * U, t, 2440);
+    },
+  });
   BG.unknown = BG.none;
-  const OUTDOOR_SKY = new Set(['station', 'street', 'alley', 'garden', 'field', 'forest', 'river', 'seaside', 'nightsky']);
+  const OUTDOOR_SKY = new Set(['station', 'street', 'alley', 'garden', 'field', 'forest', 'river', 'seaside', 'nightsky', 'shrine', 'park', 'rooftop', 'ship', 'snowmountain', 'graveyard']);
 
   function background(tg, L, s, t) {
     const time = s.location === 'nightsky' && s.time !== 'evening' ? 'night' : (s.time || 'day');

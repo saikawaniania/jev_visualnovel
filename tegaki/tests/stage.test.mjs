@@ -13,10 +13,15 @@ const q = await page.evaluate(() => {
     keys: Object.keys(s), locN: Object.keys(s.location.criteria).length, mood: s.mood.criteria.length,
     sub: Object.keys(s.figure_sub.criteria), work: Object.keys(w), asciiLoc: Object.keys(a.location.criteria).slice(0, 3),
     types: Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.type])),
+    byEra: Object.fromEntries(['modern', 'present', 'western', 'fantasy'].map((era) => [era, Object.keys(JV.Schema.toQuestions('scene', { era, asciiKeys: true }).location.criteria)])),
+    alt: [['station', 'fantasy'], ['castle', 'present'], ['shrine', 'western'], ['washitsu', 'fantasy'], ['church', 'modern']].map(([id, era]) => JV.Schema.locFor(id, era)),
   };
 });
 check(q.keys.join() === 'scene_changed,location,time,weather,people,figure_main,figure_sub,pose,mood,inner,emotion', `場面判定の質問キー ${q.keys}`);
-check(q.locN === 16 && q.mood === 3, `location 16択・mood 3段階 (${q.locN}, ${q.mood})`);
+check(q.locN === 29 && q.mood === 3, `location 29択（時代で絞る前）・mood 3段階 (${q.locN}, ${q.mood})`);
+check(!q.byEra.fantasy.includes('station') && !q.byEra.fantasy.includes('shrine') && q.byEra.fantasy.includes('castle') && q.byEra.fantasy.includes('cave'), `ファンタジーでは駅・神社を聞かず、城・洞窟を聞く (${q.byEra.fantasy.length}択)`);
+check(!q.byEra.modern.includes('castle') && q.byEra.modern.includes('shrine') && !q.byEra.present.includes('church') && q.byEra.present.includes('rooftop'), `日本の時代では城・教会を聞かず、神社を聞く (近代 ${q.byEra.modern.length}択・現代 ${q.byEra.present.length}択)`);
+check(q.alt.join() === 'street,yoshitsu,garden,washitsu,yoshitsu', `その時代にない場所は近い場所に読み替える (${q.alt})`);
 check(q.types.scene_changed === 'noul' && q.types.mood === 'score' && q.types.location === 'choice', '型は Noul / Score / Choice');
 check(q.types.inner === 'noul' && q.types.emotion === 'choice', '心象：inner は Noul・emotion は Choice');
 check(q.sub.join() === '成人男性,成人女性,少年,少女,老人（男）,老人（女）,不明', 'figure_sub は figure_main と同じ選択肢');

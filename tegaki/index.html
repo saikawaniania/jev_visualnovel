@@ -1534,9 +1534,9 @@ JV.Schema = {
         { id: 'yoshitsu', label: '洋室', desc: '洋風の部屋。応接間・書斎・寝室・ホテルの部屋・ソファ・暖炉・椅子とテーブル' },
         { id: 'kitchen', label: '台所', desc: '台所・勝手・土間の炊事場・厨房。竈・流し・鍋' },
         { id: 'genkan', label: '廊下・玄関', desc: '廊下・玄関・上がり框・戸口・階段・渡り廊下' },
-        { id: 'classroom', label: '教室', desc: '学校の教室・講堂・黒板・教壇' },
+        { id: 'classroom', label: '教室', desc: '学校の教室・講堂・黒板・教壇', eras: ['modern', 'present', 'western'] },
         { id: 'shop', label: '店・酒場', desc: '商店・喫茶店・カフェ・料理屋・酒場・バー・宿の帳場。店内に居る場合' },
-        { id: 'station', label: '駅・車内', desc: '駅・停車場・プラットフォーム・待合室・汽車や電車やバスの車内' },
+        { id: 'station', label: '駅・車内', desc: '駅・停車場・プラットフォーム・待合室・汽車や電車やバスの車内', eras: ['modern', 'present', 'western'] },
         { id: 'street', label: '街路', desc: '町の通り・大通り・往来・街角・広場・商店街の路上' },
         { id: 'alley', label: '路地', desc: '狭い路地・横丁・裏通り' },
         { id: 'garden', label: '庭', desc: '家の庭・中庭・庭園・縁側から見える庭（庭に出ている場合）' },
@@ -1545,6 +1545,19 @@ JV.Schema = {
         { id: 'river', label: '川・水辺', desc: '川・川岸・土手（川沿い）・橋・池・湖のほとり' },
         { id: 'seaside', label: '海辺', desc: '海・浜辺・砂浜・港・岬・波打ち際' },
         { id: 'nightsky', label: '夜空の見える屋外', desc: '星空・月夜を見上げる屋上・丘・野外など、夜空そのものが主役の屋外' },
+        { id: 'bedroom', label: '寝室', desc: '寝る部屋・寝床・布団・ベッド・病床ではない自分の寝間' },
+        { id: 'library', label: '図書館・書庫', desc: '図書館・書庫・書架の並ぶ部屋・資料室' },
+        { id: 'office', label: '事務所・会社', desc: '会社・事務所・役所・机の並ぶ職場・社長室', eras: ['modern', 'present'] },
+        { id: 'hospital', label: '病院', desc: '病院・診療所・医院・病室・診察室・病床', eras: ['modern', 'present', 'western'] },
+        { id: 'shrine', label: '寺・神社', desc: '寺・神社・境内・鳥居・本堂・お堂・参道', eras: ['modern', 'present'] },
+        { id: 'church', label: '教会', desc: '教会・礼拝堂・聖堂・修道院・祭壇', eras: ['western', 'fantasy'] },
+        { id: 'castle', label: '城・宮殿', desc: '城・宮殿・王宮・玉座の間・広間・城壁', eras: ['western', 'fantasy'] },
+        { id: 'park', label: '公園', desc: '公園・遊園地・ベンチや噴水のある広場・遊具', eras: ['present', 'western'] },
+        { id: 'rooftop', label: '屋上', desc: '建物の屋上・フェンスのある屋上（夜空が主役なら「夜空の見える屋外」）', eras: ['present'] },
+        { id: 'ship', label: '船の上', desc: '船の甲板・船室・渡し舟・帆船・客船の上' },
+        { id: 'snowmountain', label: '雪山', desc: '雪の積もった山・雪原・吹雪の峠・氷の地' },
+        { id: 'graveyard', label: '墓地', desc: '墓地・墓場・霊園・墓前・墓石' },
+        { id: 'cave', label: '洞窟', desc: '洞窟・洞穴・地下道・坑道・地下迷宮' },
         { id: 'unknown', label: '不明', desc: '場所の手がかりがない。会話だけが続き場所が書かれていない場合もこれ' },
       ],
     },
@@ -1672,7 +1685,15 @@ JV.Schema = {
   byId(group, key, id) { return this.options(group, key).find((o) => o.id === id); },
 
   /** TypeSafe 形式の questions を組み立てる（asciiKeys なら criteria のキーを英字IDにする） */
-  toQuestions(group, { asciiKeys = false, lines = [] } = {}) {
+  /** その時代で使える選択肢か（eras のない選択肢はどの時代でも使う） */
+  allowed(o, era) { return !era || !o.eras || o.eras.includes(era); },
+  /** その時代にない場所を、近い場所に読み替える（前の時代で判定した結果が残っていたとき） */
+  LOC_ALT: { classroom: 'yoshitsu', station: 'street', office: 'yoshitsu', hospital: 'bedroom', shrine: 'garden', church: 'castle', castle: 'yoshitsu', park: 'garden', rooftop: 'street' },
+  locFor(id, era) {
+    for (let k = 0; k < 4 && id; k++) { const o = this.byId('scene', 'location', id); if (!o || this.allowed(o, era)) return id; id = this.LOC_ALT[id]; }
+    return id || 'unknown';
+  },
+  toQuestions(group, { asciiKeys = false, lines = [], era = null } = {}) {
     const out = {};
     const items = lines.map((l) => (typeof l === 'string' ? { text: l, before: '', after: '' } : l));
     for (const [key, q] of Object.entries(this[group])) {
@@ -1696,8 +1717,9 @@ JV.Schema = {
       if (q.type === 'noul') out[key] = { type: 'noul', instructions: q.instructions };
       else if (q.type === 'score') out[key] = { type: 'score', instructions: q.instructions, criteria: q.levels.slice() };
       else {
+        // 選択肢は作品の時代で絞る（その時代にない場所は聞かない）
         const criteria = {};
-        for (const o of this.options(group, key)) criteria[asciiKeys ? o.id : o.label] = asciiKeys ? `${o.label}：${o.desc}` : o.desc;
+        for (const o of this.options(group, key)) if (this.allowed(o, era)) criteria[asciiKeys ? o.id : o.label] = asciiKeys ? `${o.label}：${o.desc}` : o.desc;
         out[key] = { type: 'choice', instructions: q.instructions, criteria };
       }
     }
@@ -1728,6 +1750,19 @@ JV.Adapters.mock = {
     },
     location: {
       '和室': ['座敷', '畳', '襖', '障子', '床の間', '掛軸', '茶の間', '箪笥', '抽斗'],
+      '寝室': ['寝室', '寝床', '布団', '寝台', '枕元', '寝間'],
+      '図書館・書庫': ['図書館', '書庫', '書架', '司書', '蔵書'],
+      '事務所・会社': ['会社', '事務所', '役所', 'オフィス', '社長', '上司', '同僚'],
+      '病院': ['病院', '病室', '医者', '看護', '診察', '入院', '医院'],
+      '寺・神社': ['寺', '神社', '境内', '鳥居', '本堂', '参道', '住職', '神主'],
+      '教会': ['教会', '礼拝堂', '聖堂', '神父', '牧師', '祭壇', '修道'],
+      '城・宮殿': ['城', '宮殿', '王宮', '玉座', '王座', '謁見', '城壁'],
+      '公園': ['公園', 'ベンチ', '噴水', 'ブランコ', '滑り台', '遊園地'],
+      '屋上': ['屋上', 'フェンス'],
+      '船の上': ['船', '甲板', '帆', '船室', '舟', '船長'],
+      '雪山': ['雪山', '雪原', '吹雪', '雪崩', '氷河'],
+      '墓地': ['墓', '墓地', '墓場', '霊園', '墓石', '卒塔婆'],
+      '洞窟': ['洞窟', '洞穴', '坑道', '地下道', '鍾乳', '迷宮'],
       '洋室': ['応接間', '書斎', 'ソファ', '暖炉', '洋間', '寝台', 'ベッド'],
       '台所': ['台所', '竈', 'かまど', '流し', '厨房', 'お勝手'],
       '廊下・玄関': ['廊下', '玄関', '上がり框', '戸口', '階段'],
@@ -2426,7 +2461,7 @@ JV.Director = {
     const L = a.location, sc = a.scene_changed ? a.scene_changed.p : 0;
     if (!L) why.push('背景：判定なし');
     else if (L.id === 'unknown') why.push('背景維持（場所が不明）');
-    else if (L.id !== s.location) {
+    else if ((() => { const id = JV.Schema.locFor(L.id, era); if (id !== L.id) { L.id = id; L.label = (JV.Schema.byId('scene', 'location', id) || {}).label || id; } return id; })() !== s.location) {
       const byScene = sc >= th && L.confidence >= 0.25;
       const byLoc = L.confidence >= locTh;
       const first = !s.location && (L.confidence >= 0.3 || sc >= th);
@@ -2627,7 +2662,7 @@ JV.Judge = {
     const a = this.adapter();
     return `${a.cacheKey ? a.cacheKey() : a.name}${JV.Settings.get('asciiKeys') ? ':id' : ''}@s${this.SCHEMA_VERSION}`;
   },
-  questions(group, lines = []) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys'), lines }); },
+  questions(group, lines = [], era = null) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys'), lines, era }); },
   key(unit) { return `${this.hashKey}|${this.adapterKey()}|${unit}`; },
 
   setWork(hash) {
@@ -2645,7 +2680,7 @@ JV.Judge = {
 
   /** 場面判定（キャッシュ付き）。同じ単位が判定中ならその結果を待つ */
   async scene(doc, unit, work, prevScene) {
-    const k = this.key(unit);
+    const k = `${this.key(unit)}|${work.era || 'modern'}`; // 時代で場所の選択肢が変わるので、時代ごとに覚える
     const hit = this.memory.get(k);
     if (hit) { this.stats.memoryHits++; return { ...hit, cached: 'memory' }; }
     const running = this.inflight.get(k);
@@ -2746,7 +2781,7 @@ JV.Judge = {
   async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
     const state = this.sceneState(doc, unit, work, prevScene);
     const t0 = performance.now();
-    const answers = await this.adapter().judge(state, this.questions('scene', JV.Parser.quoteItems(doc.units[unit].text)), { signal });
+    const answers = await this.adapter().judge(state, this.questions('scene', JV.Parser.quoteItems(doc.units[unit].text), work.era), { signal });
     return { answers, ms: Math.round(performance.now() - t0), source: this.adapter().name };
   },
 
