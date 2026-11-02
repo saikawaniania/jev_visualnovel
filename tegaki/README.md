@@ -84,10 +84,11 @@ Anthropic 公式の frontend-design スキル（`.claude/skills/frontend-design/
 
 ```bash
 cd tegaki
-for t in step1 step2 step4 step5 reading stage; do node tests/$t.test.mjs; done
+for t in step1 step2 step4 step5 reading stage era; do node tests/$t.test.mjs; done
 ```
 
 `stage.test.mjs` は、場所 16 種 × 時間帯 × 時代と、人物 7 種 × 姿勢 × 表情 × 時代のすべてを実際に描いてエラーがないことと、サンプルを通して読んだときの演出（暗転・場所替え・雪・群衆・心象・表情）を確かめる。
+`era.test.mjs` は、最初の判定で時代が決まらなかった作品を、読み進めてから判定し直す流れ（Jev には新しく読んだ部分の 1,500 字まで、決まらなければキーワードで）を確かめる。
 
 ## ライセンス
 

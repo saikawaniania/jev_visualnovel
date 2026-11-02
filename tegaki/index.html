@@ -1918,6 +1918,8 @@ JV.Adapters.mock = {
         const probabilities = {};
         for (const l of labels) probabilities[back(l)] = r.probabilities[l];
         answers[key] = { type: 'choice', choice: back(r.choice), probabilities, confidence: r.confidence };
+        // 時代の手がかりが一つもなければ「判定できなかった」扱い（あとで読み進めてから判定し直す）
+        if (key === 'era' && !Object.values(scores).some((v) => v > 0)) answers[key].confidence = 0.3;
       } else if (q.type === 'score') {
         const n = q.criteria.length;
         const raw = K.mood.slice(0, n).map((kws) => this.count(cur, kws) + 0.35 * this.count(ctx, kws));
@@ -2676,8 +2678,40 @@ JV.Judge = {
     const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
     if (saved && saved.work) return { ...saved.work, cached: true };
     const w = await this.judgeWork(doc);
-    if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit: -1, work: { era: w.era, narration: w.narration, protagonist: w.protagonist, raw: w.raw }, at: Date.now() });
+    this.saveWork(w);
     return w;
+  },
+  saveWork(w) {
+    if (this.hashKey) JV.Store.put('judgments', { k: this.key('work'), hash: this.hashKey, unit: -1, work: { era: w.era, eraOk: w.eraOk, narration: w.narration, protagonist: w.protagonist, raw: w.raw }, at: Date.now() });
+  },
+
+  /* 時代の判定し直し：最初の判定で時代が決まらなかった（失敗・確信度が低い）ときだけ、読み進めてからもう一度 */
+  ERA_MIN: 0.5,          // これ未満の確信度は「決まらなかった」
+  ERA_RETRY_CHARS: 1500, // 前の判定からこれだけ読み進めたら判定し直す
+  ERA_RETRY_MAX: 3,      // 判定し直す回数の上限
+  ERA_JEV_CHARS: 1500,   // Jev に送るのは新しく読んだ部分の最後のこれだけ（最初の判定の約半分。重くしない）
+  eraOf(answers) {
+    const a = answers && answers.era;
+    const o = a && (JV.Schema.byLabel('work', 'era', a.choice) || JV.Schema.byId('work', 'era', a.choice));
+    return o && Number(a.confidence ?? 1) >= this.ERA_MIN ? o.id : null;
+  },
+  /**
+   * 読んだところまで（from〜to 字）で時代だけを判定し直す。
+   * Jev が使えるなら新しく読んだ部分の最後の 1,500 字だけを送る。Jev で決まらなければ、
+   * 読んだところ全部をモック（キーワード）で調べる（API を使わないので重くない）。決まらなければ null
+   */
+  async rejudgeEra(doc, from, to, { signal } = {}) {
+    const all = doc.units.map((u) => u.text).join('\n');
+    const q = { era: this.questions('work').era };
+    const adapter = this.adapter();
+    if (adapter !== JV.Adapters.mock) {
+      try {
+        const era = this.eraOf(await adapter.judge(all.slice(Math.max(from, to - this.ERA_JEV_CHARS), to), q, { signal }));
+        if (era) return { era, source: 'Jev' };
+      } catch (err) { if (JV.util.isAbort(err)) throw err; }
+    }
+    const era = this.eraOf(await JV.Adapters.mock.judge(all.slice(0, to), q, { signal }));
+    return era ? { era, source: 'キーワード' } : null;
   },
 
   /** 作品判定：冒頭約3,000字 */
@@ -2689,7 +2723,8 @@ JV.Judge = {
       const o = a && (JV.Schema.byLabel('work', key, a.choice) || JV.Schema.byId('work', key, a.choice));
       return o ? o.id : fallback;
     };
-    return { era: pick('era', 'modern'), narration: pick('narration', 'third'), protagonist: pick('protagonist', 'unknown'), raw: answers };
+    const era = this.eraOf(answers);
+    return { era: era || 'modern', eraOk: !!era, eraTo: head.length, narration: pick('narration', 'third'), protagonist: pick('protagonist', 'unknown'), raw: answers };
   },
 
   /** 場面判定の state：時代・前の場面・直前2段落・現段落 */
@@ -3056,19 +3091,46 @@ JV.App = {
   /** 作品を開いたときに1回だけ：時代・語りの人称・主人公 */
   startWorkJudgment() {
     const doc = this.doc;
-    this.work = { era: 'modern', narration: 'third', protagonist: 'unknown' };
+    this.work = { era: 'modern', eraOk: false, narration: 'third', protagonist: 'unknown' };
+    this.eraRetry = { tries: 0, from: 0, busy: false };
     this.workReady = this.hashReady
       .then(() => JV.Judge.work(doc))
       .then((w) => {
         if (this.doc !== doc) return;
         this.work = w;
+        // 前の版で保存した判定には eraOk がない：そのときは決まったものとして扱う
+        if (w.eraOk === undefined) w.eraOk = true;
+        this.eraRetry.from = Math.min(w.eraTo || 3000, 3000);
         const pro = JV.Schema.byId('work', 'protagonist', this.protagonist());
-        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}`);
+        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}${w.eraOk ? '' : '・時代は未確定（読み進めてから判定し直す）'}`);
       })
       .catch((err) => {
         if (this.handlePublicClosed(err)) return;
-        JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱う）`);
+        JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱い、時代は読み進めてから判定し直す）`);
       });
+  },
+
+  /** 時代が決まっていなければ、読み進めた量に応じて裏で判定し直す。決まったら絵を組み立て直す */
+  maybeRetryEra(unit) {
+    const doc = this.doc, R = this.eraRetry, J = JV.Judge;
+    if (!doc || !R || this.work.eraOk || R.busy || R.tries >= J.ERA_RETRY_MAX) return;
+    let to = 0;
+    for (let i = 0; i <= unit && i < doc.units.length; i++) to += doc.units[i].text.length + 1;
+    if (to < R.from + J.ERA_RETRY_CHARS) return;
+    R.busy = true; R.tries++;
+    const from = R.from;
+    J.rejudgeEra(doc, from, to).then((r) => {
+      if (this.doc !== doc) return;
+      R.from = to;
+      if (!r) { JV.Debug.set('work', `時代の判定し直し ${R.tries}回目：まだ決まらない（${JV.Schema.byId('work', 'era', this.work.era).label}のまま）`); return; }
+      const changed = r.era !== this.work.era;
+      this.work = { ...this.work, era: r.era, eraOk: true };
+      J.saveWork(this.work);
+      JV.Debug.set('work', `時代を判定し直した（${r.source}・${R.tries}回目）：${JV.Schema.byId('work', 'era', r.era).label}`);
+      if (changed) { JV.Director.reset(); JV.Stage.reset(); JV.StopDetector.fire(true); }
+    }).catch((err) => {
+      if (!JV.util.isAbort(err)) JV.Debug.set('work', `時代の判定し直しエラー: ${err.message || err}`);
+    }).finally(() => { R.busy = false; });
   },
 
   /**
@@ -3083,6 +3145,7 @@ JV.App = {
     try {
       await this.workReady;
       if (this.doc !== doc) return;
+      this.maybeRetryEra(unit);
       const r = await JV.Judge.scene(doc, unit, this.work, JV.Director.scene);
       if (this.doc !== doc || this.currentUnit !== unit || !JV.Settings.get('effects')) return;
       this.present(unit, r);
