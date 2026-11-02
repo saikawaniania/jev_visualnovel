@@ -715,6 +715,11 @@
       oldman: () => ({ kind: 'robe', top: '#6E6458', accent: '#4A4038', hair: 'bald', cane: true }),
       oldwoman: () => ({ kind: 'robe', top: '#6E5E72', accent: '#4A3E48', hair: 'bun', grey: true }),
       unknown: (k) => ({ kind: 'robe', top: pick(['#6A7078', '#7A6A5A'], k), accent: '#4A4A4A', hair: 'short' }),
+      middleman: (k) => ({ kind: 'robe', top: pick(['#5A4A3A', '#3E4A5E'], k), accent: '#3A3030', hair: 'short', beard: 'mustache' }),
+      middlewoman: (k) => ({ kind: 'robe', top: pick(['#6A5A7A', '#7A5A4A'], k), accent: '#E8D8B0', hair: 'bun', apron: '#F4EEDC' }),
+      baby: (k) => ({ kind: 'robe', top: pick(['#F2C8A0', '#C8E0A0'], k), accent: '#E07A7A', hair: 'tuft' }),
+      soldier: () => ({ kind: 'uniform', top: '#6A6440', bottom: '#5A5436', hair: 'short', hat: 'cap', hatColor: '#5A5436' }),
+      monk: () => ({ kind: 'robe', top: '#2A2A30', accent: '#C9A24B', hair: 'shaved', kesa: '#8A6A3A' }),
     },
     present: {
       man: (k) => ({ kind: 'shirt', top: pick(['#5B7FA6', '#E8E2D6', '#6A8A5A'], k), bottom: '#3B4252', hair: 'short', tie: k % 2 === 0 }),
@@ -724,6 +729,11 @@
       oldman: () => ({ kind: 'shirt', top: '#8A7A5E', bottom: '#5A5A5A', hair: 'bald', glasses: true }),
       oldwoman: () => ({ kind: 'dress', top: '#9A8AA8', bottom: '#6A5A70', length: 'ankle', hair: 'bun', grey: true, glasses: true }),
       unknown: (k) => ({ kind: 'shirt', top: pick(['#8A9099', '#A8907A'], k), bottom: '#4A4E58', hair: 'short' }),
+      middleman: (k) => ({ kind: 'shirt', top: pick(['#E8E2D6', '#C8D0DA'], k), bottom: '#3B4252', hair: 'parted', tie: true, glasses: k % 2 === 0 }),
+      middlewoman: (k) => ({ kind: 'dress', top: pick(['#C8D8C0', '#E8D0C0'], k), bottom: '#7A6A5A', length: 'ankle', hair: 'bob', apron: '#F4EEDC' }),
+      baby: (k) => ({ kind: 'shorts', top: pick(['#F5D56A', '#F5A5B5'], k), bottom: '#7AB0D0', hair: 'tuft' }),
+      soldier: () => ({ kind: 'uniform', top: '#4A5A3A', bottom: '#4A5A3A', hair: 'short', hat: 'helmet', hatColor: '#4A5A3A' }),
+      monk: () => ({ kind: 'robe', top: '#2A2A30', accent: '#C9A24B', hair: 'shaved', kesa: '#8A6A3A' }),
     },
     western: {
       man: (k) => ({ kind: 'coat', top: pick(['#2E3A4A', '#4A3A2E'], k), bottom: '#4A4038', hair: 'short', hat: k % 2 ? null : 'top', tie: true }),
@@ -733,6 +743,11 @@
       oldman: () => ({ kind: 'coat', top: '#4A4A4A', bottom: '#3A3A3A', hair: 'bald', beard: 'short', cane: true }),
       oldwoman: () => ({ kind: 'dress', top: '#5A4A5A', bottom: '#5A4A5A', length: 'gown', hair: 'bun', grey: true }),
       unknown: () => ({ kind: 'coat', top: '#5A5A62', bottom: '#3A3A42', hair: 'short' }),
+      middleman: (k) => ({ kind: 'coat', top: pick(['#4A3A2E', '#3A4A3A'], k), bottom: '#4A4038', hair: 'short', beard: 'mustache', tie: true }),
+      middlewoman: (k) => ({ kind: 'dress', top: pick(['#7A5A4A', '#4A5A7A'], k), bottom: pick(['#7A5A4A', '#4A5A7A'], k), length: 'ankle', hair: 'bun', apron: '#F4EEDC' }),
+      baby: () => ({ kind: 'dress', top: '#F4F0E8', bottom: '#F4F0E8', length: 'knee', hair: 'tuft' }),
+      soldier: () => ({ kind: 'uniform', top: '#A8323A', bottom: '#F2EEE4', hair: 'short', hat: 'cap', hatColor: '#1E2028' }),
+      monk: () => ({ kind: 'robe', top: '#2A2224', accent: '#2A2224', hair: 'short', cross: true }),
     },
     fantasy: {
       man: (k) => ({ kind: 'tunic', top: pick(['#5A7A4A', '#4A5A8A'], k), bottom: '#5A4A3A', cloak: pick(['#8A3A3A', '#3A5A3A'], k), hair: 'short' }),
@@ -742,27 +757,42 @@
       oldman: () => ({ kind: 'robe', top: '#3A4A8A', accent: '#C9A24B', hair: 'bald', beard: 'long', hat: 'wizard', cane: true }),
       oldwoman: () => ({ kind: 'robe', top: '#5A3A6A', accent: '#C9A24B', hair: 'bun', grey: true, cloak: '#3A2A4A' }),
       unknown: () => ({ kind: 'tunic', top: '#6A6A5A', bottom: '#4A4A3A', cloak: '#4A4A52', hair: 'short' }),
+      middleman: (k) => ({ kind: 'tunic', top: pick(['#7A6A4A', '#5A6A7A'], k), bottom: '#5A4A3A', hair: 'short', beard: 'mustache' }),
+      middlewoman: (k) => ({ kind: 'dress', top: pick(['#8A6A4A', '#6A7A5A'], k), bottom: pick(['#8A6A4A', '#6A7A5A'], k), length: 'ankle', hair: 'bun', apron: '#F4EEDC' }),
+      baby: () => ({ kind: 'tunic', top: '#D8C8A8', bottom: '#B8A888', hair: 'tuft' }),
+      soldier: (k) => ({ kind: 'armor', top: '#9AA0A8', bottom: '#6A6E76', cloak: pick(['#3A5A8A', '#8A3A3A'], k), hair: 'short', hat: 'helm', hatColor: '#9AA0A8' }),
+      monk: () => ({ kind: 'robe', top: '#E8E2D0', accent: '#C9A24B', hair: 'shaved', cross: true }),
     },
   };
   const HAIR = { jp: ['#2A2320', '#3B2A22', '#2E2626'], west: ['#6B4A2E', '#D9B266', '#9A4A2A', '#3B2A22'] };
   const SKIN = ['#F7D7BE', '#F2CBA9', '#EFC4A0'];
 
-  function costume(type, era, slot) {
+  // パターンB：同じ種類の人が2人並ぶときの2人目。髪型を替え、服の色を別の色に寄せる
+  const HAIR_B = { short: 'parted', parted: 'short', spiky: 'short', long: 'ponytail', ponytail: 'long', bun: 'bob', bob: 'long', pigtails: 'bob', bald: 'short', shaved: 'shaved', tuft: 'tuft' };
+  const TINT_B = ['#2E6A8A', '#8A3A4A', '#4A7A3A'];
+  function costume(type, era, slot, variant = 'A') {
     const table = COSTUME[era] || COSTUME.modern, fn = table[type] || table.unknown;
     const c = Object.assign({ skin: pick(SKIN, slot), shoes: '#4A3A32' }, fn(slot));
-    c.hairColor = c.grey || type === 'oldman' ? '#D9D6CF' : pick(era === 'western' || era === 'fantasy' ? HAIR.west : HAIR.jp, slot + (type === 'woman' ? 1 : 0));
+    const B = variant === 'B';
+    c.hairColor = c.grey || type === 'oldman' ? '#D9D6CF' : pick(era === 'western' || era === 'fantasy' ? HAIR.west : HAIR.jp, slot + (type === 'woman' || type === 'middlewoman' ? 1 : 0) + (B ? 2 : 0));
+    if (B) {
+      c.hair = HAIR_B[c.hair] || c.hair;
+      const tint = pick(TINT_B, slot + type.length);
+      for (const k of ['top', 'bottom', 'accent']) if (c[k]) c[k] = mix(c[k], tint, 0.5);
+      if (c.hat === 'top') c.hat = null;
+    }
     return c;
   }
 
   // 体の寸法（h＝身長。顔は大きめ・目は低めにして柔らかい印象に）
   function dims(type, h) {
-    const child = type === 'boy' || type === 'girl', old = type === 'oldman' || type === 'oldwoman';
-    const r = h * (child ? 0.15 : 0.122);
+    const baby = type === 'baby', child = type === 'boy' || type === 'girl' || baby, old = type === 'oldman' || type === 'oldwoman';
+    const r = h * (baby ? 0.19 : child ? 0.15 : 0.122);
     const hy = -h + r * 1.02;
     const neck = hy + r * 0.98;
     const shY = neck + h * 0.035;
-    const hipY = -h * (child ? 0.43 : 0.47);
-    const narrow = type === 'woman' || type === 'oldwoman' || type === 'girl';
+    const hipY = -h * (baby ? 0.36 : child ? 0.43 : 0.47);
+    const narrow = type === 'woman' || type === 'oldwoman' || type === 'girl' || type === 'middlewoman';
     const sw = h * (child ? 0.085 : narrow ? 0.085 : 0.1);
     return { r, hy, neck, shY, hipY, sw, child, old, limb: h * (child ? 0.05 : 0.044) };
   }
@@ -805,8 +835,34 @@
     return J;
   }
 
+  // おばけ：白い布をかぶった形でふわふわ浮く（体の関節は使わない）
+  function ghost(tg, L, o, t) {
+    const c = tg.ctx, h = o.h, lw = Math.max(2, h * 0.007), seed = 2600 + (o.slot || 0) * 300, ph = t + (o.slot || 0) * 1.7;
+    const R = h * 0.2, fl = Math.sin(ph * 1.8) * h * 0.025, top = -h * 0.95 + fl, base = -h * 0.2 + fl;
+    c.save(); if (o.alpha != null) c.globalAlpha *= o.alpha;
+    c.translate(o.x, o.y);
+    c.save(); c.fillStyle = 'rgba(20,10,20,.12)'; c.beginPath(); c.ellipse(0, 0, h * 0.1, h * 0.014, 0, 0, Math.PI * 2); c.fill(); c.restore();
+    c.scale(o.facing || 1, 1);
+    const S = o.shade || ((x) => x), pts = [];
+    for (let k = 0; k <= 12; k++) { const a = Math.PI + Math.PI * k / 12; pts.push([Math.cos(a) * R, top + R + Math.sin(a) * R]); }
+    pts.push([R * 1.05, base - h * 0.05]);
+    for (let k = 0; k <= 8; k++) { const x = lerp(R * 1.25, -R * 1.4, k / 8), wave = Math.sin(ph * 4 + k * 1.3) * h * 0.012; pts.push([x - Math.sin(ph * 2) * h * 0.02 * (k / 8), base + (k % 2 ? -h * 0.04 : 0) + wave]); }
+    pts.push([-R * 1.05, base - h * 0.05]);
+    tg.shape(pts, { fill: S('#F4F6FA'), lw: lw * 1.1, seed, alpha: 0.9 });
+    // 手（ゆらゆら）
+    for (const sd of [-1, 1]) tg.ellipse(sd * R * 1.05, top + R * 1.9 + Math.sin(ph * 3 + sd) * h * 0.01, R * 0.25, R * 0.14, { fill: S('#F4F6FA'), lw, seed: seed + 3 + sd, alpha: 0.9 });
+    const ink = '#2A2320', ey = top + R * 0.95, dx = R * 0.12;
+    const surprised = o.expr === 'surprise' || o.expr === 'anxiety';
+    for (const sd of [-1, 1]) tg.ellipse(dx + sd * R * 0.32, ey, R * 0.08, R * (surprised ? 0.18 : 0.14), { fill: ink, lw: lw * 0.5, seed: seed + 6 + sd, amp: 0.3 });
+    if (o.expr === 'joy') tg.line([[dx - R * 0.14, ey + R * 0.38], [dx, ey + R * 0.48], [dx + R * 0.14, ey + R * 0.38]], { lw: lw, seed: seed + 9, amp: 0.3, stroke: ink });
+    else tg.ellipse(dx, ey + R * 0.42, R * 0.1, R * (surprised ? 0.16 : 0.1), { fill: '#3A2A2A', lw: lw * 0.6, seed: seed + 9, amp: 0.3 });
+    for (const sd of [-1, 1]) tg.ellipse(dx + sd * R * 0.52, ey + R * 0.28, R * 0.12, R * 0.06, { fill: '#C8D8F0', stroke: null, seed: seed + 11 + sd, alpha: 0.7 });
+    c.restore();
+  }
+
   function person(tg, L, o, t) {
-    const c = tg.ctx, h = o.h, type = o.type || 'unknown', d = dims(type, h), cos = costume(type, o.era || 'modern', o.slot || 0);
+    if (o.type === 'ghost') return ghost(tg, L, o, t);
+    const c = tg.ctx, h = o.h, type = o.type || 'unknown', d = dims(type, h), cos = costume(type, o.era || 'modern', o.slot || 0, o.variant);
     const S = o.shade || ((x) => x);
     const lw = Math.max(2, h * 0.007), seed = 2000 + (o.slot || 0) * 300;
     const pose = o.pose || 'stand';
@@ -850,6 +906,10 @@
     if (J.seiza) tg.rrect(-0.1 * h, hipY - 0.02 * h, 0.24 * h, 0.13 * h, 0.05 * h, { fill: longSkirt ? top : bottom, lw, seed: seed + 16 });
     // 胴体・裾
     torso(tg, cos, d, h, J, S, lw, seed, up);
+    // 前掛け・袈裟・十字架
+    if (cos.apron && !J.chair && !J.seiza) tg.rrect(-sw * 0.7, hipY - 0.07 * h, sw * 1.4, 0.22 * h, 6, { fill: S(cos.apron), lw, seed: seed + 55 });
+    if (cos.kesa) tg.poly([[sw * 0.5, shY], [sw * 0.9, shY + 0.02 * h], [-sw * 0.6, hipY - 0.06 * h], [-sw * 0.95, hipY - 0.1 * h]], { fill: S(cos.kesa), lw, seed: seed + 56, hatch: { gap: 7, angle: 0.8 } });
+    if (cos.cross) { tg.line([[0, shY + 0.04 * h], [0, shY + 0.13 * h]], { lw: lw * 1.6, seed: seed + 57, stroke: S('#C9A24B') }); tg.line([[-0.025 * h, shY + 0.07 * h], [0.025 * h, shY + 0.07 * h]], { lw: lw * 1.6, seed: seed + 58, stroke: S('#C9A24B') }); }
     // 腕
     // 腕は太い線なので、関節の位置から描くと上端が肩の線より上に出て、肩が上がって見える。
     // 腕の長さはそのままで、腕全体を「太さの半分＋縁取り」だけ下げて、上端を肩の線にそろえる
@@ -902,14 +962,16 @@
       if (cos.ribbon) tg.poly([[-0.03 * h, shY + 0.03 * h], [0, shY + 0.045 * h], [0.03 * h, shY + 0.03 * h], [0.03 * h, shY + 0.065 * h], [0, shY + 0.05 * h], [-0.03 * h, shY + 0.065 * h]], { fill: S(cos.ribbon), lw, seed: seed + 43 });
       return;
     }
-    const coatLen = cos.kind === 'coat' && !J.chair ? -0.2 * h : cos.kind === 'tunic' && !J.chair ? hipY + 0.12 * h : hipY + 0.035 * h;
-    const fl = cos.kind === 'coat' ? 1.3 : cos.kind === 'tunic' ? 1.2 : 1.0;
+    const tun = cos.kind === 'tunic' || cos.kind === 'armor';
+    const coatLen = cos.kind === 'coat' && !J.chair ? -0.2 * h : tun && !J.chair ? hipY + 0.12 * h : hipY + 0.035 * h;
+    const fl = cos.kind === 'coat' ? 1.3 : tun ? 1.2 : 1.0;
     tg.poly([[-sw, shY], [sw, shY], [sw * 0.95, waist], [sw * fl + walkSwing * 0.5, coatLen], [-sw * fl + walkSwing * 0.5, coatLen], [-sw * 0.95, waist]], { fill: top, lw, seed: seed + 40, hatch: cos.kind === 'shirt' ? undefined : { gap: 10 } });
     if (cos.kind === 'coat') { tg.line([[0, shY + 0.02 * h], [0, coatLen]], { lw, seed: seed + 44 }); tg.poly([[-sw * 0.35, shY], [0, shY + 0.1 * h], [sw * 0.35, shY]], { fill: S('#F4EEDC'), lw, seed: seed + 45 }); }
     if (cos.kind === 'uniform') { tg.rrect(-sw * 0.35, shY - 0.012 * h, sw * 0.7, 0.03 * h, 3, { fill: top, lw, seed: seed + 45 }); for (let k = 0; k < 4; k++) tg.ellipse(0, shY + 0.04 * h + k * 0.045 * h, 0.008 * h, 0.008 * h, { fill: S('#E8C66A'), lw: lw * 0.6, seed: seed + 46 + k, amp: 0.3 }); }
     if (cos.kind === 'shirt' || cos.kind === 'shorts') tg.poly([[-sw * 0.38, shY], [0, shY + 0.04 * h], [sw * 0.38, shY], [sw * 0.2, shY + 0.015 * h], [-sw * 0.2, shY + 0.015 * h]], { fill: S('#F8F4EC'), lw, seed: seed + 45 });
     if (cos.tie) tg.poly([[-0.012 * h, shY + 0.03 * h], [0.012 * h, shY + 0.03 * h], [0.018 * h, shY + 0.12 * h], [0, shY + 0.14 * h], [-0.018 * h, shY + 0.12 * h]], { fill: S('#9A3A3A'), lw, seed: seed + 50 });
-    if (cos.kind === 'tunic') tg.rrect(-sw * 1.02, waist - 0.01 * h, sw * 2.04, 0.035 * h, 3, { fill: S('#5A3E2A'), lw, seed: seed + 51 });
+    if (cos.kind === 'tunic' || cos.kind === 'armor') tg.rrect(-sw * 1.02, waist - 0.01 * h, sw * 2.04, 0.035 * h, 3, { fill: S('#5A3E2A'), lw, seed: seed + 51 });
+    if (cos.kind === 'armor') { for (let k = 1; k < 4; k++) tg.line([[-sw * 0.9, shY + k * 0.05 * h], [sw * 0.9, shY + k * 0.05 * h]], { lw: lw * 0.8, seed: seed + 52 + k }); tg.ellipse(0, shY + 0.02 * h, sw * 0.5, 0.025 * h, { fill: S('#B8BEC6'), lw, seed: seed + 56 }); }
   }
 
   // 後ろ髪（W＝頭の横幅。大人の顔は細いので、そのぶん髪も細くする）
@@ -919,10 +981,19 @@
     if (cos.hair === 'bob') tg.rrect(-w * 1.14, hy - r * 0.6, w * 2.28, r * 1.55, r * 0.8, { fill: col, lw, seed: seed + 60, hatch: { gap: 7, angle: 1.45 } });
     if (cos.hair === 'pigtails') for (const sd of [-1, 1]) { tg.ellipse(sd * w * 1.14, hy + r * 0.45, r * 0.32, r * 0.55, { fill: col, lw, seed: seed + 61 + sd, hatch: { gap: 6, angle: 1.4 } }); }
     if (cos.hair === 'bun') tg.ellipse(-r * 0.15, hy - r * 1.0, r * 0.5, r * 0.4, { fill: col, lw, seed: seed + 64, hatch: { gap: 6 } });
+    if (cos.hair === 'ponytail') tg.poly([[-w * 0.7, hy - r * 0.6], [-w * 1.2, hy - r * 0.2], [-w * 1.25, hy + r * 1.1], [-w * 0.95, hy + r * 1.3], [-w * 0.8, hy + r * 0.3]], { fill: col, lw, seed: seed + 65, hatch: { gap: 6, angle: 1.45 }, step: 12 });
   }
   function hat(tg, cos, d, S, lw, seed) {
     const { r, hy } = d;
-    if (cos.hat === 'cap') { tg.rrect(-r * 1.0, hy - r * 1.15, r * 2.0, r * 0.6, r * 0.25, { fill: S('#2A2E3A'), lw, seed: seed + 85 }); tg.ellipse(r * 0.6, hy - r * 0.58, r * 0.6, r * 0.13, { fill: S('#1E2028'), lw, seed: seed + 86 }); tg.ellipse(0, hy - r * 0.9, r * 0.12, r * 0.1, { fill: S('#E8C66A'), lw: lw * 0.6, seed: seed + 87 }); }
+    if (cos.hat === 'helmet' || cos.hat === 'helm') {
+      // 鉄かぶと：額より上を覆う半円（騎士はとさか付き）
+      const pts = []; for (let k = 0; k <= 16; k++) { const a = Math.PI + Math.PI * k / 16; pts.push([Math.cos(a) * r * 1.02, hy - r * 0.18 + Math.sin(a) * r * 0.9]); }
+      if (cos.hat === 'helm') tg.poly([[-r * 0.1, hy - r * 1.0], [r * 0.2, hy - r * 1.55], [r * 0.9, hy - r * 1.3], [r * 0.3, hy - r * 0.95]], { fill: S('#B83A3A'), lw, seed: seed + 84, step: 10 });
+      tg.shape(pts, { fill: S(cos.hatColor || '#4A5A3A'), lw, seed: seed + 85 });
+      tg.rrect(-r * 1.1, hy - r * 0.26, r * 2.2, r * 0.16, r * 0.08, { fill: S(cos.hatColor || '#4A5A3A'), lw, seed: seed + 86 });
+      if (cos.hat === 'helm') tg.rrect(r * 0.05, hy - r * 0.2, r * 0.1, r * 0.42, 2, { fill: S(cos.hatColor), lw: lw * 0.8, seed: seed + 87 });
+    }
+    if (cos.hat === 'cap') { tg.rrect(-r * 1.0, hy - r * 1.15, r * 2.0, r * 0.6, r * 0.25, { fill: S(cos.hatColor || '#2A2E3A'), lw, seed: seed + 85 }); tg.ellipse(r * 0.6, hy - r * 0.58, r * 0.6, r * 0.13, { fill: S('#1E2028'), lw, seed: seed + 86 }); tg.ellipse(0, hy - r * 0.9, r * 0.12, r * 0.1, { fill: S('#E8C66A'), lw: lw * 0.6, seed: seed + 87 }); }
     if (cos.hat === 'top') { tg.ellipse(0, hy - r * 0.78, r * 1.3, r * 0.2, { fill: S('#22222A'), lw, seed: seed + 85 }); tg.rrect(-r * 0.78, hy - r * 1.9, r * 1.56, r * 1.12, 4, { fill: S('#22222A'), lw, seed: seed + 86 }); tg.rrect(-r * 0.78, hy - r * 1.0, r * 1.56, r * 0.18, 2, { fill: S('#7A2E2E'), lw: lw * 0.7, seed: seed + 87 }); }
     if (cos.hat === 'wizard') { tg.ellipse(0, hy - r * 0.75, r * 1.4, r * 0.24, { fill: S('#2E3A7A'), lw, seed: seed + 85 }); tg.poly([[-r * 0.95, hy - r * 0.8], [r * 0.4, hy - r * 2.9], [r * 0.95, hy - r * 0.8]], { fill: S('#2E3A7A'), lw, seed: seed + 86, step: 14 }); tg.star(0, hy - r * 1.4, r * 0.22, { fill: S('#F2D06A'), lw: lw * 0.7, seed: seed + 87 }); }
   }
@@ -940,6 +1011,7 @@
     fringe: [[0.88, 0.04], [0.76, -0.22], [0.52, -0.36], [0.3, -0.32], [0.1, -0.44], [-0.16, -0.38], [-0.42, -0.36], [-0.68, -0.2], [-0.88, 0.04]],
     fringeSoft: [[0.9, 0.1], [0.8, -0.14], [0.6, -0.22], [0.4, -0.16], [0.2, -0.25], [0, -0.18], [-0.2, -0.26], [-0.42, -0.18], [-0.62, -0.24], [-0.8, -0.12], [-0.9, 0.1]],
     fringeUp: [[0.87, 0.02], [0.72, -0.34], [0.42, -0.54], [0, -0.6], [-0.42, -0.54], [-0.72, -0.34], [-0.87, 0.02]],
+    fringeParted: [[0.88, 0.04], [0.8, -0.3], [0.56, -0.5], [0.28, -0.6], [0.02, -0.64], [-0.14, -0.5], [-0.36, -0.42], [-0.64, -0.26], [-0.88, 0.04]],
     hairCut: 0.04, hairScale: 1.05,
   };
   const CHILD = {
@@ -953,10 +1025,11 @@
     hairCut: 0.08, hairScale: 1.04,
   };
   CHILD.fringeUp = CHILD.fringeSoft;
+  CHILD.fringeParted = CHILD.fringe;
   // 女性は目だけ前の描き方（丸い目に白い光）
   const HEAD = {
-    man: ADULT, oldman: ADULT, unknown: ADULT, boy: CHILD,
-    woman: { ...ADULT, roundEyes: true }, oldwoman: { ...ADULT, roundEyes: true }, girl: { ...CHILD, roundEyes: true },
+    man: ADULT, oldman: ADULT, unknown: ADULT, boy: CHILD, middleman: ADULT, soldier: ADULT, monk: ADULT, baby: CHILD,
+    woman: { ...ADULT, roundEyes: true }, oldwoman: { ...ADULT, roundEyes: true }, girl: { ...CHILD, roundEyes: true }, middlewoman: { ...ADULT, roundEyes: true },
   };
 
   // 閉じたなめらかな曲線（Catmull-Rom）を細かい点列に
@@ -1009,6 +1082,16 @@
       const bx = B.turn * r;
       if (cos.beard === 'long') tg.poly([[bx - r * 0.6, hy + r * 0.55], [bx + r * 0.6, hy + r * 0.55], [bx + r * 0.1, hy + r * 1.9]], { fill: col, lw, seed: seed + 73, hatch: { gap: 6, angle: 1.5 } });
       else if (cos.beard === 'short') tg.ellipse(bx, hy + r * 0.84, r * 0.46, r * 0.24, { fill: col, lw, seed: seed + 73 });
+      return mustache(tg, B, cos, d, col, lw, seed);
+    }
+    if (hair === 'shaved') {
+      // 剃った頭：頭頂をうっすら青く
+      tg.shape(pts.filter((p) => p[1] < hy - r * 0.1), { fill: 'rgba(120,130,150,.22)', stroke: null, seed: seed + 74, amp: 0.4 });
+      return mustache(tg, B, cos, d, col, lw, seed);
+    }
+    if (hair === 'tuft') {
+      // 赤ん坊：頭のてっぺんにくるんと一房
+      tg.line([[r * 0.05, hy - r * 0.98], [r * 0.12, hy - r * 1.22], [-r * 0.12, hy - r * 1.25], [-r * 0.06, hy - r * 1.08], [r * 0.04, hy - r * 1.12]], { lw: lw * 1.3, seed: seed + 74, stroke: col });
       return;
     }
     // 頭頂：輪郭を少し外へ広げて、生え際より上だけを使う（後ろ → 頭頂 → 前の順）
@@ -1022,7 +1105,7 @@
       const n = 16; top = [];
       for (let k = 0; k <= n; k++) { const p = arc[Math.round(k / n * (arc.length - 1))], up = p[1] < hy - r * 0.35 && k % 2 ? 1.07 : 1; top.push([p[0] * up, cy + (p[1] - cy) * up]); }
     }
-    const F = hair === 'short' || spiky ? B.fringe : hair === 'bun' ? B.fringeUp : B.fringeSoft;
+    const F = hair === 'short' || spiky ? B.fringe : hair === 'bun' ? B.fringeUp : hair === 'parted' ? B.fringeParted : B.fringeSoft;
     const fr = F.map(([x, y], k) => [x * r, hy + (y + (spiky && k % 2 ? 0.05 : 0)) * r]);
     tg.shape([...top, ...fr], { fill: col, lw, seed: seed + 75, hatch: { gap: 6, angle: 1.3 } });
     // 顔の横に垂らす髪
@@ -1032,6 +1115,13 @@
     }
     if (hair === 'bun') tg.line([[-r * 0.6, hy - r * 1.15], [r * 0.3, hy - r * 0.85]], { lw: lw * 1.2, seed: seed + 80, stroke: S('#C9A24B') });
     if (cos.ribbon && (hair === 'pigtails' || hair === 'bob' || hair === 'long')) for (const sd of hair === 'pigtails' ? [-1, 1] : [1]) tg.poly([[sd * w * 0.85, hy - r * 0.7], [sd * w * 1.25, hy - r * 0.95], [sd * w * 1.2, hy - r * 0.45]], { fill: S(cos.ribbon), lw, seed: seed + 82 + sd, step: 10 });
+    mustache(tg, B, cos, d, col, lw, seed);
+  }
+  // 口ひげ：鼻と口の間
+  function mustache(tg, B, cos, d, col, lw, seed) {
+    if (cos.beard !== 'mustache') return;
+    const { r, hy } = d, mw = r * B.mouth.w, nx = B.turn * r + mw * 0.46, y = hy + (B.nose + B.mouth.y) / 2 * r + r * 0.01;
+    tg.shape([[nx - r * 0.22, y + r * 0.05], [nx - r * 0.1, y - r * 0.04], [nx, y - r * 0.015], [nx + r * 0.1, y - r * 0.04], [nx + r * 0.22, y + r * 0.05], [nx, y + r * 0.04]], { fill: col, lw: lw * 0.8, seed: seed + 79, amp: 0.4 });
   }
 
   function faceBase(tg, B, d, expr, mouth, t, seed, lw, cos, S, pose) {
@@ -1095,7 +1185,7 @@
   /* 人数・配置：誰をどこに、どちら向きに立たせるか（吹き出しのしっぽもこれを使う） */
   function heightOf(L, type) {
     const unit = Math.min(L.H, L.W * 1.25);
-    return unit * (type === 'boy' || type === 'girl' ? 0.44 : type === 'oldman' || type === 'oldwoman' ? 0.55 : 0.58);
+    return unit * (type === 'baby' ? 0.28 : type === 'boy' || type === 'girl' ? 0.44 : type === 'oldman' || type === 'oldwoman' ? 0.55 : type === 'ghost' ? 0.5 : 0.58);
   }
   function placement(L, f) {
     if (!f || f.layout === 'none') return [];
@@ -1130,7 +1220,9 @@
     }
     for (const p of placement(L, f)) {
       const main = p.role === 'main';
-      person(tg, L, { type: p.type, era: st.era, pose: p.pose, expr: main ? st.expr : st.subExpr || 'normal', x: p.x, y, h: p.h, facing: p.facing, slot: main ? 0 : 1, shade: S, seat }, t);
+      // 同じ種類の人が2人並ぶときは、2人目をパターンB（髪型・服の色違い）にする
+      const variant = !main && f.sub === f.main ? 'B' : 'A';
+      person(tg, L, { type: p.type, era: st.era, pose: p.pose, expr: main ? st.expr : st.subExpr || 'normal', x: p.x, y, h: p.h, facing: p.facing, slot: main ? 0 : 1, variant, shade: S, seat }, t);
     }
   }
 

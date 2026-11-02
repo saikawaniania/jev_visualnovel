@@ -24,7 +24,7 @@ check(!q.byEra.modern.includes('castle') && q.byEra.modern.includes('shrine') &&
 check(q.alt.join() === 'street,yoshitsu,garden,washitsu,yoshitsu', `その時代にない場所は近い場所に読み替える (${q.alt})`);
 check(q.types.scene_changed === 'noul' && q.types.mood === 'score' && q.types.location === 'choice', '型は Noul / Score / Choice');
 check(q.types.inner === 'noul' && q.types.emotion === 'choice', '心象：inner は Noul・emotion は Choice');
-check(q.sub.join() === '成人男性,成人女性,少年,少女,老人（男）,老人（女）,不明', 'figure_sub は figure_main と同じ選択肢');
+check(q.sub.join() === '成人男性,成人女性,少年,少女,老人（男）,老人（女）,中年男性,中年女性,幼児,兵士・騎士,僧侶・聖職者,おばけ・幽霊,不明', 'figure_sub は figure_main と同じ選択肢');
 check(q.work.join() === 'era,narration,protagonist', `作品判定の質問 (${q.work})`);
 check(q.asciiLoc.join() === 'washitsu,yoshitsu,kitchen', '英字IDの criteria も作れる');
 
@@ -189,7 +189,7 @@ const all = await page.evaluate(() => {
       try { tg.renderAt(1.2, (t) => Draw.background(tg, L, { location: loc, time, era }, t)); n++; } catch (e) { bad.push(`${era}/${loc}/${time}: ${e.message}`); }
     }
     for (const type of JV.Schema.options('scene', 'figure_main').map((o) => o.id)) for (const pose of JV.Schema.options('scene', 'pose').map((o) => o.id)) for (const expr of ['normal', ...Draw.EMOTIONS]) {
-      try { tg.renderAt(2.3, (t) => Draw.person(tg, L, { type, era, pose, expr, x: 240, y: 280, h: 200, facing: -1 }, t)); n++; } catch (e) { bad.push(`${era}/${type}/${pose}/${expr}: ${e.message}`); }
+      try { tg.renderAt(2.3, (t) => Draw.person(tg, L, { type, era, pose, expr, x: 240, y: 280, h: 200, facing: -1, variant: n % 2 ? 'B' : 'A' }, t)); n++; } catch (e) { bad.push(`${era}/${type}/${pose}/${expr}: ${e.message}`); }
     }
   }
   for (const id of Draw.EMOTIONS) { try { tg.renderAt(0.5, (t) => Draw.emotion(tg, L, id, t, 1)); n++; } catch (e) { bad.push(`emo ${id}: ${e.message}`); } }
@@ -197,6 +197,8 @@ const all = await page.evaluate(() => {
 });
 check(all.bad.length === 0 && all.n > 1000, `${all.n} 通りを描いてエラーなし ${all.bad.slice(0, 3)}`);
 check(all.missing.length === 0, `スキーマの場所はすべて描き方がある (${all.missing})`);
+const pb = await page.evaluate(() => ['man', 'woman', 'boy', 'girl', 'oldman', 'oldwoman', 'unknown'].map((type) => { const a = Draw.costume(type, 'present', 1, 'A'), b = Draw.costume(type, 'present', 1, 'B'); return a.hair !== b.hair && a.top !== b.top ? '' : type; }).filter(Boolean));
+check(pb.length === 0, `7種類のパターンBは髪型と服の色が違う (${pb})`);
 
 console.log('吹き出し（セリフ・話し手・重要度）');
 const bub = await page.evaluate(async () => {
