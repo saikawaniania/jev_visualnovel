@@ -291,6 +291,8 @@ const W = Object.fromEntries(works.map((w) => [w.label, w]));
 check(works.length === 5, `試し読みは5作品 (${works.map((w) => w.label)})`);
 check(W['終電のあとで'] && W['終電のあとで'].era === 'present' && W['終電のあとで'].chapters >= 2, `現代劇は現代日本と判定 (${JSON.stringify(W['終電のあとで'])})`);
 check(W['竜の郵便屋'] && W['竜の郵便屋'].era === 'fantasy' && W['竜の郵便屋'].chapters >= 2, `ファンタジーはファンタジーと判定 (${JSON.stringify(W['竜の郵便屋'])})`);
+check(W['洞窟の影'] && W['洞窟の影'].era === 'fantasy' && W['洞窟の影'].units >= 8, `「洞窟の影」はファンタジー・場面が細かく替わる (${JSON.stringify(W['洞窟の影'])})`);
+check(W['お寺の猫'] && W['お寺の猫'].era === 'present' && W['お寺の猫'].units >= 6, `「お寺の猫」は現代日本・場面が細かく替わる (${JSON.stringify(W['お寺の猫'])})`);
 check(works.every((w) => w.lines > 0), 'どの作品にも吹き出しにできるセリフがある');
 
 console.log('合成と演出（サンプルで通しで確認）');
