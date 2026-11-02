@@ -52,7 +52,7 @@ const defaults = await page.evaluate(() => Object.fromEntries([...document.query
 check(defaults.route === 'mock' && defaults.apiKey === '', 'APIキー・経路は未設定（モック）');
 check(defaults.model === 'jev-latest', 'モデル版 jev-latest');
 check(defaults.stopDelay === '400' && defaults.sensitivity === '0.6' && defaults.fadeScale === '1', '停止待ち 400ms・感度 普通(0.6)・フェード 1.0');
-check(defaults.displayMode === 'novel' && defaults.writingMode === 'horizontal' && defaults.fontSize === '18', 'ノベル・横書き・18px');
+check(defaults.displayMode === 'illust' && defaults.writingMode === 'horizontal' && defaults.fontSize === '18', '挿絵（絵と本文を分ける）・横書き・18px');
 check(defaults.silhouettes === true && defaults.debug === false, 'シルエット オン・デバッグ オフ');
 check(!(await page.isVisible('#settings [data-key="apiKey"]')), 'モックのときはキー欄を隠す');
 check(await page.getAttribute('#settings [data-key="route"]', 'onchange') !== null, '入力は onchange 属性');

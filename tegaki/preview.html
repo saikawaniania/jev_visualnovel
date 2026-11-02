@@ -36,19 +36,20 @@
 <script>
 (function () {
   'use strict';
-  const LOC = [['washitsu', '和室'], ['yoshitsu', '洋室'], ['kitchen', '台所'], ['genkan', '廊下・玄関'], ['classroom', '教室'], ['shop', '店・酒場'], ['station', '駅・車内'], ['street', '街路'], ['alley', '路地'], ['garden', '庭'], ['field', '田畑・野原'], ['forest', '森・山道'], ['river', '川・水辺'], ['seaside', '海辺'], ['nightsky', '夜空'], ['none', '無地']];
-  const FIG = [['man', '成人男性'], ['woman', '成人女性'], ['boy', '少年'], ['girl', '少女'], ['oldman', '老人（男）'], ['oldwoman', '老人（女）'], ['unknown', '不明']];
+  const LOC = [['washitsu', '和室'], ['yoshitsu', '洋室'], ['kitchen', '台所'], ['genkan', '廊下・玄関'], ['classroom', '教室'], ['shop', '店・酒場'], ['station', '駅・車内'], ['street', '街路'], ['alley', '路地'], ['garden', '庭'], ['field', '田畑・野原'], ['forest', '森・山道'], ['river', '川・水辺'], ['seaside', '海辺'], ['nightsky', '夜空'], ['bedroom', '寝室'], ['library', '図書館・書庫'], ['office', '事務所・会社'], ['hospital', '病院'], ['shrine', '寺・神社'], ['church', '教会'], ['castle', '城・宮殿'], ['park', '公園'], ['rooftop', '屋上'], ['ship', '船の上'], ['snowmountain', '雪山'], ['graveyard', '墓地'], ['cave', '洞窟'], ['none', '無地']];
+  const FIG = [['man', '成人男性'], ['woman', '成人女性'], ['boy', '少年'], ['girl', '少女'], ['oldman', '老人（男）'], ['oldwoman', '老人（女）'], ['middleman', '中年男性'], ['middlewoman', '中年女性'], ['baby', '幼児'], ['soldier', '兵士・騎士'], ['monk', '僧侶・聖職者'], ['ghost', 'おばけ'], ['unknown', '不明']];
   const F = {
     location: ['場所', LOC], time: ['時間帯', [['morning', '朝'], ['day', '昼'], ['evening', '夕方'], ['night', '夜']]],
     era: ['時代', [['modern', '近代日本'], ['present', '現代日本'], ['western', '西洋風'], ['fantasy', 'ファンタジー']]],
     layout: ['人数', [['one', '1人'], ['two', '2人'], ['many', '3人以上'], ['none', 'なし']]],
     main: ['主人物', FIG], sub: ['相手', [['woman', '成人女性'], ...FIG.filter(([k]) => k !== 'woman')]],
-    pose: ['姿勢', [['stand', '立つ'], ['sit', '座る'], ['walk', '歩く'], ['lie', '横たわる'], ['talk', '話す']]],
-    expr: ['表情', [['normal', 'ふつう'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anxiety', '不安'], ['anger', '怒り']]],
+    pose: ['姿勢', [['stand', '立つ'], ['sit', '座る'], ['walk', '歩く'], ['run', '走る'], ['lie', '横たわる'], ['talk', '話す'], ['crouch', 'しゃがむ'], ['wave', '手を振る'], ['cry', '泣く'], ['hug', '抱き合う'], ['sword', '剣を振る'], ['punch', '拳を突き出す']]],
+    expr: ['表情', [['normal', 'ふつう'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anxiety', '不安'], ['anger', '怒り'], ['surprise', '驚き']]],
+    animal: ['動物', [['', 'なし'], ['dog', '犬'], ['cat', '猫'], ['bird', '鳥'], ['horse', '馬'], ['rabbit', 'うさぎ'], ['dragon', 'ドラゴン'], ['monster', 'モンスター']]],
     weather: ['天候', [['none', 'なし'], ['cloudy', '曇り'], ['rain', '雨'], ['snow', '雪'], ['fog', '霧']]],
-    inner: ['心象', [['', 'なし'], ['anxiety', '不安'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anger', '怒り']]],
+    inner: ['心象', [['', 'なし'], ['anxiety', '不安'], ['joy', '喜び'], ['calm', '落ち着き'], ['sadness', '悲しみ'], ['anger', '怒り'], ['surprise', '驚き']]],
   };
-  const st = { location: 'washitsu', time: 'day', era: 'modern', layout: 'two', main: 'man', sub: 'woman', pose: 'talk', expr: 'joy', weather: 'none', inner: '' };
+  const st = { location: 'washitsu', time: 'day', era: 'modern', layout: 'two', main: 'man', sub: 'woman', pose: 'talk', expr: 'joy', animal: '', weather: 'none', inner: '' };
   const ctrl = document.getElementById('controls');
   for (const [k, [label, opts]] of Object.entries(F)) {
     const l = document.createElement('label'); l.textContent = label;
@@ -59,7 +60,7 @@
     const L = Draw.layout(tg);
     Draw.background(tg, L, s, t);
     if (s.inner) Draw.emotion(tg, L, s.inner, t, 1);
-    Draw.figures(tg, L, { figures: { layout: s.layout, main: s.main, sub: s.sub, pose: s.pose }, era: s.era, time: s.time, location: s.location, expr: s.expr, innerK: s.inner ? 1 : 0 }, t);
+    Draw.figures(tg, L, { figures: { layout: s.layout, main: s.main, sub: s.sub, pose: s.pose, animal: s.animal || null }, era: s.era, time: s.time, location: s.location, expr: s.expr, innerK: s.inner ? 1 : 0 }, t);
     if (!s.inner) Draw.weather(tg, L, { rain: s.weather === 'rain' ? 1 : 0, snow: s.weather === 'snow' ? 1 : 0, cloudy: s.weather === 'cloudy' ? 1 : s.weather === 'rain' || s.weather === 'snow' ? 0.6 : 0, fog: s.weather === 'fog' ? 1 : 0 }, t);
   }
   const tg = Tegaki.create(document.getElementById('c'), { style: 'paper' });

@@ -27,7 +27,7 @@ Netlify は main に合流するたびに本番デプロイし、無料プラン
 ## テスト
 
 - `viewer/`：`for t in step1 step2 step3 step4 step5 step6 reading relay netlify aozora public; do node viewer/tests/$t.test.mjs; done`
-- `tegaki/`：`cd tegaki && for t in step1 step2 step4 step5 reading stage; do node tests/$t.test.mjs; done`
+- `tegaki/`：`cd tegaki && for t in step1 step2 step4 step5 reading stage era; do node tests/$t.test.mjs; done`
 
 ## 返答
 

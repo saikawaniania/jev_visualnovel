@@ -4,6 +4,8 @@ import { openApp, check, done } from './harness.mjs';
 const app = await openApp({ viewport: { width: 420, height: 800 } });
 const { page } = app;
 await page.goto(app.url + '?debug=1');
+// このテストはノベルモード（絵を全画面）を確かめる。既定は挿絵モードなので切り替えておく
+await page.evaluate(() => { JV.Settings.set('displayMode', 'novel'); JV.App.applySettings(); });
 
 await page.click('#sample-list li:first-child button');
 await page.waitForSelector('#reader:not(.hidden)');
@@ -14,7 +16,7 @@ const layout = await page.evaluate(() => {
   const stage = getComputedStyle(document.getElementById('stage'));
   return { novel: document.body.classList.contains('novel'), band: col.backgroundColor, stagePos: stage.position, color: col.color };
 });
-check(layout.novel, 'ノベルモードが既定');
+check(layout.novel, 'ノベルモードに切り替えられる');
 check(layout.stagePos === 'fixed', '絵の領域は全画面に固定');
 const band = (layout.band.match(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/) || []).slice(1).map(Number);
 check(band.length === 4 && Math.max(...band.slice(0, 3)) < 60 && band[3] >= 0.45 && band[3] <= 0.65, `本文は半透明の暗い帯 (${layout.band})`);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>手描きサウンドノベル</title>
+<title>手描き挿絵文庫</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;600&family=Yusei+Magic&display=swap">
@@ -318,7 +318,7 @@ body.debug #center-line {
     <figcaption id="home-line">朝の座敷には、障子越しに淡い光がさしていた。</figcaption>
   </figure>
   <header>
-    <h1>手描き<br>サウンドノベル</h1>
+    <h1>手描き<br>挿絵文庫</h1>
     <p class="lead">小説を開いてスクロールを止めると、いま読んでいる場面が手描きの絵になって動きます。場所も時間も、登場人物の気持ちも、本文から読み取って描き分けます。</p>
   </header>
 
@@ -472,9 +472,10 @@ body.debug #center-line {
       <legend>表示</legend>
       <label>表示モード
         <select data-key="displayMode" onchange="JV.SettingsUI.change(this)">
-          <option value="novel">ノベル（絵を全画面、本文を半透明の帯に）</option>
-          <option value="illust">挿絵（スマホ縦：上に絵・下に本文／横向き・PC：左に絵・右に本文）</option>
+          <option value="illust">絵と文を分けて読む</option>
+          <option value="novel">絵を背景にする</option>
         </select>
+        <small>絵と文を分けて読む：スマホを縦に持つと上に絵・下に本文、横向きや PC では左に絵・右に本文。絵を背景にする：絵を画面いっぱいに出し、本文は半透明の帯に重ねる。</small>
       </label>
       <label>書字方向
         <select data-key="writingMode" onchange="JV.SettingsUI.change(this)">
@@ -1086,7 +1087,7 @@ JV.Settings = {
     hideNarrator: false,   // 一人称の作品で主人物（語り手）を出さず相手だけを描く
     effects: true,         // 演出オン／オフ
     debug: false,          // デバッグ表示
-    displayMode: 'novel',  // 表示モード：novel（挿絵モードは拡張）
+    displayMode: 'illust', // 表示モード：illust（挿絵と本文を分ける・既定）| novel（絵を全画面に）
     writingMode: 'horizontal', // 横書き（縦書きは拡張）
     fontSize: 18,          // 文字サイズ(px)
   },
@@ -1534,9 +1535,9 @@ JV.Schema = {
         { id: 'yoshitsu', label: '洋室', desc: '洋風の部屋。応接間・書斎・寝室・ホテルの部屋・ソファ・暖炉・椅子とテーブル' },
         { id: 'kitchen', label: '台所', desc: '台所・勝手・土間の炊事場・厨房。竈・流し・鍋' },
         { id: 'genkan', label: '廊下・玄関', desc: '廊下・玄関・上がり框・戸口・階段・渡り廊下' },
-        { id: 'classroom', label: '教室', desc: '学校の教室・講堂・黒板・教壇' },
+        { id: 'classroom', label: '教室', desc: '学校の教室・講堂・黒板・教壇', eras: ['modern', 'present', 'western'] },
         { id: 'shop', label: '店・酒場', desc: '商店・喫茶店・カフェ・料理屋・酒場・バー・宿の帳場。店内に居る場合' },
-        { id: 'station', label: '駅・車内', desc: '駅・停車場・プラットフォーム・待合室・汽車や電車やバスの車内' },
+        { id: 'station', label: '駅・車内', desc: '駅・停車場・プラットフォーム・待合室・汽車や電車やバスの車内', eras: ['modern', 'present', 'western'] },
         { id: 'street', label: '街路', desc: '町の通り・大通り・往来・街角・広場・商店街の路上' },
         { id: 'alley', label: '路地', desc: '狭い路地・横丁・裏通り' },
         { id: 'garden', label: '庭', desc: '家の庭・中庭・庭園・縁側から見える庭（庭に出ている場合）' },
@@ -1545,6 +1546,19 @@ JV.Schema = {
         { id: 'river', label: '川・水辺', desc: '川・川岸・土手（川沿い）・橋・池・湖のほとり' },
         { id: 'seaside', label: '海辺', desc: '海・浜辺・砂浜・港・岬・波打ち際' },
         { id: 'nightsky', label: '夜空の見える屋外', desc: '星空・月夜を見上げる屋上・丘・野外など、夜空そのものが主役の屋外' },
+        { id: 'bedroom', label: '寝室', desc: '寝る部屋・寝床・布団・ベッド・病床ではない自分の寝間' },
+        { id: 'library', label: '図書館・書庫', desc: '図書館・書庫・書架の並ぶ部屋・資料室' },
+        { id: 'office', label: '事務所・会社', desc: '会社・事務所・役所・机の並ぶ職場・社長室', eras: ['modern', 'present'] },
+        { id: 'hospital', label: '病院', desc: '病院・診療所・医院・病室・診察室・病床', eras: ['modern', 'present', 'western'] },
+        { id: 'shrine', label: '寺・神社', desc: '寺・神社・境内・鳥居・本堂・お堂・参道', eras: ['modern', 'present'] },
+        { id: 'church', label: '教会', desc: '教会・礼拝堂・聖堂・修道院・祭壇', eras: ['western', 'fantasy'] },
+        { id: 'castle', label: '城・宮殿', desc: '城・宮殿・王宮・玉座の間・広間・城壁', eras: ['western', 'fantasy'] },
+        { id: 'park', label: '公園', desc: '公園・遊園地・ベンチや噴水のある広場・遊具', eras: ['present', 'western'] },
+        { id: 'rooftop', label: '屋上', desc: '建物の屋上・フェンスのある屋上（夜空が主役なら「夜空の見える屋外」）', eras: ['present'] },
+        { id: 'ship', label: '船の上', desc: '船の甲板・船室・渡し舟・帆船・客船の上' },
+        { id: 'snowmountain', label: '雪山', desc: '雪の積もった山・雪原・吹雪の峠・氷の地' },
+        { id: 'graveyard', label: '墓地', desc: '墓地・墓場・霊園・墓前・墓石' },
+        { id: 'cave', label: '洞窟', desc: '洞窟・洞穴・地下道・坑道・地下迷宮' },
         { id: 'unknown', label: '不明', desc: '場所の手がかりがない。会話だけが続き場所が書かれていない場合もこれ' },
       ],
     },
@@ -1590,6 +1604,12 @@ JV.Schema = {
         { id: 'girl', label: '少女', desc: '女の子・少女' },
         { id: 'oldman', label: '老人（男）', desc: '老人・お爺さん・翁・白髪の年寄りの男' },
         { id: 'oldwoman', label: '老人（女）', desc: '老婆・お婆さん・年寄りの女' },
+        { id: 'middleman', label: '中年男性', desc: '中年の男・おじさん・親父・店主・旦那・社長など、若くも年寄りでもない男' },
+        { id: 'middlewoman', label: '中年女性', desc: '中年の女・おばさん・お母さん・女将・奥様など、若くも年寄りでもない女' },
+        { id: 'baby', label: '幼児', desc: '赤ん坊・幼子・よちよち歩きの小さな子' },
+        { id: 'soldier', label: '兵士・騎士', desc: '兵隊・軍人・騎士・衛兵・剣士など、武装した人' },
+        { id: 'monk', label: '僧侶・聖職者', desc: 'お坊さん・僧・神主・神父・牧師・修道士・司祭' },
+        { id: 'ghost', label: 'おばけ・幽霊', desc: 'おばけ・幽霊・亡霊・妖怪など、この世のものでない人影' },
         { id: 'unknown', label: '不明', desc: '見た目の手がかりがない' },
       ],
     },
@@ -1604,9 +1624,30 @@ JV.Schema = {
       options: [
         { id: 'stand', label: '立っている', desc: '立っている・佇む' },
         { id: 'sit', label: '座っている', desc: '座る・腰をおろす・正座' },
-        { id: 'walk', label: '歩く・走る', desc: '歩く・走る・駆ける・移動している' },
+        { id: 'walk', label: '歩く', desc: '歩く・歩いて移動している・散歩' },
+        { id: 'run', label: '走る', desc: '走る・駆ける・急いで逃げる・追いかける' },
         { id: 'lie', label: '倒れる・横たわる', desc: '倒れる・横になる・眠っている' },
         { id: 'talk', label: '向き合って話す', desc: '相手と向き合って会話している' },
+        { id: 'crouch', label: 'しゃがむ', desc: 'しゃがむ・うずくまる・かがむ' },
+        { id: 'wave', label: '手を振る', desc: '手を振る・呼びかける・別れのあいさつ' },
+        { id: 'cry', label: '泣く', desc: '泣く・涙を流す・顔を覆って泣く' },
+        { id: 'hug', label: '抱き合う', desc: '抱き合う・抱きしめる・抱きつく（2人）' },
+        { id: 'sword', label: '剣を振る', desc: '剣・刀を振る・斬りかかる・剣で戦う' },
+        { id: 'punch', label: '拳を突き出す', desc: '殴る・拳を突き出す・殴りかかる・素手で戦う' },
+      ],
+    },
+    animal: {
+      type: 'choice',
+      instructions: '現在の段落(current)で、場面に実際に居る動物・生き物。話題に出ただけなら「いない」。人物は数えない',
+      options: [
+        { id: 'none', label: 'いない', desc: '動物は居ない・読み取れない' },
+        { id: 'dog', label: '犬', desc: '犬・子犬・猟犬' },
+        { id: 'cat', label: '猫', desc: '猫・子猫' },
+        { id: 'bird', label: '鳥', desc: '鳥・小鳥・雀・鳩・烏・鷹など、鳥全般' },
+        { id: 'horse', label: '馬', desc: '馬・ロバ・馬車を引く馬' },
+        { id: 'rabbit', label: 'うさぎ', desc: 'うさぎ・野うさぎ' },
+        { id: 'dragon', label: 'ドラゴン', desc: '竜・ドラゴン・飛竜', eras: ['fantasy'] },
+        { id: 'monster', label: 'モンスター', desc: '怪物・魔物・化け物・得体の知れない影・正体不明の生き物' },
       ],
     },
     mood: {
@@ -1631,6 +1672,7 @@ JV.Schema = {
         { id: 'calm', label: '落ち着き', desc: '落ち着き・安らぎ・安心・しみじみとした穏やかな気持ち' },
         { id: 'sadness', label: '悲しみ', desc: '悲しみ・寂しさ・切なさ・喪失感・やるせなさ' },
         { id: 'anger', label: '怒り', desc: '怒り・苛立ち・悔しさ・憎しみ' },
+        { id: 'surprise', label: '驚き', desc: '驚き・びっくり・唖然・目を見張る・思いがけない出来事に息をのむ' },
         { id: 'unknown', label: '不明', desc: '気持ちが読み取れない' },
       ],
     },
@@ -1647,6 +1689,12 @@ JV.Schema = {
         { id: 'girl', label: '少女', desc: '女の子・少女が言った' },
         { id: 'oldman', label: '老人（男）', desc: '年寄りの男が言った' },
         { id: 'oldwoman', label: '老人（女）', desc: '年寄りの女が言った' },
+        { id: 'middleman', label: '中年男性', desc: '中年の男・おじさんが言った' },
+        { id: 'middlewoman', label: '中年女性', desc: '中年の女・おばさんが言った' },
+        { id: 'baby', label: '幼児', desc: '赤ん坊・幼い子が言った' },
+        { id: 'soldier', label: '兵士・騎士', desc: '兵隊・騎士・衛兵が言った' },
+        { id: 'monk', label: '僧侶・聖職者', desc: 'お坊さん・神父・牧師が言った' },
+        { id: 'ghost', label: 'おばけ・幽霊', desc: 'おばけ・幽霊が言った' },
         { id: 'other', label: '場面にいない人物', desc: '電話・手紙・通知・看板・回想・姿の見えない声' },
         { id: 'unknown', label: '不明', desc: '誰が言ったか読み取れない' },
       ],
@@ -1672,7 +1720,17 @@ JV.Schema = {
   byId(group, key, id) { return this.options(group, key).find((o) => o.id === id); },
 
   /** TypeSafe 形式の questions を組み立てる（asciiKeys なら criteria のキーを英字IDにする） */
-  toQuestions(group, { asciiKeys = false, lines = [] } = {}) {
+  /** その時代で使える選択肢か（eras のない選択肢はどの時代でも使う） */
+  allowed(o, era) { return !era || !o.eras || o.eras.includes(era); },
+  /** その時代にない場所を、近い場所に読み替える（前の時代で判定した結果が残っていたとき） */
+  LOC_ALT: { classroom: 'yoshitsu', station: 'street', office: 'yoshitsu', hospital: 'bedroom', shrine: 'garden', church: 'castle', castle: 'yoshitsu', park: 'garden', rooftop: 'street' },
+  /** その時代にいない動物（ドラゴンはファンタジーだけ）は、モンスターに読み替える */
+  animalFor(id, era) { const o = this.byId('scene', 'animal', id); return !o || this.allowed(o, era) ? id : 'monster'; },
+  locFor(id, era) {
+    for (let k = 0; k < 4 && id; k++) { const o = this.byId('scene', 'location', id); if (!o || this.allowed(o, era)) return id; id = this.LOC_ALT[id]; }
+    return id || 'unknown';
+  },
+  toQuestions(group, { asciiKeys = false, lines = [], era = null } = {}) {
     const out = {};
     const items = lines.map((l) => (typeof l === 'string' ? { text: l, before: '', after: '' } : l));
     for (const [key, q] of Object.entries(this[group])) {
@@ -1696,8 +1754,9 @@ JV.Schema = {
       if (q.type === 'noul') out[key] = { type: 'noul', instructions: q.instructions };
       else if (q.type === 'score') out[key] = { type: 'score', instructions: q.instructions, criteria: q.levels.slice() };
       else {
+        // 選択肢は作品の時代で絞る（その時代にない場所は聞かない）
         const criteria = {};
-        for (const o of this.options(group, key)) criteria[asciiKeys ? o.id : o.label] = asciiKeys ? `${o.label}：${o.desc}` : o.desc;
+        for (const o of this.options(group, key)) if (this.allowed(o, era)) criteria[asciiKeys ? o.id : o.label] = asciiKeys ? `${o.label}：${o.desc}` : o.desc;
         out[key] = { type: 'choice', instructions: q.instructions, criteria };
       }
     }
@@ -1728,6 +1787,19 @@ JV.Adapters.mock = {
     },
     location: {
       '和室': ['座敷', '畳', '襖', '障子', '床の間', '掛軸', '茶の間', '箪笥', '抽斗'],
+      '寝室': ['寝室', '寝床', '布団', '寝台', '枕元', '寝間'],
+      '図書館・書庫': ['図書館', '書庫', '書架', '司書', '蔵書'],
+      '事務所・会社': ['会社', '事務所', '役所', 'オフィス', '社長', '上司', '同僚'],
+      '病院': ['病院', '病室', '医者', '看護', '診察', '入院', '医院'],
+      '寺・神社': ['寺', '神社', '境内', '鳥居', '本堂', '参道', '住職', '神主'],
+      '教会': ['教会', '礼拝堂', '聖堂', '神父', '牧師', '祭壇', '修道'],
+      '城・宮殿': ['城', '宮殿', '王宮', '玉座', '王座', '謁見', '城壁'],
+      '公園': ['公園', 'ベンチ', '噴水', 'ブランコ', '滑り台', '遊園地'],
+      '屋上': ['屋上', 'フェンス'],
+      '船の上': ['船', '甲板', '帆', '船室', '舟', '船長'],
+      '雪山': ['雪山', '雪原', '吹雪', '雪崩', '氷河'],
+      '墓地': ['墓', '墓地', '墓場', '霊園', '墓石', '卒塔婆'],
+      '洞窟': ['洞窟', '洞穴', '坑道', '地下道', '鍾乳', '迷宮'],
       '洋室': ['応接間', '書斎', 'ソファ', '暖炉', '洋間', '寝台', 'ベッド'],
       '台所': ['台所', '竈', 'かまど', '流し', '厨房', 'お勝手'],
       '廊下・玄関': ['廊下', '玄関', '上がり框', '戸口', '階段'],
@@ -1758,7 +1830,7 @@ JV.Adapters.mock = {
     people: {
       '誰もいない': ['誰もいな', '人影はな', '人影もな', '人っ子ひとり'],
       '1人': ['私は', '僕は', 'ひとり', '一人', '彼は', '女は', '老人は'],
-      '2人': ['ふたり', '二人', '一緒', '妹', '向かい合', '少女と'],
+      '2人': ['ふたり', '二人', '一緒', '妹', '向かい合', '少女と', '抱き合', '抱きし', '手をつな'],
       '3人以上': ['大勢', '人々', '群衆', '人だかり', '一同', '皆', '人いきれ'],
     },
     figure: {
@@ -1768,11 +1840,33 @@ JV.Adapters.mock = {
       '少女': ['少女', '女の子'],
       '老人（男）': ['老人', '爺', '翁', '白髪', '年老い'],
       '老人（女）': ['老婆', '婆', '老女'],
+      '中年男性': ['おじさん', '親父', '店主', '旦那', '社長', '中年の男'],
+      '中年女性': ['おばさん', '女将', '奥様', '奥さん', 'お母さん', '中年の女'],
+      '幼児': ['赤ん坊', '赤子', '幼子', '幼児', '赤ちゃん'],
+      '兵士・騎士': ['兵士', '兵隊', '騎士', '軍人', '衛兵', '剣士', '将校'],
+      '僧侶・聖職者': ['僧', '和尚', '住職', '神主', '神父', '牧師', '司祭', '修道士'],
+      'おばけ・幽霊': ['幽霊', 'おばけ', 'お化け', '亡霊', '妖怪', '亡者'],
+    },
+    animal: {
+      '犬': ['犬', '子犬', '仔犬', 'ワン', '吠え'],
+      '猫': ['猫', '子猫', '仔猫', 'ニャ'],
+      '鳥': ['鳥', '小鳥', '雀', '鳩', '烏', 'カラス', '鷹', '鳶', 'さえず'],
+      '馬': ['馬', 'ロバ', '蹄', 'いななき'],
+      'うさぎ': ['兎', 'うさぎ', 'ウサギ'],
+      'ドラゴン': ['竜', '龍', 'ドラゴン', '飛竜'],
+      'モンスター': ['怪物', '魔物', '化け物', 'モンスター', '異形'],
     },
     pose: {
       '立っている': ['立っ', '佇', 'たたず', '見下ろ', '立ち'],
       '座っている': ['座', '坐', '腰をおろ', '腰掛', '正座', '座席'],
-      '歩く・走る': ['歩', '走', '駆', '急い', '下りきった', '向かっ'],
+      '歩く': ['歩', '散歩', '足を運', '進ん', '下りきった', '向かっ'],
+      '走る': ['走', '駆け', '駆', '逃げ', '追いかけ', '急いだ'],
+      'しゃがむ': ['しゃが', 'うずくま', 'かがみ', 'かがん', '屈'],
+      '手を振る': ['手を振', '手をふ'],
+      '泣く': ['泣', '涙', '嗚咽', 'すすり'],
+      '抱き合う': ['抱き合', '抱きし', '抱きつ', '抱擁'],
+      '剣を振る': ['剣', '刀', '斬', '太刀'],
+      '拳を突き出す': ['殴', '拳', 'こぶし', 'パンチ'],
       '倒れる・横たわる': ['倒れ', '横たわ', '寝', '眠'],
       '向き合って話す': ['振り向', '向き合', '話しかけ', '声をかけ', '語り'],
     },
@@ -1787,6 +1881,7 @@ JV.Adapters.mock = {
       '落ち着き': ['安らか', 'ほっと', '落ち着い', '安心', 'しみじみ', '穏やか', '和ん', 'のどか'],
       '悲しみ': ['悲し', '哀し', '寂し', '淋し', '涙', '泣', '切な', 'やるせな', '失っ', '独りきり'],
       '怒り': ['怒', '腹が立', '憤', '苛立', 'いらいら', '悔し', '許せな', '憎'],
+      '驚き': ['驚', 'びっくり', '仰天', '唖然', '目を見張', '目を丸', '息をのん', '息を呑', 'まさか', 'えっ'],
     },
     // 心の中だけを描く段落の手がかり
     inner: ['思った', '思う', '思われ', '気がし', '気持ち', '胸の', '胸が', '心の', '心が', '感じ', '考え', 'ような気', 'たまらな', 'のだろう', 'だろうか', '願っ', '祈'],
@@ -1905,6 +2000,7 @@ JV.Adapters.mock = {
         }
         if (key === 'pose' && dialogues >= 2) scores['向き合って話す'] = (scores['向き合って話す'] || 0) + 0.8;
         if (key === 'pose') fallback = '立っている';
+        if (key === 'animal') fallback = 'いない';
         if (key === 'figure_sub') {
           // 主人物に選ばれたものを除いた2番手
           const main = answers.figure_main ? toLabel(answers.figure_main.choice) : null;
@@ -1918,6 +2014,8 @@ JV.Adapters.mock = {
         const probabilities = {};
         for (const l of labels) probabilities[back(l)] = r.probabilities[l];
         answers[key] = { type: 'choice', choice: back(r.choice), probabilities, confidence: r.confidence };
+        // 時代の手がかりが一つもなければ「判定できなかった」扱い（あとで読み進めてから判定し直す）
+        if (key === 'era' && !Object.values(scores).some((v) => v > 0)) answers[key].confidence = 0.3;
       } else if (q.type === 'score') {
         const n = q.criteria.length;
         const raw = K.mood.slice(0, n).map((kws) => this.count(cur, kws) + 0.35 * this.count(ctx, kws));
@@ -1950,7 +2048,7 @@ JV.Adapters.mock = {
       // 会話がなく、心の動きを表す言葉が多く、場所や動作の言葉が少ないほど「心の中だけ」
       const narr = cur.replace(/「[^」]*」|『[^』]*』/g, '');
       const hits = this.count(narr, K.inner) + 0.6 * Object.values(K.emotion).reduce((n, kws) => n + this.count(narr, kws), 0);
-      const outer = Object.values(K.location).reduce((n, kws) => n + this.count(narr, kws), 0) + 0.5 * this.count(narr, K.pose['歩く・走る']);
+      const outer = Object.values(K.location).reduce((n, kws) => n + this.count(narr, kws), 0) + 0.5 * this.count(narr, [...K.pose['歩く'], ...K.pose['走る']]);
       const per100 = (x) => x / Math.max(1, narr.length / 100);
       const p = 0.08 + 0.3 * per100(hits) - 0.25 * dialogues - 0.15 * per100(outer);
       answers.inner = { type: 'noul', noul: Math.max(0.02, Math.min(0.95, p)) };
@@ -2156,7 +2254,7 @@ JV.Stage = {
   },
 
   fade() { return Number(JV.Settings.get('fadeScale')) || 1; },
-  figuresKey(s) { return s.figures ? `${s.figures.layout}|${s.figures.main || ''}|${s.figures.sub || ''}|${s.figures.pose}` : ''; },
+  figuresKey(s) { return s.figures ? `${s.figures.layout}|${s.figures.main || ''}|${s.figures.sub || ''}|${s.figures.pose}|${s.figures.animal || ''}` : ''; },
 
   /** 表情：心の中の気持ち（emotion）があればそれ、なければ緊張感から */
   exprOf(s) {
@@ -2290,7 +2388,7 @@ JV.Stage = {
       const aOld = out ? 1 - Math.min(1, fk / 0.2) : 1 - fk, aNew = out ? Math.max(0, Math.min(1, (fk - 0.67) / 0.33)) : fk;
       const time = this.world.to ? this.world.to.time : 'day';
       const draw = (snap, a) => {
-        if (!snap || a <= 0.003 || !snap.figures || snap.figures.layout === 'none') return;
+        if (!snap || a <= 0.003 || !snap.figures || (snap.figures.layout === 'none' && !snap.figures.animal)) return;
         const f = this.ftg, fc = f.ctx; f.setTime(t);
         fc.setTransform(1, 0, 0, 1, 0, 0); fc.globalAlpha = 1; fc.clearRect(0, 0, L.W, L.H);
         Draw.figures(f, L, Object.assign({}, snap, { time, innerK }), t);
@@ -2424,7 +2522,7 @@ JV.Director = {
     const L = a.location, sc = a.scene_changed ? a.scene_changed.p : 0;
     if (!L) why.push('背景：判定なし');
     else if (L.id === 'unknown') why.push('背景維持（場所が不明）');
-    else if (L.id !== s.location) {
+    else if ((() => { const id = JV.Schema.locFor(L.id, era); if (id !== L.id) { L.id = id; L.label = (JV.Schema.byId('scene', 'location', id) || {}).label || id; } return id; })() !== s.location) {
       const byScene = sc >= th && L.confidence >= 0.25;
       const byLoc = L.confidence >= locTh;
       const first = !s.location && (L.confidence >= 0.3 || sc >= th);
@@ -2481,6 +2579,10 @@ JV.Director = {
       }
       if (f.layout === 'many') f.main = null;
     }
+    // 動物（登場人物とは別。読み取れた段落だけ出す）
+    const An = a.animal;
+    f.animal = An && An.id !== 'none' && An.confidence >= 0.4 ? JV.Schema.animalFor(An.id, era) : null;
+    if (f.animal !== (prev && prev.figures ? prev.figures.animal || null : null)) why.push(f.animal ? `動物 → ${An.label}` : '動物おわり');
     s.figures = f;
 
     // 吹き出し：代表のセリフを1つ。重要度が「さりげない」寄りなら出さない
@@ -2625,7 +2727,7 @@ JV.Judge = {
     const a = this.adapter();
     return `${a.cacheKey ? a.cacheKey() : a.name}${JV.Settings.get('asciiKeys') ? ':id' : ''}@s${this.SCHEMA_VERSION}`;
   },
-  questions(group, lines = []) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys'), lines }); },
+  questions(group, lines = [], era = null) { return JV.Schema.toQuestions(group, { asciiKeys: !!JV.Settings.get('asciiKeys'), lines, era }); },
   key(unit) { return `${this.hashKey}|${this.adapterKey()}|${unit}`; },
 
   setWork(hash) {
@@ -2643,7 +2745,7 @@ JV.Judge = {
 
   /** 場面判定（キャッシュ付き）。同じ単位が判定中ならその結果を待つ */
   async scene(doc, unit, work, prevScene) {
-    const k = this.key(unit);
+    const k = `${this.key(unit)}|${work.era || 'modern'}`; // 時代で場所の選択肢が変わるので、時代ごとに覚える
     const hit = this.memory.get(k);
     if (hit) { this.stats.memoryHits++; return { ...hit, cached: 'memory' }; }
     const running = this.inflight.get(k);
@@ -2676,8 +2778,40 @@ JV.Judge = {
     const saved = this.hashKey ? await JV.Store.get('judgments', k) : undefined;
     if (saved && saved.work) return { ...saved.work, cached: true };
     const w = await this.judgeWork(doc);
-    if (this.hashKey) JV.Store.put('judgments', { k, hash: this.hashKey, unit: -1, work: { era: w.era, narration: w.narration, protagonist: w.protagonist, raw: w.raw }, at: Date.now() });
+    this.saveWork(w);
     return w;
+  },
+  saveWork(w) {
+    if (this.hashKey) JV.Store.put('judgments', { k: this.key('work'), hash: this.hashKey, unit: -1, work: { era: w.era, eraOk: w.eraOk, narration: w.narration, protagonist: w.protagonist, raw: w.raw }, at: Date.now() });
+  },
+
+  /* 時代の判定し直し：最初の判定で時代が決まらなかった（失敗・確信度が低い）ときだけ、読み進めてからもう一度 */
+  ERA_MIN: 0.5,          // これ未満の確信度は「決まらなかった」
+  ERA_RETRY_CHARS: 1500, // 前の判定からこれだけ読み進めたら判定し直す
+  ERA_RETRY_MAX: 3,      // 判定し直す回数の上限
+  ERA_JEV_CHARS: 1500,   // Jev に送るのは新しく読んだ部分の最後のこれだけ（最初の判定の約半分。重くしない）
+  eraOf(answers) {
+    const a = answers && answers.era;
+    const o = a && (JV.Schema.byLabel('work', 'era', a.choice) || JV.Schema.byId('work', 'era', a.choice));
+    return o && Number(a.confidence ?? 1) >= this.ERA_MIN ? o.id : null;
+  },
+  /**
+   * 読んだところまで（from〜to 字）で時代だけを判定し直す。
+   * Jev が使えるなら新しく読んだ部分の最後の 1,500 字だけを送る。Jev で決まらなければ、
+   * 読んだところ全部をモック（キーワード）で調べる（API を使わないので重くない）。決まらなければ null
+   */
+  async rejudgeEra(doc, from, to, { signal } = {}) {
+    const all = doc.units.map((u) => u.text).join('\n');
+    const q = { era: this.questions('work').era };
+    const adapter = this.adapter();
+    if (adapter !== JV.Adapters.mock) {
+      try {
+        const era = this.eraOf(await adapter.judge(all.slice(Math.max(from, to - this.ERA_JEV_CHARS), to), q, { signal }));
+        if (era) return { era, source: 'Jev' };
+      } catch (err) { if (JV.util.isAbort(err)) throw err; }
+    }
+    const era = this.eraOf(await JV.Adapters.mock.judge(all.slice(0, to), q, { signal }));
+    return era ? { era, source: 'キーワード' } : null;
   },
 
   /** 作品判定：冒頭約3,000字 */
@@ -2689,7 +2823,8 @@ JV.Judge = {
       const o = a && (JV.Schema.byLabel('work', key, a.choice) || JV.Schema.byId('work', key, a.choice));
       return o ? o.id : fallback;
     };
-    return { era: pick('era', 'modern'), narration: pick('narration', 'third'), protagonist: pick('protagonist', 'unknown'), raw: answers };
+    const era = this.eraOf(answers);
+    return { era: era || 'modern', eraOk: !!era, eraTo: head.length, narration: pick('narration', 'third'), protagonist: pick('protagonist', 'unknown'), raw: answers };
   },
 
   /** 場面判定の state：時代・前の場面・直前2段落・現段落 */
@@ -2711,7 +2846,7 @@ JV.Judge = {
   async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
     const state = this.sceneState(doc, unit, work, prevScene);
     const t0 = performance.now();
-    const answers = await this.adapter().judge(state, this.questions('scene', JV.Parser.quoteItems(doc.units[unit].text)), { signal });
+    const answers = await this.adapter().judge(state, this.questions('scene', JV.Parser.quoteItems(doc.units[unit].text), work.era), { signal });
     return { answers, ms: Math.round(performance.now() - t0), source: this.adapter().name };
   },
 
@@ -2889,10 +3024,10 @@ JV.HomeScene = {
 JV.App = {
   SAMPLES: [
     { file: 'samples/ame_no_teishaba.txt', label: '雨の停車場', note: '青空文庫の形式' },
-    { file: 'samples/umibe_no_kissaten.md', label: '海辺の喫茶店', note: 'Markdown' },
-    { file: 'samples/mori_no_michi.txt', label: '森の道', note: 'テキスト' },
     { file: 'samples/shuden_no_ato.txt', label: '終電のあとで', note: '現代劇' },
     { file: 'samples/ryu_no_yubinya.md', label: '竜の郵便屋', note: 'ファンタジー' },
+    { file: 'samples/doukutsu_no_kage.md', label: '洞窟の影', note: 'ファンタジー・剣と魔物' },
+    { file: 'samples/otera_no_neko.txt', label: 'お寺の猫', note: '現代劇・猫とおばけ' },
   ],
 
   init() {
@@ -2900,7 +3035,8 @@ JV.App = {
     JV.Stage.init();
     JV.HomeScene.init();
     this.applySettings();
-    this.fetchPublicStatus();
+    // 一般公開中かどうか。分かるまで（最長3秒）作品判定を待つ：公開中なら最初から本物の Jev で判定する
+    this.publicReady = this.fetchPublicStatus();
     JV.Debug.set('assets', '描画: 手描き（tegaki.js・canvas）');
     this.renderSamples();
     this.renderRecent();
@@ -3056,19 +3192,47 @@ JV.App = {
   /** 作品を開いたときに1回だけ：時代・語りの人称・主人公 */
   startWorkJudgment() {
     const doc = this.doc;
-    this.work = { era: 'modern', narration: 'third', protagonist: 'unknown' };
-    this.workReady = this.hashReady
+    this.work = { era: 'modern', eraOk: false, narration: 'third', protagonist: 'unknown' };
+    this.eraRetry = { tries: 0, from: 0, busy: false };
+    const statusKnown = Promise.race([this.publicReady || Promise.resolve(), JV.util.sleep(3000).catch(() => {})]);
+    this.workReady = Promise.all([this.hashReady, statusKnown])
       .then(() => JV.Judge.work(doc))
       .then((w) => {
         if (this.doc !== doc) return;
         this.work = w;
+        // 前の版で保存した判定には eraOk がない：そのときは決まったものとして扱う
+        if (w.eraOk === undefined) w.eraOk = true;
+        this.eraRetry.from = Math.min(w.eraTo || 3000, 3000);
         const pro = JV.Schema.byId('work', 'protagonist', this.protagonist());
-        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}`);
+        JV.Debug.set('work', `作品: ${JV.Schema.byId('work', 'era', w.era).label}・${JV.Schema.byId('work', 'narration', w.narration).label}・主人公 ${pro ? pro.label : '不明'}${this.protagonistOverride ? '（手動）' : ''}${w.cached ? '（キャッシュ）' : ''}${w.eraOk ? '' : '・時代は未確定（読み進めてから判定し直す）'}`);
       })
       .catch((err) => {
         if (this.handlePublicClosed(err)) return;
-        JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱う）`);
+        JV.Debug.set('work', `作品判定エラー: ${err.message || err}（近代日本・三人称として扱い、時代は読み進めてから判定し直す）`);
       });
+  },
+
+  /** 時代が決まっていなければ、読み進めた量に応じて裏で判定し直す。決まったら絵を組み立て直す */
+  maybeRetryEra(unit) {
+    const doc = this.doc, R = this.eraRetry, J = JV.Judge;
+    if (!doc || !R || this.work.eraOk || R.busy || R.tries >= J.ERA_RETRY_MAX) return;
+    let to = 0;
+    for (let i = 0; i <= unit && i < doc.units.length; i++) to += doc.units[i].text.length + 1;
+    if (to < R.from + J.ERA_RETRY_CHARS) return;
+    R.busy = true; R.tries++;
+    const from = R.from;
+    J.rejudgeEra(doc, from, to).then((r) => {
+      if (this.doc !== doc) return;
+      R.from = to;
+      if (!r) { JV.Debug.set('work', `時代の判定し直し ${R.tries}回目：まだ決まらない（${JV.Schema.byId('work', 'era', this.work.era).label}のまま）`); return; }
+      const changed = r.era !== this.work.era;
+      this.work = { ...this.work, era: r.era, eraOk: true };
+      J.saveWork(this.work);
+      JV.Debug.set('work', `時代を判定し直した（${r.source}・${R.tries}回目）：${JV.Schema.byId('work', 'era', r.era).label}`);
+      if (changed) { JV.Director.reset(); JV.Stage.reset(); JV.StopDetector.fire(true); }
+    }).catch((err) => {
+      if (!JV.util.isAbort(err)) JV.Debug.set('work', `時代の判定し直しエラー: ${err.message || err}`);
+    }).finally(() => { R.busy = false; });
   },
 
   /**
@@ -3083,6 +3247,7 @@ JV.App = {
     try {
       await this.workReady;
       if (this.doc !== doc) return;
+      this.maybeRetryEra(unit);
       const r = await JV.Judge.scene(doc, unit, this.work, JV.Director.scene);
       if (this.doc !== doc || this.currentUnit !== unit || !JV.Settings.get('effects')) return;
       this.present(unit, r);
