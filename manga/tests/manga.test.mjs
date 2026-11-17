@@ -1,0 +1,186 @@
+// 漫画にする工程（manga.js）：コマ割り・Jevアシストの質問と対応表・レイアウト・吹き出し・ページプロンプト
+import { openApp, check, done } from './harness.mjs';
+
+const app = await openApp({ viewport: { width: 1000, height: 800 } });
+const { page } = app;
+
+console.log('コマ割り（1場面＝1ページ・2〜4コマ）');
+const sp = await page.evaluate(() => {
+  const run = (text) => { const items = JV.Parser.quoteItems(text); return Manga.split(text, items).map((d) => ({ kind: d.kind, lines: d.lines, narration: d.narration, hasChar: d.hasChar })); };
+  const talk = '夜更けの停車場は、雪になっていた。\n「汽車は、まだでしょうか」\n女は線路の先を見た。\n「もうすぐ来ますよ」\n私がそう言うと、女は少しだけ笑った。';
+  const many = '雨だった。\n「あ」\n「い」\n「う、うそでしょう！」\n「本当だよ」\n「え……」\n「最後の一言だ！」\nふたりは黙った。';
+  const quiet = '朝の座敷には、障子越しに淡い光がさしていた。';
+  const long = '昼過ぎ、私は町の大通りを歩いていた。往来には荷車が行き交い、軒を並べた店の暖簾が風に揺れている。角の古本屋の前で足を止めた。店先に積まれた本の山の中に、見覚えのある背表紙が一冊まじっていた。手に取ると、それは母が若い頃に読んでいた詩集だった。私はしばらく、そこから動けなかった。';
+  const startQ = '「おはよう」\n少女が言った。';
+  return { talk: run(talk), many: run(many), quiet: run(quiet), long: run(long), startQ: run(startQ), cap: Manga.caption('あ'.repeat(50)), caps: Manga.caption('一つ目の文で、少し長めに続いていく説明のところ、さらに続く文章がここにあって終わる。') };
+});
+check(sp.talk.map((d) => d.kind).join() === 'establish,talk,talk,close', `導入 → 会話 → 会話 → 締め (${sp.talk.map((d) => d.kind)})`);
+check(sp.talk[0].narration === '夜更けの停車場は、雪になっていた。' && !sp.talk[0].hasChar && sp.talk.slice(1).every((d) => d.hasChar), '導入のコマは地の文をナレーションに・人物の感情は聞かない');
+check(sp.many.length <= 4 && sp.many.every((d) => d.lines.length <= 2) && sp.many.flatMap((d) => d.lines).length === 4, `セリフが多くても 4 コマまで・1コマ 2 つまで (${JSON.stringify(sp.many.map((d) => d.lines))})`);
+check(sp.quiet.length === 2 && sp.long.length === 3, `セリフのない場面：短ければ 2 コマ、長ければ 3 コマ (${sp.quiet.length}, ${sp.long.length})`);
+check(sp.startQ[0].kind === 'talk' && sp.startQ[0].lines.join() === '0', `セリフで始まる場面は導入のコマを作らない (${sp.startQ.map((d) => d.kind)})`);
+check(sp.cap.length <= 34 && sp.cap.endsWith('…') && sp.caps.endsWith('…'), `ナレーションは枠に入る長さで切る (${sp.caps})`);
+
+console.log('Jevアシストの質問（03 の質問票）');
+const qs = await page.evaluate(() => {
+  const text = '森の奥。\n「見つけた！」\n少女は走り出した。';
+  const items = JV.Parser.quoteItems(text), drafts = Manga.split(text, items);
+  const q = Manga.questions(drafts);
+  const strong = { intensity_2: { score: 1.4 }, intensity_3: { score: 0.6 } };
+  const eq = Manga.emotionQuestions(drafts, strong);
+  const scene = JV.Judge.questions('scene', items, 'fantasy');
+  return { keys: Object.keys(q), roles: Object.keys(q.role_1.criteria), intensity: q.intensity_2, key: Object.keys(q.key_panel.criteria), eq: Object.keys(eq), emoN: Object.keys(eq.emotion_2.criteria).length, clash: Object.keys(q).filter((k) => k in scene), state: Manga.stateOf(drafts, items) };
+});
+check(qs.keys.join() === 'role_1,role_2,intensity_2,role_3,intensity_3,key_panel', `全コマの役割・人物のいるコマの感情の強さ・最重要コマ (${qs.keys})`);
+check(qs.roles.join() === '状況説明,会話,反応,感情の山場,決意・転機,動作,締め・ヒキ,日常', '役割は 8 項目');
+check(qs.intensity.type === 'score' && qs.intensity.criteria.length === 3, '感情の強さは Score（0〜2）');
+check(qs.key.join() === '1,2,3', 'ページの最重要コマは Choice');
+check(qs.eq.join() === 'emotion_2' && qs.emoN === 23, `感情の細目は強さ 1.0 以上のコマだけ・23 項目 (${qs.eq})`);
+check(qs.clash.length === 0, '場面判定の質問とキーが重ならない（1回の問い合わせに束ねられる）');
+check(qs.state.length === 3 && qs.state[1].セリフ[0] === '見つけた！', 'state にコマの一覧（内容・セリフ）を足す');
+
+console.log('判定 → 演出（03 の対応表と閾値）');
+const as = await page.evaluate(() => {
+  const ch = (label, p) => ({ type: 'choice', choice: label, probabilities: { [label]: p }, confidence: p });
+  const d = (n, kind = 'talk') => ({ n, kind, lines: [0], hasChar: kind !== 'establish' });
+  const one = (ans, kind = 'talk') => Manga.assist([d(1, kind)], ans).panels[0];
+  const r = {
+    awe: one({ role_1: ch('会話', 0.6), intensity_1: { score: 1.6 }, emotion_1: ch('威圧', 0.8) }),
+    anxWeak: one({ role_1: ch('会話', 0.6), intensity_1: { score: 1.2 }, emotion_1: ch('不安', 0.8) }),
+    anxStrong: one({ role_1: ch('会話', 0.6), intensity_1: { score: 1.8 }, emotion_1: ch('不安', 0.8) }),
+    joy: one({ role_1: ch('状況説明', 0.9), intensity_1: { score: 1.7 }, emotion_1: ch('喜び', 0.9) }),
+    joyMid: one({ role_1: ch('日常', 0.9), intensity_1: { score: 1.2 }, emotion_1: ch('喜び', 0.9) }),
+    lowEmo: one({ role_1: ch('状況説明', 0.8), intensity_1: { score: 1.7 }, emotion_1: ch('怒り', 0.3) }),
+    lowRole: one({ role_1: ch('状況説明', 0.3) }, 'establish'),
+    action: one({ role_1: ch('動作', 0.5), intensity_1: { score: 0.3 } }),
+    peak: one({ role_1: ch('感情の山場', 0.9), intensity_1: { score: 0.6 } }),
+    shy: one({ role_1: ch('会話', 0.6), intensity_1: { score: 1.9 }, emotion_1: ch('照れ・ときめき', 0.7) }),
+    flag: one({ role_1: ch('会話', 0.2) }),
+  };
+  const talk = Manga.assist([1, 2, 3, 4].map((n) => d(n)), Object.fromEntries([1, 2, 3, 4].map((n) => [`role_${n}`, ch('会話', 0.7)]))).panels.map((p) => p.camera.family);
+  const react = Manga.assist([1, 2, 3].map((n) => d(n)), Object.fromEntries([1, 2, 3].map((n) => [`role_${n}`, ch('反応', 0.7)]))).panels.map((p) => p.camera.family);
+  const key = Manga.assist([d(1), d(2)], { key_panel: ch('2', 0.7) }).key;
+  const cam = (p) => p.camera && p.camera.family;
+  return { r: Object.fromEntries(Object.entries(r).map(([k, p]) => [k, [cam(p), p.effect, p.flag]])), en: r.awe.camera.en, talk, react, key };
+});
+check(as.r.awe[0] === 'low_angle' && as.r.awe[1] === null, `威圧 → ローアングル・効果なし (${as.r.awe})`);
+check(as.r.anxWeak[0] === null && as.r.anxStrong[0] === 'dutch', `不安のダッチアングルは「強い」ときだけ (${as.r.anxWeak[0]} / ${as.r.anxStrong[0]})`);
+check(as.r.anxStrong[1] === 'トーン' && as.r.anxWeak[1] === null, '背景効果は感情が強いコマだけ（不安 → トーン）');
+check(as.r.joy[0] === null && as.r.joy[1] === 'キラキラ' && as.r.joyMid[1] === null, `喜びはカメラ指定なし（役割より感情が優先）・強ければキラキラ (${as.r.joy})`);
+check(as.r.lowEmo[0] === 'wide' && as.r.lowEmo[1] === null, `感情の確信度が 0.35 未満なら感情は使わず、役割で補う (${as.r.lowEmo})`);
+check(as.r.lowRole[0] === null, `役割の確信度も 0.35 未満ならカメラ行を付けない (${as.r.lowRole})`);
+check(as.r.action[0] === 'dynamic' && as.r.peak[0] === null, `役割 → カメラは状況説明・動作・日常だけ (${as.r.action[0]} / ${as.r.peak[0]})`);
+check(as.r.shy[0] === 'profile_soft' && as.r.shy[1] === '花', `照れ・ときめき → 横顔の柔らかい寄り・花 (${as.r.shy})`);
+check(as.r.flag[2] === true && as.r.awe[2] === false, '役割の確信度がかなり低い（0.3 未満）ときだけ要確認');
+check(as.en === 'a strong low-angle shot looking up at the figure, giving an overwhelming, imposing presence', '英語文は対応表のまま');
+check(as.talk.every((f, i) => i === 0 || f !== as.talk[i - 1]) && as.react.every((f, i) => i === 0 || f !== as.react[i - 1]), `会話・反応はプールから回し、直前と同じ系統を続けない (${as.talk} / ${as.react})`);
+check(as.key === 2, '最重要コマ');
+
+console.log('レイアウト（02 のレイアウト表）');
+const lay = await page.evaluate(() => {
+  const P = { x: 0, y: 0, w: 600, h: 900 };
+  const pick = [1, 2, 3, 4].map((n) => Manga.chooseLayout(n, { calm: true })).concat(Manga.chooseLayout(4, { tense: true }));
+  const out = {};
+  for (const name of Object.keys(Manga.LAYOUTS)) {
+    const R = Manga.panelRects(name, P);
+    const inside = R.every((r) => r.x >= -0.01 && r.y >= -0.01 && r.x + r.w <= 600.01 && r.y + r.h <= 900.01 && r.w > 50 && r.h > 50);
+    let overlap = false;
+    for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) { const a = R[i], b = R[j]; if (a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 && b.y < a.y + a.h - 0.5) overlap = true; }
+    // 読む順：同じ段では右が先、段は上が先
+    let order = true;
+    for (let i = 1; i < R.length; i++) { const a = R[i - 1], b = R[i]; const sameRow = Math.abs(a.y - b.y) < 2; if (sameRow ? !(b.x < a.x) : !(b.y > a.y)) order = false; }
+    out[name] = { n: R.length, inside, overlap, order };
+  }
+  const box = Manga.pageBox({ x: 0, y: 0, w: 1000, h: 600 });
+  return { pick, out, ratio: box.w / box.h };
+});
+check(lay.pick.join() === 'full_page,2comma,3comma,T4-G,4comma', `コマ数と山場から選ぶ：穏やかな4コマは T4-G、緊張した4コマは 4comma (${lay.pick})`);
+for (const [name, o] of Object.entries(lay.out)) check(o.inside && !o.overlap && o.order, `${name}：${o.n} コマがページに収まり、重ならず、右上から読む順`);
+check(Math.abs(lay.ratio - 2 / 3) < 0.001, 'ページは縦長 2:3');
+
+console.log('吹き出しと縦書き');
+const bb = await page.evaluate(() => {
+  const B = Manga.columns('お忘れですか。昔、この川のほとりで、よくお会いしましたのに', 20, 200);
+  const r = { x: 100, y: 50, w: 300, h: 260 };
+  const p = { lines: [{ text: '汽車は、まだでしょうか', speaker: 'sub', importance: 0.5 }, { text: 'もうすぐ来ますよ。きっと', speaker: 'main', importance: 0.9 }] };
+  const heads = { main: [330, 220, 20], sub: [160, 230, 20] };
+  const out = Manga.placeBubbles(p, r, heads, 1);
+  const other = Manga.placeBubbles({ lines: [{ text: '至急、城へ戻れ', speaker: 'other' }] }, r, heads, 1)[0];
+  return { rows: B.rows, out: out.map((b) => ({ x: b.x, y: b.y, w: b.B.w, h: b.B.h, tip: b.tip })), other: other.tip, r };
+});
+check(bb.rows.every((row, i) => i === 0 || !/^[、。」…ー]/.test(row)), `禁則：句読点を列の頭に置かない (${bb.rows.join(' / ')})`);
+check(bb.out.every((b) => b.x >= bb.r.x && b.y >= bb.r.y && b.x + b.w <= bb.r.x + bb.r.w + 0.5 && b.y + b.h <= bb.r.y + bb.r.h + 0.5), '吹き出しはコマの中に収める（枠の外に文字を出さない）');
+check(bb.out[0].x > bb.out[1].x, '1 つ目のセリフが右（右から左へ読む）');
+const toward = (b, hx) => Math.sign(b.tip[0] - (b.x + b.w / 2)) === Math.sign(hx - (b.x + b.w / 2));
+check(bb.out[0].tip && bb.out[1].tip && toward(bb.out[0], 160) && bb.out[1].tip[1] > bb.out[1].y, `しっぽは話し手の頭のほうへ (${bb.out.map((b) => b.tip && b.tip.map(Math.round))})`);
+check(bb.other === null, '場面にいない声はしっぽなし');
+
+console.log('ページプロンプト（02 の構成と固定ルール）');
+const pp = await page.evaluate(async () => {
+  const text = '夜更けの停車場は、雪になっていた。\n「汽車は、まだでしょうか」\n女は線路の先を見た。\n「もうすぐ来ますよ」\n私がそう言うと、女は少しだけ笑った。';
+  const items = JV.Parser.quoteItems(text), drafts = Manga.split(text, items);
+  const ans = await JV.Adapters.mock.judge({ current: text, panels: Manga.stateOf(drafts, items) }, Manga.questions(drafts));
+  const lines = [{ text: items[0].text, speaker: 'sub' }, { text: items[1].text, speaker: 'main' }];
+  const scene = { location: 'station', time: 'night', era: 'modern', weather: 'snow', mood: 0.2, figures: { layout: 'two', main: 'man', sub: 'woman', pose: 'stand' }, lines };
+  const pg = Manga.buildPage({ scene, drafts, answers: ans, lines, unit: 0 });
+  const one = Manga.buildPage({ scene, drafts: Manga.split('朝だった。', []).slice(0, 1), answers: {}, lines: [], unit: 1 });
+  return { text: Manga.prompt(pg), one: Manga.prompt(one), layout: pg.layout, n: pg.panels.length };
+});
+const P = pp.text;
+const order = ['Generate a complete manga page.', 'Reading order: this is a JAPANESE manga page', 'Simple flat-colour manga artwork, clean line art.', '重要: Around every character silhouette', 'The page is vertical portrait format (taller than wide, 2:3 ratio).', 'Panel layout — 4 panels', 'Backgrounds:', 'Character notes', '=== Panel 1 ===', 'CRITICAL rules for text in speech bubbles:', 'CRITICAL rules for panel layout:'];
+const at = order.map((s) => P.indexOf(s));
+check(at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1])), `02 の構成順（冒頭 → 読み順 → 画風 → 白フチ → ページ形式 → レイアウト → 背景 → キャラ注記 → コマ → 固定ルール） (${at})`);
+check((P.match(/^=== Panel \d ===$/gm) || []).length === pp.n, `コマごとに === Panel N === (${pp.n})`);
+check(P.includes("  1. bubble text only: 「汽車は、まだでしょうか」\n     spoken by 「成人女性」 (LEFT character)"), 'フキダシは本文のセリフそのまま・話し手はしっぽの向きの注記だけ');
+check(P.includes('NEVER draw panel numbers (①②③④ or 1234)') && P.includes('A bubble contains ONLY the spoken words.') && P.includes('set vertically (top-to-bottom columns read right-to-left)'), 'コマ番号禁止・名前を書かない・縦書きの固定ルール');
+check(P.includes('Camera: a wide establishing shot that shows the whole location.'), 'カメラ行（対応表の英語文）');
+check(P.includes('Story narration caption box') && P.includes('夜更けの停車場は、雪になっていた。'), 'ナレーションの枠');
+check(P.includes('Character placement (CRITICAL') && P.includes('CRITICAL rules for who says what'), '2人のコマは立ち位置を固定する');
+check(!pp.one.includes('Reading order:') && pp.one.includes('single panel'), 'コマが1つだけのページでは読み順を出さない');
+
+console.log('モックの判定はコマの質問の選択肢の中から答える');
+const mk = await page.evaluate(async () => {
+  const bad = [];
+  let n = 0, detail = 0;
+  for (const file of ['samples/shuden_no_ato.txt', 'samples/ryu_no_yubinya.md', 'samples/doukutsu_no_kage.md', 'samples/otera_no_neko.txt']) {
+    const doc = JV.Parser.parse(JV.Encoding.decode(await (await fetch(file)).arrayBuffer()), file);
+    for (const u of doc.units) {
+      const items = JV.Parser.quoteItems(u.text), drafts = Manga.split(u.text, items), st = { current: u.text, panels: Manga.stateOf(drafts, items) };
+      const q = Manga.questions(drafts), a = await JV.Adapters.mock.judge(st, q);
+      const eq = Manga.emotionQuestions(drafts, a), b = Object.keys(eq).length ? await JV.Adapters.mock.judge(st, eq) : {};
+      detail += Object.keys(eq).length;
+      for (const [k, qq] of Object.entries({ ...q, ...eq })) {
+        const x = a[k] || b[k]; n++;
+        if (!x) { bad.push(`${k} missing`); continue; }
+        if (qq.type === 'choice') { if (!(x.choice in qq.criteria)) bad.push(`${k}=${x.choice}`); const s = Object.values(x.probabilities).reduce((p, v) => p + v, 0); if (Math.abs(s - 1) > 1e-6) bad.push(`${k} sum`); }
+        else if (!(x.score >= 0 && x.score <= 2)) bad.push(`${k} score ${x.score}`);
+      }
+      // ページを組んで描いてみる
+      const lines = items.map((it) => ({ text: it.text, speaker: 'main' }));
+      const pg = Manga.buildPage({ scene: { location: 'street', time: 'day', era: 'present', figures: { layout: 'two', main: 'girl', sub: 'oldwoman', pose: 'talk' }, lines }, drafts, answers: { ...a, ...b }, lines, unit: u.i });
+      const c = document.createElement('canvas'); c.width = 400; c.height = 600;
+      try { const tg = Tegaki.create(c); tg.renderAt(1, (t) => Manga.render(tg, pg, t)); Manga.prompt(pg); } catch (e) { bad.push(`render ${u.i}: ${e.message}`); }
+    }
+  }
+  return { n, bad, detail };
+});
+check(mk.bad.length === 0 && mk.n > 100, `${mk.n} 問・描画もエラーなし ${mk.bad.slice(0, 3)}`);
+check(mk.detail > 0, `感情の細目を聞くコマがある (${mk.detail})`);
+
+console.log('カメラ・背景効果の描き分け（全部の系統と効果を描いてみる）');
+const all = await page.evaluate(() => {
+  const bad = [];
+  const scene = { location: 'washitsu', time: 'evening', era: 'modern', weather: 'rain', mood: 0.8, figures: { layout: 'two', main: 'man', sub: 'woman', pose: 'walk' } };
+  const fams = Object.keys(Manga.SHOTS), effects = [null, ...new Set(Object.values(Manga.EFFECT))];
+  let n = 0;
+  for (const fam of fams) for (const effect of effects) for (const focal of ['main', 'sub']) {
+    const p = { n: 1, kind: 'talk', hasChar: true, focal, expr: 'surprise', camera: { family: fam }, effect, lines: [] };
+    try { Manga.drawPanelScene(p, scene, 240, 180, 1.3, {}); n++; } catch (e) { bad.push(`${fam}/${effect}: ${e.message}`); }
+  }
+  return { n, bad };
+});
+check(all.bad.length === 0 && all.n > 200, `${all.n} 通りを描いてエラーなし ${all.bad.slice(0, 3)}`);
+
+check(app.errors.length === 0, `コンソールエラーなし ${app.errors.join(' / ')}`);
+await app.close();
+done();
