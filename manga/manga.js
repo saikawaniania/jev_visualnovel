@@ -523,6 +523,10 @@
   }
 
   /* ================= 4. ページを組む ================= */
+  // 破裂型の吹き出しにする条件
+  const SHOUT_WORDS = /叫|怒鳴|どな[っりる]|声を荒|わめ|喚|がなり|絶叫|吠え/;
+  const SHOUT_EMO = new Set(['怒り', '驚き', '興奮']);
+  const SHOUT_MARKS = /[！!][^！!？?]*[！!]|！？|!\?|？！|\?!/;
   // 背景を単色・グラデーションにしやすい撮り方（場所を見せなくてよい寄り）
   const TIGHT = new Set(['close_up', 'detail', 'profile_soft', 'over_shoulder']);
   /**
@@ -574,6 +578,12 @@
         if (a.camera && (a.camera.family === 'profile' || a.camera.family === 'profile_soft')) for (const role of ['main', 'sub']) if (!views[role]) views[role] = 'side';
       }
       const crop = content === 'people' ? R.crop : null;
+      // 破裂型の吹き出し：地の文の叫ぶ言い回し（コード）・感情の細目が怒り／驚き／興奮で強い（Jev）・セリフに「！」が 2 つ以上か「！？」
+      const strongEmo = a.emotion && SHOUT_EMO.has(a.emotion) && a.emoConf >= minC && a.intensity != null && a.intensity >= 1.5;
+      for (const l of ls) {
+        const why = SHOUT_WORDS.test(d.prose || '') ? '叫ぶ言い回し' : strongEmo ? `${a.emotion}（強い）` : SHOUT_MARKS.test(l.text) ? '！が重なる' : null;
+        if (why) { l.shout = true; l.shoutWhy = why; }
+      }
       return Object.assign(a, { lines: ls, narration: d.narration, text: d.text, summary: d.summary, content, hasChar: content === 'people', focal, faces, gestures, poses, views, talking, crop, read: R, expr: faces[focal] || 'normal' });
     });
     // 背景の塗り：場所を見せなくてよいコマ（人物の寄り・感情の効果がないコマ）から選ぶ。どのページにも場所の見えるコマを 1 つは残す
@@ -801,7 +811,7 @@
           if (len - edge > head[2] * 0.3) tip = [ex + dx / len * (edge + reach), ey + dy / len * (edge + reach)];
         }
       }
-      out.push({ x, y, B, tip, imp, speaker: l.speaker, text: l.text });
+      out.push({ x, y, B, tip, imp, speaker: l.speaker, text: l.text, shout: !!l.shout });
       rightEdge = x - m * 0.6;
     });
     return out;
@@ -908,7 +918,7 @@
       const heads = {}; for (const [role, v] of Object.entries(S.heads)) heads[role] = [r.x + v[0] * r.w / w, r.y + v[1] * r.h / h, v[2] * r.w / w];
       if (opts.bubbles !== false) {
         for (const b of placeBubbles(p, r, heads, U)) {
-          balloon(tg, b.x, b.y, b.B.w, b.B.h, b.tip, { lw: (b.imp >= 0.75 ? 3.2 : 2.2) * U, seed: 5000 + i * 10 + b.text.length, shout: b.imp >= 0.75 || /[！!]{1}/.test(b.text) && b.imp >= 0.6 });
+          balloon(tg, b.x, b.y, b.B.w, b.B.h, b.tip, { lw: (b.imp >= 0.75 ? 3.2 : 2.2) * U, seed: 5000 + i * 10 + b.text.length, shout: b.shout || b.imp >= 0.75 || (/[！!]/.test(b.text) && b.imp >= 0.6) });
           verticalText(tg, b.B, b.x, b.y, '#16161C', b.imp >= 0.75 ? 700 : 600);
         }
         if (p.narration) {
@@ -932,7 +942,7 @@
   function describe(page) {
     if (!page) return '';
     const code = (p) => { const R = p.read || {}; return [R.gesture && `手:${R.gesture}`, R.face && `顔:${R.face}`, R.pose && R.pose, R.view && R.view, R.crop && `切り取り:${R.crop}`, R.who && `主語:${R.who}`].filter(Boolean).join(' '); };
-    return [`レイアウト ${page.layout}・最重要コマ ${page.key}`, ...page.panels.map((p) => `コマ${p.n}［${p.role} ${p.roleConf.toFixed(2)}${p.flag ? '・要確認' : ''}］${p.content !== 'people' ? (p.content === 'animal' ? '動物だけ・' : '背景だけ・') : ''}${p.intensity != null ? `強さ ${p.intensity.toFixed(2)}` : ''}${p.emotion ? `・${p.emotion} ${p.emoConf.toFixed(2)}${p.emotionBy === 'code' ? '（言い回し）' : ''}` : ''} → ${p.camera ? p.camera.family : 'カメラなし'}${p.effect ? `・${p.effect}` : ''}${p.bg ? `・塗り ${p.bg.kind}` : ''}${p.lines.length ? `・セリフ${p.lines.length}` : ''}${code(p) ? `｜コード：${code(p)}` : ''}`)].join('\n');
+    return [`レイアウト ${page.layout}・最重要コマ ${page.key}`, ...page.panels.map((p) => `コマ${p.n}［${p.role} ${p.roleConf.toFixed(2)}${p.flag ? '・要確認' : ''}］${p.content !== 'people' ? (p.content === 'animal' ? '動物だけ・' : '背景だけ・') : ''}${p.intensity != null ? `強さ ${p.intensity.toFixed(2)}` : ''}${p.emotion ? `・${p.emotion} ${p.emoConf.toFixed(2)}${p.emotionBy === 'code' ? '（言い回し）' : ''}` : ''} → ${p.camera ? p.camera.family : 'カメラなし'}${p.effect ? `・${p.effect}` : ''}${p.bg ? `・塗り ${p.bg.kind}` : ''}${p.lines.length ? `・セリフ${p.lines.length}` : ''}${p.lines.some((l) => l.shout) ? `・破裂（${p.lines.filter((l) => l.shout).map((l) => l.shoutWhy).join('・')}）` : ''}${code(p) ? `｜コード：${code(p)}` : ''}`)].join('\n');
   }
 
   const Manga = {

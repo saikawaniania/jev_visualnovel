@@ -204,6 +204,26 @@ check(!bgs.consecutive, '続くコマを同じ色で塗らない');
 check(bgs.lastFace.main === 'surprise' && bgs.lastCam === 'close_up', `「男は驚いて目を見開いた」→ 主人物が驚きの顔・顔の寄り (${JSON.stringify(bgs.lastFace)} ${bgs.lastCam})`);
 check(bgs.talking.main === true, 'セリフのコマは話し手の口を動かす');
 
+console.log('破裂型の吹き出し');
+const sh = await page.evaluate(() => {
+  const ch = (label, p) => ({ type: 'choice', choice: label, probabilities: { [label]: p }, confidence: p });
+  const mk = (text, answers = {}) => {
+    const items = JV.Parser.quoteItems(text), drafts = Manga.split(text, items);
+    const lines = items.map((it) => ({ text: it.text, speaker: 'main', importance: 0.5 }));
+    const pg = Manga.buildPage({ scene: { location: 'street', time: 'day', era: 'present', figures: { layout: 'one', main: 'man', pose: 'stand' } }, drafts, answers, lines, unit: 0 });
+    return pg.panels.flatMap((p) => p.lines.map((l) => [l.text, !!l.shout, l.shoutWhy || '']));
+  };
+  return {
+    words: mk('男は通りに出た。\n「待て」\n男は叫んだ。'),
+    emo: mk('男は通りに出た。\n「待て」', { intensity_2: { type: 'score', score: 1.8 }, emotion_2: ch('怒り', 0.8) }),
+    emoWeak: mk('男は通りに出た。\n「待て」', { intensity_2: { type: 'score', score: 1.2 }, emotion_2: ch('怒り', 0.8) }),
+    marks: mk('男は通りに出た。\n「待て！　逃げるな！」\n「えっ！？」\n「はい」'),
+  };
+});
+check(sh.words[0][1] && sh.words[0][2] === '叫ぶ言い回し', `地の文に「叫んだ」→ 破裂型 (${sh.words[0]})`);
+check(sh.emo[0][1] && !sh.emoWeak[0][1], `感情の細目が怒りで強いときだけ破裂型 (${sh.emo[0]} / ${sh.emoWeak[0]})`);
+check(sh.marks[0][1] && sh.marks[1][1] && !sh.marks[2][1], `「！」が 2 つ以上・「！？」は破裂型、ふつうのセリフはそのまま (${sh.marks.map((m) => m[1])})`);
+
 console.log('人物の描き方（手の形・後ろ姿・横顔）');
 const fig = await page.evaluate(() => {
   const bad = []; let n = 0;
