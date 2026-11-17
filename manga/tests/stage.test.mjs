@@ -352,6 +352,30 @@ await scrollToText('夕方の教室には');
 await page.waitForTimeout(1500);
 check((await nav()).index < pn.pages - 2 || pn.pages === 2, 'スクロールを止め直すと、本文の位置のページに戻る');
 
+// 場面をまたいで：新しい場面は左から入る・出したページは場面をまたいで ← → で見直せる・スクロールで止めると読んでいる場面に戻る
+console.log('ページの棚（場面をまたいだめくり）');
+await page.evaluate(() => { JV.App.goHome(); });
+await page.waitForTimeout(300);
+await page.evaluate(() => [...document.querySelectorAll('#sample-list button')].find((b) => b.textContent.includes('放課後の教室')).click());
+await page.waitForTimeout(2500);
+await page.evaluate(() => { window.__dirs = []; setInterval(() => { const s = JV.Stage.state(); if (s.turning && window.__dirs.at(-1) !== s.turnDir) window.__dirs.push(s.turnDir); }, 20); });
+await scrollToText('翌朝');
+await page.waitForTimeout(2500);
+const sh0 = await page.evaluate(() => ({ ...JV.Stage.state(), dirs: window.__dirs.slice() }));
+check(sh0.unit === 1 && sh0.shelf.join() === '0,1' && sh0.dirs.includes(1), `新しい場面のページは左から入る (${sh0.unit}・棚 ${sh0.shelf}・向き ${sh0.dirs})`);
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(500);
+const sh1 = await page.evaluate(() => JV.Stage.state());
+check(sh1.unit === 0 && sh1.index === sh1.pages - 1, `→ で前の場面の最後のページへ戻れる (${sh1.unit}・${sh1.index + 1} / ${sh1.pages})`);
+await page.keyboard.press('ArrowLeft');
+await page.waitForTimeout(500);
+check((await page.evaluate(() => JV.Stage.state())).unit === 1, '← で次の場面のページへ');
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(500);
+await page.mouse.wheel(0, 30);
+await page.waitForTimeout(1300);
+check((await page.evaluate(() => JV.Stage.state())).unit === 1, 'めくって前の場面を見ていても、スクロールを止めると読んでいる場面のページに戻る');
+
 check(!(await page.$('#reader-top .prompt-btn')) && !(await page.$('#prompt-dialog')), 'プロンプトの表示はない');
 
 check(app.errors.length === 0, `コンソールエラーなし ${app.errors.join(' / ')}`);

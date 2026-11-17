@@ -954,8 +954,8 @@
     if (o.type === 'ghost') return ghost(tg, L, o, t);
     const c = tg.ctx, h = o.h, type = o.type || 'unknown', d = dims(type, h), cos = costume(type, o.era || 'modern', o.slot || 0, o.variant);
     const S = o.shade || ((x) => x);
-    // 線の太さ：顔の輪郭と耳は前のまま（hlw）。それ以外（体・腕・脚・服・髪・帽子）は眉と同じ太さ（lw）
-    const hlw = Math.max(2, h * 0.007), lw = browW(d), seed = 2000 + (o.slot || 0) * 300;
+    // 線の太さ：顔の輪郭・耳も含めて、人物の線はすべて眉と同じ太さ（顔の部品は faceBase がそれぞれの太さで描く）
+    const lw = browW(d), hlw = lw, seed = 2000 + (o.slot || 0) * 300;
     const pose = o.pose || 'stand';
     const J = joints(pose, d, h, t, o.slot || 0, o.seat, o.gesture);
     const view = pose === 'lie' ? null : o.view; // 'back' 後ろ姿 | 'side' 横顔

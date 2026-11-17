@@ -2258,7 +2258,7 @@ JV.Stage = {
 
   reset() {
     this.gen++;
-    this.book = null; this.index = 0; this.turn = null;
+    this.book = null; this.index = 0; this.turn = null; this.shelf = new Map();
     if (document.getElementById('page-nav')) this.updateNav();
     this.page = null;
     this.prev = null;
@@ -2273,59 +2273,75 @@ JV.Stage = {
   sameKey(page) { const s = page.scene || {}; return `${page.key2}|${s.location}|${s.time}|${s.era}|${s.weather}|${this.figuresKey(s)}|${(s.lines || []).map((l) => l.speaker).join('')}`; },
 
   /** 判定結果から組んだページを見せる */
+  /**
+   * 判定結果から組んだページを見せる。plan.pages は、その場面（判定単位）のページの束。
+   * 出したページは場面ごとに棚（shelf）に残し、あとから ← → でめくって見直せる。
+   * 新しい場面に入ったら、めくっていたページに関係なく、その場面のページに切り替える（左から入る）
+   */
   async show(plan) {
     const book = plan.pages || (plan.page ? [plan.page] : null);
     if (!book) return;
-    const idx = Math.max(0, Math.min(book.length - 1, plan.pageIndex || 0)), page = book[idx];
-    // 同じ場面の束：中身が同じなら、ページだけ選び直す（めくる）
-    if (this.book && this.page && this.book.length === book.length && this.book.every((b, i) => this.sameKey(b) === this.sameKey(book[i]))) {
+    const unit = book[0].unit, idx = Math.max(0, Math.min(book.length - 1, plan.pageIndex || 0));
+    this.shelf.set(unit, book);
+    // いま見ている場面と中身が同じなら、ページだけ選び直す（めくる）
+    const cur = this.book;
+    if (cur && cur[0].unit === unit && cur.length === book.length && cur.every((b, i) => this.sameKey(b) === this.sameKey(book[i]))) {
       this.book = book;
-      if (!this.turnTo(idx)) { this.page = book[this.index]; this.dirty = true; }
+      if (!this.goTo(unit, idx)) { this.page = book[this.index]; this.dirty = true; }
       return;
     }
-    this.book = book; this.index = idx; this.turn = null;
-    this.updateNav();
     const gen = ++this.gen;
     const k = this.fade();
-    this.figKey = this.figuresKey(page.scene || {});
     if (plan.chapter && this.page) {
-      // 章が変わる：一度黒に落としてから新しいページ
+      // 章が変わる：一度黒に落としてから、新しいページを入れる
       this.set('black', 1, 450 * k);
       await JV.util.sleep(500 * k);
       if (gen !== this.gen) return;
-      this.prev = null; this.page = page; this.t0 = performance.now();
+      this.goTo(unit, idx, { force: true });
       this.set('black', 0, 500 * k);
       return;
     }
-    const now = performance.now();
-    this.prev = this.page; this.prevT0 = now;
-    this.page = page; this.t0 = now;
-    this.dirty = true;
+    this.goTo(unit, idx, { force: true });
   },
 
   /**
-   * ページをめくる。漫画の読み順なので、次のページは左から入り、前のページは右へ抜ける。
-   * めくったら true。自分でめくったページは、次にスクロールを止めるまでそのまま
+   * ページへめくる（場面 unit の idx ページ目）。漫画の読み順なので、後ろの場面・後ろのページは左から入り、
+   * 前の場面・前のページは右から入る。めくったら true。いちばん最初のページだけは、コマを読む順に出す
    */
   TURN_MS: 380,
-  turnTo(idx) {
-    if (!this.book || idx < 0 || idx >= this.book.length || idx === this.index) return false;
-    const now = performance.now();
-    this.turn = { dir: idx > this.index ? 1 : -1, t0: now, from: this.page };
-    this.index = idx; this.page = this.book[idx];
-    this.prev = null; this.t0 = now - 10000; // めくるときはコマを順に出さず、ページごと入れる
+  goTo(unit, idx, { force = false } = {}) {
+    const book = this.shelf.get(unit);
+    if (!book) return false;
+    idx = Math.max(0, Math.min(book.length - 1, idx));
+    if (this.book === book && idx === this.index && this.page === book[idx] && !force) return false;
+    if (this.book === book && idx === this.index && this.page === book[idx]) return false;
+    const now = performance.now(), curU = this.book ? this.book[0].unit : null;
+    const dir = curU == null ? 1 : unit !== curU ? (unit > curU ? 1 : -1) : idx >= this.index ? 1 : -1;
+    this.turn = this.page ? { dir, t0: now, from: this.page } : null;
+    this.book = book; this.index = idx; this.page = book[idx];
+    this.figKey = this.figuresKey(this.page.scene || {});
+    this.prev = null; this.t0 = this.turn ? now - 10000 : now;
     this.dirty = true;
     this.updateNav();
     return true;
   },
-  flip(dir) { return this.book ? this.turnTo(this.index + dir) : false; },
+  turnTo(idx) { return this.book ? this.goTo(this.book[0].unit, idx) : false; },
+  /** 棚にあるページを、場面の順・ページの順に並べたもの [[unit, idx], …] */
+  order() { return [...this.shelf.keys()].sort((a, b) => a - b).flatMap((u) => this.shelf.get(u).map((_, i) => [u, i])); },
+  at(list) { return this.book ? list.findIndex(([u, i]) => u === this.book[0].unit && i === this.index) : -1; },
+  /** dir = 1 次のページ（場面をまたいでもよい）・-1 前のページ */
+  flip(dir) {
+    const list = this.order(), t = list[this.at(list) + dir];
+    return t ? this.goTo(t[0], t[1]) : false;
+  },
   updateNav() {
-    const nav = document.getElementById('page-nav'), n = this.book ? this.book.length : 0;
-    nav.classList.toggle('hidden', n < 2);
-    if (n < 2) return;
-    document.getElementById('page-count').textContent = `${this.index + 1} / ${n}`;
-    document.getElementById('page-next').disabled = this.index >= n - 1;
-    document.getElementById('page-prev').disabled = this.index <= 0;
+    const nav = document.getElementById('page-nav'), list = this.order(), at = this.at(list), n = this.book ? this.book.length : 0;
+    nav.classList.toggle('hidden', list.length < 2);
+    const count = document.getElementById('page-count');
+    count.textContent = n > 1 ? `${this.index + 1} / ${n}` : '';
+    count.classList.toggle('hidden', n < 2);
+    document.getElementById('page-next').disabled = at < 0 || at >= list.length - 1;
+    document.getElementById('page-prev').disabled = at <= 0;
   },
   /** 舞台の上で左右にスワイプしてめくる（右へ払うと次のページ。左から次のページが入ってくる向き） */
   bindSwipe() {
@@ -2409,7 +2425,7 @@ JV.Stage = {
   state() {
     const p = this.page;
     return {
-      layout: p && p.layout, key: p && p.key, unit: p && p.unit, frames: this.frames, pages: this.book ? this.book.length : 0, index: this.index || 0, turning: !!this.turn, black: +this.val(this.black).toFixed(2),
+      layout: p && p.layout, key: p && p.key, unit: p && p.unit, frames: this.frames, pages: this.book ? this.book.length : 0, index: this.index || 0, turning: !!this.turn, turnDir: this.turn ? this.turn.dir : 0, shelf: this.shelf ? [...this.shelf.keys()].sort((a, b) => a - b) : [], black: +this.val(this.black).toFixed(2),
       world: p && p.scene ? `${p.scene.era}|${p.scene.location}|${p.scene.time}` : null, weather: p && p.scene ? p.scene.weather : null,
       figs: p && p.scene ? this.figuresKey(p.scene) : null,
       panels: p ? p.panels.map((q) => ({ n: q.n, kind: q.kind, content: q.content, bg: q.bg, faces: q.faces, gestures: q.gestures, role: q.role, camera: q.camera && q.camera.family, effect: q.effect, emotion: q.emotion, intensity: q.intensity, focal: q.focal, expr: q.expr, lines: q.lines.map((l) => ({ text: l.text, speaker: l.speaker })), narration: q.narration })) : [],
@@ -3180,9 +3196,10 @@ JV.App = {
   /** 同じ単位の中でスクロールを止めた：読んでいる位置のページへ（自分でめくったページは、ここで本文の位置に戻る） */
   onWithin({ unit, seg, frac }) {
     this.readPos = { unit, seg, frac };
-    const book = JV.Stage.book;
-    if (!book || book.length < 2 || book[0].unit !== unit) return;
-    JV.Stage.turnTo(Manga.pageAt(book, this.offsetIn(unit)));
+    // めくって別の場面のページを見ていても、本文の位置の場面・ページに戻す
+    const book = JV.Stage.shelf && JV.Stage.shelf.get(unit);
+    if (!book) return;
+    JV.Stage.goTo(unit, Manga.pageAt(book, this.offsetIn(unit)));
   },
   /** 読んでいる位置を、単位の本文の中の字の位置にする（断片の長さ × 中央線の位置） */
   offsetIn(unit) {
