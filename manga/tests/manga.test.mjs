@@ -115,28 +115,77 @@ const toward = (b, hx) => Math.sign(b.tip[0] - (b.x + b.w / 2)) === Math.sign(hx
 check(bb.out[0].tip && bb.out[1].tip && toward(bb.out[0], 160) && bb.out[1].tip[1] > bb.out[1].y, `しっぽは話し手の頭のほうへ (${bb.out.map((b) => b.tip && b.tip.map(Math.round))})`);
 check(bb.other === null, '場面にいない声はしっぽなし');
 
-console.log('ページプロンプト（02 の構成と固定ルール）');
-const pp = await page.evaluate(async () => {
-  const text = '夜更けの停車場は、雪になっていた。\n「汽車は、まだでしょうか」\n女は線路の先を見た。\n「もうすぐ来ますよ」\n私がそう言うと、女は少しだけ笑った。';
-  const items = JV.Parser.quoteItems(text), drafts = Manga.split(text, items);
-  const ans = await JV.Adapters.mock.judge({ current: text, panels: Manga.stateOf(drafts, items) }, Manga.questions(drafts));
-  const lines = [{ text: items[0].text, speaker: 'sub' }, { text: items[1].text, speaker: 'main' }];
-  const scene = { location: 'station', time: 'night', era: 'modern', weather: 'snow', mood: 0.2, figures: { layout: 'two', main: 'man', sub: 'woman', pose: 'stand' }, lines };
-  const pg = Manga.buildPage({ scene, drafts, answers: ans, lines, unit: 0 });
-  const one = Manga.buildPage({ scene, drafts: Manga.split('朝だった。', []).slice(0, 1), answers: {}, lines: [], unit: 1 });
-  return { text: Manga.prompt(pg), one: Manga.prompt(one), layout: pg.layout, n: pg.panels.length };
+console.log('コード側の判定（地の文の言い回し）');
+const rd = await page.evaluate(() => {
+  const f2 = { layout: 'two', main: 'man', sub: 'woman', pose: 'stand' };
+  const r = (t, f = f2) => { const x = Manga.readText(t, f); return [x.gesture, x.face, x.pose, x.view, x.crop, x.who].map((v) => v || '-').join(','); };
+  return {
+    cheer: r('少年は両手を上げて跳ねた。', { layout: 'one', main: 'boy' }),
+    smile: r('女は少しだけ笑った。'),
+    micro: r('私は微笑んだ。'),
+    cry: r('女は泣き笑いの顔になった。'),
+    kimochi: r('私は複雑な気持ちになった。'),
+    sit: r('老人は縁側に腰を下ろした。', { layout: 'one', main: 'oldman' }),
+    back: r('彼女は背を向けたまま、窓の外を見ていた。'),
+    side: r('男の横顔が、街灯に照らされた。'),
+    eyes: r('彼女の目元が、かすかに揺れた。'),
+    hand: r('私は手のひらの切符を見つめた。'),
+    think: r('男は顎に手を当てて考え込んだ。'),
+    none: r('雨が降っていた。'),
+    person: [Manga.readText('雨が降っていた。', f2).person, Manga.readText('女が立っていた。', f2).person],
+  };
 });
-const P = pp.text;
-const order = ['Generate a complete manga page.', 'Reading order: this is a JAPANESE manga page', 'Simple flat-colour manga artwork, clean line art.', '重要: Around every character silhouette', 'The page is vertical portrait format (taller than wide, 2:3 ratio).', 'Panel layout — 4 panels', 'Backgrounds:', 'Character notes', '=== Panel 1 ===', 'CRITICAL rules for text in speech bubbles:', 'CRITICAL rules for panel layout:'];
-const at = order.map((s) => P.indexOf(s));
-check(at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1])), `02 の構成順（冒頭 → 読み順 → 画風 → 白フチ → ページ形式 → レイアウト → 背景 → キャラ注記 → コマ → 固定ルール） (${at})`);
-check((P.match(/^=== Panel \d ===$/gm) || []).length === pp.n, `コマごとに === Panel N === (${pp.n})`);
-check(P.includes("  1. bubble text only: 「汽車は、まだでしょうか」\n     spoken by 「成人女性」 (LEFT character)"), 'フキダシは本文のセリフそのまま・話し手はしっぽの向きの注記だけ');
-check(P.includes('NEVER draw panel numbers (①②③④ or 1234)') && P.includes('A bubble contains ONLY the spoken words.') && P.includes('set vertically (top-to-bottom columns read right-to-left)'), 'コマ番号禁止・名前を書かない・縦書きの固定ルール');
-check(P.includes('Camera: a wide establishing shot that shows the whole location.'), 'カメラ行（対応表の英語文）');
-check(P.includes('Story narration caption box') && P.includes('夜更けの停車場は、雪になっていた。'), 'ナレーションの枠');
-check(P.includes('Character placement (CRITICAL') && P.includes('CRITICAL rules for who says what'), '2人のコマは立ち位置を固定する');
-check(!pp.one.includes('Reading order:') && pp.one.includes('single panel'), 'コマが1つだけのページでは読み順を出さない');
+check(rd.cheer === 'cheer,-,-,-,-,main', `両手を上げる (${rd.cheer})`);
+check(rd.smile.startsWith('-,joy') && rd.smile.endsWith(',sub') && rd.micro.startsWith('-,calm'), `「笑った」は笑顔、「微笑」は穏やか・主語の「女は」で相手のこと (${rd.smile} / ${rd.micro})`);
+check(rd.cry.startsWith('-,cry'), `泣き笑いは泣く（上の行が優先） (${rd.cry})`);
+check(rd.kimochi.startsWith('-,'), `「気持ち」は「持つ」と読まない (${rd.kimochi})`);
+check(rd.sit.split(',')[2] === 'sit', `腰を下ろす → 座る (${rd.sit})`);
+check(rd.back.split(',')[3] === 'back' && rd.side.split(',')[3] === 'side', `背を向ける → 後ろ姿・横顔 → 横顔 (${rd.back} / ${rd.side})`);
+check(rd.eyes.split(',')[4] === 'eyes' && rd.hand.split(',')[4] === 'hand' && rd.hand.startsWith('hold'), `目元・手元の切り取り（手元は両手を前に） (${rd.eyes} / ${rd.hand})`);
+check(rd.think.startsWith('think'), `顎に手 → 考える (${rd.think})`);
+check(rd.none === '-,-,-,-,-,-' && rd.person.join() === 'false,true', '人を指す言葉がない文は何も拾わない');
+
+console.log('背景だけ・動物だけのコマと、背景の塗り');
+const bgs = await page.evaluate(async () => {
+  const text = '夕暮れの川べりに、風が吹いていた。\n「どなたです」\n女はゆっくりと振り向いた。\n「お忘れですか」\n男は驚いて目を見開いた。';
+  const items = JV.Parser.quoteItems(text), drafts = Manga.split(text, items);
+  const lines = [{ text: items[0].text, speaker: 'main' }, { text: items[1].text, speaker: 'sub' }];
+  const mk = (time, animal, unit) => Manga.buildPage({ scene: { location: 'river', time, era: 'modern', mood: 0.2, figures: { layout: 'two', main: 'man', sub: 'woman', pose: 'stand', animal } }, drafts, answers: {}, lines, unit });
+  const pages = [];
+  for (let u = 0; u < 30; u++) pages.push(mk(['day', 'evening', 'night', 'morning'][u % 4], u % 5 ? null : 'cat', u));
+  const plains = pages.flatMap((pg) => pg.panels.filter((p) => p.bg).map((p) => ({ time: pg.scene.time, bg: p.bg, kind: p.kind })));
+  const pal = Manga.PALETTE;
+  const okColor = plains.every((x) => (x.time === 'evening' || x.time === 'night' ? pal[x.time].some((g) => g[0] === x.bg.colors[0]) && x.bg.kind === 'gradient' : true));
+  const consecutive = pages.some((pg) => pg.panels.some((p, i) => i && p.bg && pg.panels[i - 1].bg && p.bg.colors.join() === pg.panels[i - 1].bg.colors.join()));
+  const day = pages.find((pg) => pg.scene.time === 'day' && !pg.scene.figures.animal);
+  const cat = pages.find((pg) => pg.scene.figures.animal === 'cat');
+  const last = day.panels[day.panels.length - 1];
+  return {
+    content: day.panels.map((p) => p.content), catFirst: cat.panels[0].content, n: plains.length, kinds: [...new Set(plains.map((x) => x.bg.kind))],
+    estPlain: pages.some((pg) => pg.panels.some((p) => p.kind === 'establish' && p.bg)), allPlain: pages.some((pg) => pg.panels.every((p) => p.bg)),
+    okColor, consecutive, lastFace: last.faces, lastFocal: last.focal, lastCam: last.camera && last.camera.family, talking: day.panels[1].talking,
+  };
+});
+check(bgs.content[0] === 'scenery' && bgs.content.slice(1).every((c) => c === 'people'), `導入のコマは背景だけ (${bgs.content})`);
+check(bgs.catFirst === 'animal', `動物がいる場面の導入は動物だけ (${bgs.catFirst})`);
+check(bgs.n > 10 && bgs.kinds.includes('flat') && bgs.kinds.includes('gradient'), `場所を見せなくてよいコマは単色かグラデーションで塗る (${bgs.n} コマ・${bgs.kinds})`);
+check(!bgs.estPlain && !bgs.allPlain, '導入のコマは塗らない・どのページにも場所の見えるコマが残る');
+check(bgs.okColor, '夕方・夜は時間を表す色のグラデーション');
+check(!bgs.consecutive, '続くコマを同じ色で塗らない');
+check(bgs.lastFace.main === 'surprise' && bgs.lastCam === 'close_up', `「男は驚いて目を見開いた」→ 主人物が驚きの顔・顔の寄り (${JSON.stringify(bgs.lastFace)} ${bgs.lastCam})`);
+check(bgs.talking.main === true, 'セリフのコマは話し手の口を動かす');
+
+console.log('人物の描き方（手の形・後ろ姿・横顔）');
+const fig = await page.evaluate(() => {
+  const bad = []; let n = 0;
+  const c = document.createElement('canvas'); c.width = 400; c.height = 400;
+  const tg = Tegaki.create(c), L = Draw.layout(tg);
+  for (const era of ['modern', 'present', 'western', 'fantasy']) for (const type of JV.Schema.options('scene', 'figure_main').map((o) => o.id)) for (const view of [null, 'back', 'side']) for (const gesture of [null, ...Manga.GESTURES.map((g) => g[0])]) for (const pose of ['stand', 'sit']) {
+    try { tg.renderAt(1.1, (t) => Draw.person(tg, L, { type, era, pose, expr: ['cry', 'sleep', 'surprise', 'anger', 'joy'][n % 5], x: 200, y: 380, h: 300, facing: n % 2 ? 1 : -1, view, gesture, talking: n % 3 === 0 }, t)); n++; } catch (e) { bad.push(`${era}/${type}/${view}/${gesture}: ${e.message}`); }
+  }
+  return { n, bad };
+});
+check(fig.bad.length === 0 && fig.n > 2000, `${fig.n} 通りを描いてエラーなし ${fig.bad.slice(0, 3)}`);
 
 console.log('モックの判定はコマの質問の選択肢の中から答える');
 const mk = await page.evaluate(async () => {
@@ -159,7 +208,7 @@ const mk = await page.evaluate(async () => {
       const lines = items.map((it) => ({ text: it.text, speaker: 'main' }));
       const pg = Manga.buildPage({ scene: { location: 'street', time: 'day', era: 'present', figures: { layout: 'two', main: 'girl', sub: 'oldwoman', pose: 'talk' }, lines }, drafts, answers: { ...a, ...b }, lines, unit: u.i });
       const c = document.createElement('canvas'); c.width = 400; c.height = 600;
-      try { const tg = Tegaki.create(c); tg.renderAt(1, (t) => Manga.render(tg, pg, t)); Manga.prompt(pg); } catch (e) { bad.push(`render ${u.i}: ${e.message}`); }
+      try { const tg = Tegaki.create(c); tg.renderAt(1, (t) => Manga.render(tg, pg, t)); } catch (e) { bad.push(`render ${u.i}: ${e.message}`); }
     }
   }
   return { n, bad, detail };

@@ -279,7 +279,7 @@ const S = () => page.evaluate(() => JV.Stage.state());
 const first = await S();
 check((first.world || '').startsWith('modern|washitsu'), `冒頭は近代日本の和室 (${first.world})`);
 check(Object.keys(await page.evaluate(() => Manga.LAYOUTS)).includes(first.layout) && first.panels.length >= 2 && first.panels.length <= 4, `1場面＝1ページ・2〜4コマ (${first.layout}・${first.panels.length}コマ)`);
-check(first.panels[0].role === '状況説明' && first.panels[0].camera === 'wide' && first.panels[0].narration, `1コマ目は状況説明の引き・ナレーションつき (${JSON.stringify(first.panels[0])})`);
+check(first.panels[0].role === '状況説明' && first.panels[0].camera === 'wide' && first.panels[0].narration && first.panels[0].content === 'scenery', `1コマ目は状況説明の引き・背景だけ・ナレーションつき (${JSON.stringify(first.panels[0])})`);
 check(first.panels.some((p) => p.lines.length) && first.panels.every((p) => p.lines.length <= 2), 'セリフは吹き出しに（1コマ2つまで）');
 const px = await page.evaluate(() => {
   const c = document.querySelector('#stage canvas'), x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height).data;
@@ -325,16 +325,7 @@ const rv = await page.evaluate(async () => {
 });
 check(rv[0] > 0 && rv.slice(1).every((v, i) => v <= rv[i]), `コマは 1 から順に出る (${rv})`);
 
-// プロンプトの画面
-await page.click('#reader-top .prompt-btn');
-const pr = await page.evaluate(() => ({ open: !document.getElementById('prompt-dialog').classList.contains('hidden'), text: document.getElementById('prompt-text').value, assist: document.getElementById('prompt-assist').textContent, opts: document.getElementById('prompt-style').options.length }));
-check(pr.open && pr.text.startsWith('Generate a complete manga page.') && pr.text.includes('=== Panel 1 ==='), 'プロンプトの画面にいまのページのプロンプト');
-check(pr.assist.includes('レイアウト') && pr.opts === 4, `Jevアシストの判定と、画風の候補 4 つ (${pr.opts})`);
-await page.selectOption('#prompt-style', 'mono');
-const mono = await page.evaluate(() => ({ text: document.getElementById('prompt-text').value, saved: JV.Settings.get('mangaStyle') }));
-check(mono.text.includes('Black-and-white manga artwork with screentones.') && !mono.text.includes('soft blurred white edge') && mono.saved === 'mono', 'モノクロにすると白フチの行を出さない・画風を保存');
-await page.keyboard.press('Escape');
-check(await page.evaluate(() => document.getElementById('prompt-dialog').classList.contains('hidden')), 'Esc で閉じる');
+check(!(await page.$('#reader-top .prompt-btn')) && !(await page.$('#prompt-dialog')), 'プロンプトの表示はない');
 
 check(app.errors.length === 0, `コンソールエラーなし ${app.errors.join(' / ')}`);
 await app.close();

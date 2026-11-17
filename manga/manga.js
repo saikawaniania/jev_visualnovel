@@ -7,9 +7,11 @@
 //   3. 演出の対応       Manga.assist(drafts, answers)        判定 → カメラ・背景効果（03_jev_assist_spec.md の表と閾値のまま）
 //   4. ページを組む     Manga.buildPage({...})                レイアウト（02 のレイアウト表）・コマごとの人物と吹き出し
 //   5. 描く            Manga.render(tg, page, t, opts)       手描きの絵（draw.js）をコマの中に描き、枠・吹き出し・ナレーションを載せる
-//   6. プロンプト       Manga.prompt(page, opts)              画像生成モデルへ渡すページプロンプト（02_prompt_spec.md の型と固定ルール）
 //
-// 絵は draw.js の手描きをそのまま使う（画像生成はしない）。画像生成モデルを使うときは、6 のプロンプトを持っていく。
+// Jev の判定に加えて、コード側でもコマの地の文を読む（Manga.readText）：手の形・表情・座る・後ろ姿や横顔・目元や手元などの見え方・
+// 誰の話か を言い回しで拾う（プレビューアーの人物の描き方と同じ言い回しの表）。言い回しで分かったことは Jev より優先する。
+// 単調にならないように、場所を見せなくてよいコマは背景をあせたパステルの単色・グラデーションで塗り（夕方・夜は時間の色）、
+// 導入のコマは背景だけ（動物がいれば動物だけ）にする。
 (function (root) {
   'use strict';
   const T = root.Tegaki, D = root.Draw;
@@ -72,15 +74,6 @@
     '喜び': 'キラキラ', '期待': 'キラキラ', '安心': 'オーラ', '感動': 'オーラ', '決意': 'オーラ', '照れ・ときめき': '花',
     '悲しみ': 'トーン', '寂しさ': 'トーン', '不安': 'トーン', '恐怖': 'トーン', '後悔': 'トーン',
     '興奮': '集中線', '怒り': '集中線', '驚き': '集中線', '焦り': '流線', '困惑': '白ドット', '呆れ': '白ドット',
-  };
-  const EFFECT_EN = {
-    'キラキラ': 'sparkles and small twinkling stars scattered across the background',
-    'オーラ': 'a soft glowing aura of light radiating behind the figure',
-    '花': 'soft flowers drifting in the background',
-    'トーン': 'a dark screentone background that sinks the mood',
-    '集中線': 'radial focus lines converging on the figure',
-    '流線': 'horizontal speed lines streaming across the background',
-    '白ドット': 'a grey screentone background scattered with white dots',
   };
   // 緊張系の感情（ページのレイアウトを崩す・見せ場を大きくする判断材料）
   const TENSE = new Set(['怒り', '恐怖', '興奮', '不安', '驚き', '焦り', '困惑', '緊張', '決意', '威圧']);
@@ -226,11 +219,110 @@
   function finish(drafts, items) {
     drafts.forEach((d, i) => {
       d.n = i + 1;
+      d.prose = (d.text || '').replace(/「[^」]*」|『[^』]*』/g, '');
       const body = (d.text || '').replace(/[\s　]+/g, '');
       d.summary = body.length > 28 ? body.slice(0, 27) + '…' : body;
     });
     return drafts;
   }
+
+  /* ================= 1b. コード側の判定：コマの地の文の言い回し（プレビューアーの人物の描き方と同じ表） ================= */
+  // 手の形：上の行から順に調べて、最初に当てはまったもの
+  const GESTURES = [
+    ['cheer', /両手を(上げ|挙げ|突き上げ)|万歳|ばんざい|ガッツポーズ/],
+    ['wave', /手を振|手をふ|手を挙げ|手を上げ|振り上げ|掲げ|拳を上げ|指を立て/],
+    ['point', /指す|指さ|指差|指を向け|突きつけ|差し出|手を伸ば|構え/],
+    ['think', /顎に手|あごに手|口元に手を当て|考え込/],
+    ['cover', /口(元)?を(覆|押さえ)|顔を覆|両手で顔/],
+    ['akimbo', /腰に手/],
+    ['surprise', /両手を広げ|のけぞ|仰け反|身を引|後ずさ/],
+    ['hold', /腕を組|(?<!気)持[つちっ]|抱え|抱[くきい]|握|受け取|手にする|手に取|胸の前/],
+  ];
+  const SIT = /座|腰掛|腰かけ|腰を下ろ|膝の上|椅子に|ソファ|正座/;
+  const CROUCH = /しゃが|うずくま|かがみ込/;
+  // 表情：上の行ほど優先（「泣き笑い」は泣く）。地の文によく出る「明るい（光）」「沈む（日）」は外した
+  const FACES = [
+    ['cry', /泣|涙|嗚咽/],
+    ['sleep', /眠|寝息|目を閉じ/],
+    ['surprise', /驚|見開|目を丸|瞠|ぎょっ|息を呑|息をのん/],
+    ['anger', /怒|睨|にら[みん]|苛立|眉間|眉を吊/],
+    ['anxiety', /不安|困|心配|戸惑|焦|汗|動揺|怯/],
+    ['sadness', /悲|寂|淋|落ち込|うなだれ|切な|憂/],
+    ['joy', /笑顔|(?<!微)笑[うっいみ]|にっこり|満面|嬉|喜/],
+    ['calm', /微笑|穏やか|柔らか|目を細め|口角を上げ|安堵/],
+    ['talk', /口を開|叫|声を上げ|話す|語る|言う|言っ|答え/],
+  ];
+  // 見え方（向きより優先）
+  const VIEWS = [
+    [/後頭部|後ろ頭/, { view: 'back', crop: 'head' }],
+    [/後ろ姿|背中|背を向け/, { view: 'back' }],
+    [/横顔/, { view: 'side' }],
+    [/目元|瞳/, { crop: 'eyes' }],
+    [/口元|唇/, { crop: 'mouth' }],
+    [/手元|指先|手のひら|掌/, { crop: 'hand' }],
+    [/足元|足もと|靴/, { crop: 'feet' }],
+  ];
+  // 表情 → 対応表の感情（Jev の細目がないコマで、カメラを決めるのに使う）
+  const FACE_EMO = { cry: '悲しみ', surprise: '驚き', anger: '怒り', anxiety: '不安', sadness: '悲しみ', joy: '喜び', calm: '平穏' };
+  // 人物を指す言葉（見た目の種類ごと）。「◯◯は」「◯◯が」の◯◯で、文の主語が誰かを見る
+  const WHO = {
+    man: '男|青年|彼(?!女)|兄|父|私|僕|俺', woman: '女(?!の子)|彼女|娘|妻|母|姉|妹', girl: '少女|女の子|娘|妹', boy: '少年|男の子|弟',
+    oldman: '老人|爺|翁|祖父', oldwoman: '老婆|婆|祖母|老女', middleman: '主人|店主|親父|おじさん|旦那', middlewoman: '女将|おばさん|奥さん|母',
+    soldier: '兵|騎士|衛兵', monk: '僧|和尚|住職|神父|牧師', baby: '赤ん坊|赤子|幼子', ghost: '幽霊|おばけ|お化け',
+  };
+  const SCENERY = /空|雨|雪|風|月|星|光|音|景色|海|山|川|木|花|道|街|町|窓|夜|朝|夕/;
+  function subject(sentence, f) {
+    if (!f) return null;
+    let best = null, at = Infinity;
+    for (const role of ['main', 'sub']) {
+      const type = f[role]; if (!type || !WHO[type]) continue;
+      if (role === 'sub' && (f.layout !== 'two' || f.sub === f.main)) continue;
+      const m = new RegExp(`(${WHO[type]})(は|が|も)`).exec(sentence);
+      if (m && m.index < at) { at = m.index; best = role; }
+    }
+    return best;
+  }
+  /**
+   * コマの地の文を読む：{ gesture, face, pose（sit・crouch）, view（back・side）, crop（head・eyes・mouth・hand・feet）, who（main・sub）, person（人を指す言葉があるか） }
+   * 文ごとに調べ、最初に見つかったものを使う。who はその文の主語
+   */
+  function readText(prose, f) {
+    const out = { gesture: null, face: null, pose: null, view: null, crop: null, who: null, person: false };
+    const ss = sentences(prose);
+    const all = Object.values(WHO).join('|');
+    out.person = new RegExp(all).test(prose);
+    for (const sn of ss) {
+      const who = subject(sn, f);
+      const hit = (k, v) => { if (v && !out[k]) { out[k] = v; if (!out.who && who) out.who = who; } };
+      hit('gesture', (GESTURES.find(([, re]) => re.test(sn)) || [])[0]);
+      hit('face', (FACES.find(([, re]) => re.test(sn)) || [])[0]);
+      hit('pose', CROUCH.test(sn) ? 'crouch' : SIT.test(sn) ? 'sit' : null);
+      const v = VIEWS.find(([re]) => re.test(sn));
+      if (v) { hit('view', v[1].view); hit('crop', v[1].crop); }
+    }
+    // 手元だけのコマは、何をしていても両手を体の前に（前から描く）
+    if (out.crop === 'hand') { out.gesture = 'hold'; out.view = null; }
+    return out;
+  }
+
+  /* ---------- 背景の塗り：あせたパステル（朝・昼）と、時間を表す色（夕方・夜） ---------- */
+  const PALETTE = {
+    day: ['#E6DCCB', '#D6E2D2', '#D3DEE8', '#E9D7DA', '#E6E0C6', '#DBD5E6', '#D1E4E1', '#EADCCD'],
+    morning: ['#F0E2CF', '#E9E4CC', '#F1DCD2', '#DDE6DA', '#E4E0EC'],
+    evening: [['#F1C6A2', '#D8939A'], ['#EFB894', '#B98AA6'], ['#F3D2A6', '#E09A7E'], ['#E8B4A0', '#9E7FA0']],
+    night: [['#2F3A5E', '#1B2138'], ['#3A345E', '#1E1C36'], ['#24344F', '#141C30'], ['#34405E', '#252038']],
+  };
+  /** コマの背景の塗りを選ぶ（unit とコマ番号で決まる。前のコマと同じ色は続けない） */
+  function plainFill(time, unit, n, prevIdx) {
+    const t = PALETTE[time] ? time : 'day', list = PALETTE[t];
+    let idx = Math.floor(hash(unit == null ? 0 : unit, n, 3) * list.length);
+    if (idx === prevIdx) idx = (idx + 1) % list.length;
+    if (t === 'evening' || t === 'night') { const [a, b] = list[idx]; return { kind: 'gradient', colors: [a, b], idx, angle: hash(unit, n, 5) < 0.5 ? 'v' : 'd' }; }
+    const a = list[idx];
+    if (hash(unit, n, 4) < 0.45) return { kind: 'flat', colors: [a], idx };
+    return { kind: 'gradient', colors: [mixHex(a, '#FFFFFF', 0.45), list[(idx + 3) % list.length]], idx, angle: hash(unit, n, 5) < 0.5 ? 'v' : 'd' };
+  }
+  function mixHex(a, b, k) { const A = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16)), B = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16)); return '#' + A.map((x, i) => Math.round(x + (B[i] - x) * k).toString(16).padStart(2, '0')).join(''); }
 
   /* ================= 2. Jevアシストの質問 ================= */
   const isPanelKey = (k) => /^(role|intensity|emotion)_\d+$/.test(k) || k === 'key_panel';
@@ -373,29 +465,75 @@
   }
 
   /* ================= 4. ページを組む ================= */
+  // 背景を単色・グラデーションにしやすい撮り方（場所を見せなくてよい寄り）
+  const TIGHT = new Set(['close_up', 'detail', 'profile_soft', 'over_shoulder']);
   /**
    * scene：場面判定から決めた場面（Director.decide の scene）。lines：items ごとの { text, speaker(main/sub/other), importance }
-   * 戻り値 page：{ layout, panels: [{ n, kind, role, camera, effect, emotion, expr, focal, lines, narration, ... }], key, scene }
+   * 戻り値 page：{ layout, panels: [{ n, kind, content, role, camera, effect, emotion, focal, faces, gestures, poses, views, talking, crop, bg, lines, narration }], key, scene }
+   *   content：people（人物）| scenery（背景だけ）| animal（動物だけ）
+   *   bg：null（場所を描く）| { kind: flat | gradient, colors }
    */
   function buildPage({ scene, drafts, answers = {}, lines = [], unit = null }) {
     const A = assist(drafts, answers);
     const f = scene && scene.figures;
     const people = !!(f && f.layout !== 'none' && (f.main || f.sub));
+    const animal = f && f.animal;
     const sceneEmo = scene && scene.emotion ? SCENE_EMO[scene.emotion] : null;
+    const minC = THRESHOLDS.camera_min_confidence;
+    let prevIdx = -1;
     const panels = drafts.map((d, i) => {
-      const a = A.panels[i];
+      const a = Object.assign({}, A.panels[i]);
       const ls = d.lines.map((q) => Object.assign({ text: '', speaker: 'main', importance: 0.5 }, lines[q] || {}, { q }));
-      // 中心人物：セリフのコマはその話し手（場面にいない声なら主人物）、それ以外は主人物
-      let focal = people && d.hasChar ? 'main' : null;
-      if (people && ls.length && ls[0].speaker === 'sub' && f.layout === 'two' && f.sub) focal = 'sub';
-      const emo = a.emotion && a.emoConf >= THRESHOLDS.camera_min_confidence ? a.emotion : (a.intensity != null && a.intensity >= 0.6 ? sceneEmo : null);
-      return Object.assign({}, a, { lines: ls, narration: d.narration, text: d.text, summary: d.summary, hasChar: people && d.hasChar, focal, expr: emo ? EXPR[emo] || 'normal' : 'normal' });
+      const R = readText(d.prose || '', f);
+      // 何を映すか：導入は背景だけ（動物がいれば動物だけ）。地の文が人を指さず景色だけを語る動作のコマも背景だけ
+      let content = people ? 'people' : animal ? 'animal' : 'scenery';
+      if (d.kind === 'establish') content = animal ? 'animal' : 'scenery';
+      else if (d.kind === 'action' && !R.person && SCENERY.test(d.prose || '')) content = animal ? 'animal' : 'scenery';
+      // 中心人物：セリフのコマはその話し手、それ以外は地の文の主語（分からなければ主人物）
+      let focal = content === 'people' ? 'main' : null;
+      if (content === 'people' && f.layout === 'two' && f.sub) {
+        if (ls.length && ls[0].speaker === 'sub') focal = 'sub';
+        else if (!ls.length && R.who) focal = R.who;
+      }
+      // 気持ち：言い回しで分かればそれ（コード）、なければ Jev の細目、強ければ場面の気持ち
+      if (!(a.emotion && a.emoConf >= minC) && R.face && FACE_EMO[R.face] && content === 'people') {
+        a.emotion = FACE_EMO[R.face]; a.emoConf = 0.6; a.emotionBy = 'code';
+        const c = EMO_CAMERA[a.emotion];
+        if (c && !(c[0] === 'dutch' && !(a.intensity >= 1.5))) { a.camera = { family: c[0], en: c[1] }; a.cameraWhy = `言い回し「${R.face}」`; }
+      }
+      const emo = a.emotion && a.emoConf >= minC ? a.emotion : (a.intensity != null && a.intensity >= 0.6 ? sceneEmo : null);
+      const target = R.who || focal || 'main';
+      const faces = {}, gestures = {}, poses = {}, views = {}, talking = {};
+      if (content === 'people') {
+        faces[focal] = R.face && R.face !== 'talk' ? R.face : emo ? EXPR[emo] || 'normal' : 'normal';
+        if (R.face && R.face !== 'talk' && target !== focal) faces[target] = R.face;
+        if (R.gesture) gestures[target] = R.gesture;
+        if (R.pose) poses[target] = R.pose;
+        if (R.view) views[target] = R.view;
+        for (const l of ls) if (l.speaker === 'main' || l.speaker === 'sub') talking[l.speaker] = true;
+        if (R.face === 'talk') talking[target] = true;
+        // 横顔のカメラのコマだけ、本当の横顔にする（2人なら向き合う）
+        if (a.camera && (a.camera.family === 'profile' || a.camera.family === 'profile_soft')) for (const role of ['main', 'sub']) if (!views[role]) views[role] = 'side';
+      }
+      const crop = content === 'people' ? R.crop : null;
+      return Object.assign(a, { lines: ls, narration: d.narration, text: d.text, summary: d.summary, content, hasChar: content === 'people', focal, faces, gestures, poses, views, talking, crop, read: R, expr: faces[focal] || 'normal' });
     });
+    // 背景の塗り：場所を見せなくてよいコマ（人物の寄り・感情の効果がないコマ）から選ぶ。どのページにも場所の見えるコマを 1 つは残す
+    const time = (scene && scene.time) || 'day';
+    for (const p of panels) {
+      p.bg = null;
+      if (p.content !== 'people' || p.effect) continue;
+      const fam = p.camera ? p.camera.family : p.kind === 'close' ? 'close_up' : null;
+      const tight = TIGHT.has(fam) || p.crop === 'eyes' || p.crop === 'mouth' || p.crop === 'hand' || p.crop === 'head';
+      if (tight || hash(unit == null ? 0 : unit, p.n, 7) < 0.4) { p.bg = plainFill(time, unit, p.n, prevIdx); prevIdx = p.bg.idx; }
+    }
+    if (panels.length && panels.every((p) => p.bg || p.effect)) { const keep = panels.find((p) => !p.effect); if (keep) keep.bg = null; }
     const tense = panels.some((p) => p.emotion && TENSE.has(p.emotion)) || (scene && scene.mood > 0.66);
     const calm = !tense && (!scene || scene.mood < 0.4);
     const layout = chooseLayout(panels.length, { tense, calm });
     const key = A.key || (panels.length > 1 ? panels.reduce((b, p) => ((p.intensity || 0) > (b.intensity || 0) ? p : b), panels[0]).n : 1);
-    return { unit, layout, panels, key, scene, tense, key2: `${unit}|${layout}|${panels.map((p) => `${p.role}:${p.camera ? p.camera.family : '-'}:${p.effect || '-'}:${p.lines.map((l) => l.speaker).join('')}`).join('/')}` };
+    const sig = (p) => `${p.role}:${p.content}:${p.camera ? p.camera.family : '-'}:${p.effect || '-'}:${p.bg ? p.bg.colors.join('') : '-'}:${JSON.stringify([p.faces, p.gestures, p.poses, p.views, p.crop])}:${p.lines.map((l) => l.speaker).join('')}`;
+    return { unit, layout, panels, key, scene, tense, key2: `${unit}|${layout}|${panels.map(sig).join('/')}` };
   }
 
   /* ================= 5. 描く ================= */
@@ -416,9 +554,18 @@
     flat_medium: { z: 1.45, focus: 'chest', ay: 0.5 },
     profile_soft: { z: 2.4, focus: 'head', ay: 0.47, soft: true },
     plain: { z: 1.5, focus: 'chest', ay: 0.5 },
+    // 見え方（地の文の言い回しから）
+    eyes: { z: 5.2, focus: 'eyes', ay: 0.5 },
+    mouth: { z: 4.4, focus: 'mouth', ay: 0.5 },
+    hand: { z: 3.4, focus: 'hands', ay: 0.5 },
+    feet: { z: 2.6, focus: 'feet', ay: 0.62 },
+    head: { z: 2.6, focus: 'head', ay: 0.5 },
+    animal: { z: 1, focus: 'animal' },
   };
   function shotOf(p) {
+    if (p.content === 'animal') return SHOTS.animal;
     if (!p.hasChar) return SHOTS.wide;
+    if (p.crop && SHOTS[p.crop]) return SHOTS[p.crop];
     if (p.camera && SHOTS[p.camera.family]) return SHOTS[p.camera.family];
     if (p.kind === 'establish') return SHOTS.wide;
     return p.kind === 'close' ? SHOTS.close_up : SHOTS.plain;
@@ -426,19 +573,28 @@
   /** 絵（コマと同じ大きさの「世界」）の中で、カメラが見る点と変形 */
   function camera(L, p, scene, shot) {
     const seat = scene.location === 'washitsu' ? 'seiza' : 'chair';
-    const people = D.placement(L, scene.figures, 0);
+    const people = D.placement(L, scene.figures, 0).map((q) => (p.poses && p.poses[q.role] ? Object.assign({}, q, { pose: p.poses[q.role] }) : q));
     const focal = people.find((q) => q.role === p.focal) || people[0];
     const other = people.find((q) => q !== focal);
     let fx = L.W / 2, fy = L.H / 2;
+    // 動物だけのコマ：動物に寄る（小さい動物ほど寄る）
+    if (shot.focus === 'animal') {
+      const kind = scene.figures && scene.figures.animal, small = kind === 'cat' || kind === 'dog' || kind === 'rabbit';
+      shot = { z: small ? 2.3 : kind === 'bird' ? 1.5 : 1.15, focus: 'scene', ay: small ? 0.58 : 0.5 };
+      fx = L.W / 2; fy = L.floor - (small ? L.H * 0.08 : L.H * 0.22);
+    }
     // 相手のいないコマの肩越し・横顔：寄りの大きさと、顔を置く位置で違いを出す
     if (!other && (shot === SHOTS.over_shoulder || shot === SHOTS.profile)) shot = shot === SHOTS.profile ? { z: 2.5, focus: 'head', ay: 0.5, ax: 0.62 } : { z: 2.1, focus: 'head', ay: 0.45, ax: 0.36 };
-    if (focal && shot.focus !== 'scene') {
+    if (focal && shot.focus !== 'scene' && shot.focus !== 'animal') {
       const h = D.headOf(L, focal, seat);
       const feet = L.floor;
       if (shot.focus === 'head') { fx = h.x; fy = h.y + h.r * 0.25; if (shot.pull && other) { const o = D.headOf(L, other, seat); fx = lerp(fx, o.x, shot.pull); } }
       else if (shot.focus === 'chest') { fx = h.x; fy = lerp(h.y, feet, 0.32); }
       else if (shot.focus === 'hands') { fx = h.x + focal.facing * h.r * 0.6; fy = lerp(h.y, feet, 0.45); }
       else if (shot.focus === 'body') { fx = h.x; fy = lerp(h.y - h.r, feet, 0.5); }
+      else if (shot.focus === 'eyes') { fx = h.x + h.r * 0.1 * (focal.facing || 1) * -1; fy = h.y + h.r * 0.2; }
+      else if (shot.focus === 'mouth') { fx = h.x; fy = h.y + h.r * 0.62; }
+      else if (shot.focus === 'feet') { fx = h.x; fy = feet - h.r * 0.6; }
       else if (shot.focus === 'pair') { const o = other ? D.headOf(L, other, seat) : h; fx = (h.x + o.x) / 2; fy = (h.y + o.y) / 2 + h.r * 0.6; }
     }
     const z = shot.z || 1, sy = shot.sy || 1, rot = (shot.rot || 0) * (p.n % 2 ? 1 : -1);
@@ -608,7 +764,15 @@
     return s;
   }
 
-  /** コマ 1 つの絵：背景（カメラ）→ 背景効果 → 人物（カメラ）→ 天候 → 空気 */
+  /** 背景の塗り（単色・グラデーション）。コマの画面の座標で塗る */
+  function fillPlain(c, w, h, bg) {
+    if (bg.kind === 'flat') { c.fillStyle = bg.colors[0]; c.fillRect(0, 0, w, h); return; }
+    const g = bg.angle === 'd' ? c.createLinearGradient(0, 0, w, h) : c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, bg.colors[0]); g.addColorStop(1, bg.colors[1]);
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+  }
+
+  /** コマ 1 つの絵：背景（場所・塗り）→ 背景効果 → 人物か動物（カメラ）→ 天候 → 空気 */
   function drawPanelScene(p, scene, w, h, t, opts) {
     const S = scratch(w, h), tg = S.tg, c = tg.ctx;
     tg.setTime(t);
@@ -616,30 +780,26 @@
     const L = D.layout(tg); L.still = true;
     const shot = shotOf(p), cam = camera(L, p, scene, shot);
     const world = { location: scene.location || 'none', time: scene.time || 'day', era: scene.era || 'modern' };
-    c.save(); cam.apply(c); D.background(tg, L, world, t); c.restore();
-    // 中心人物の顔（コマの座標）
+    if (p.bg) fillPlain(c, w, h, p.bg);
+    else { c.save(); cam.apply(c); D.background(tg, L, world, t); c.restore(); }
+    // 人物の顔（コマの座標）。コマごとの姿勢（座るなど）で頭の位置が変わる
     const seat = world.location === 'washitsu' ? 'seiza' : 'chair';
     const heads = {};
-    for (const q of D.placement(L, scene.figures, 0)) { const hd = D.headOf(L, q, seat), [x, y] = cam.map(hd.x, hd.y); heads[q.role] = [x, y, hd.r * cam.zz]; }
+    if (p.content === 'people') for (const q0 of D.placement(L, scene.figures, 0)) { const q = p.poses && p.poses[q0.role] ? Object.assign({}, q0, { pose: p.poses[q0.role] }) : q0; const hd = D.headOf(L, q, seat), [x, y] = cam.map(hd.x, hd.y); heads[q.role] = [x, y, hd.r * cam.zz]; }
     const focus = heads[p.focal] || heads.main || null;
     if (p.effect) effect(tg, L, p.effect, t, focus);
-    if (opts.figures !== false && p.hasChar !== false && scene.figures && (scene.figures.layout !== 'none' || scene.figures.animal)) {
+    const f = scene.figures;
+    const figs = p.content === 'people' ? f : p.content === 'animal' && f && f.animal ? { layout: 'none', animal: f.animal } : null;
+    if (opts.figures !== false && figs && (figs.layout !== 'none' || figs.animal)) {
       const ft = S.ftg, fc = ft.ctx; ft.setTime(t);
       fc.setTransform(1, 0, 0, 1, 0, 0); fc.clearRect(0, 0, w, h);
       fc.save(); cam.apply(fc);
-      const mainExpr = p.focal === 'sub' ? 'normal' : p.expr, subExpr = p.focal === 'sub' ? p.expr : 'normal';
-      D.figures(ft, L, { figures: scene.figures, era: world.era, time: world.time, location: world.location, expr: mainExpr, subExpr, innerK: p.effect ? 0.7 : 0, crowdVariant: scene.crowdVariant || 0 }, t);
+      const F = p.faces || {};
+      D.figures(ft, L, { figures: figs, era: world.era, time: world.time, location: world.location, expr: F.main || 'normal', subExpr: F.sub || 'normal', gestures: p.gestures, poses: p.poses, views: p.views, talking: p.talking, innerK: p.effect || p.bg ? 0.7 : 0, crowdVariant: scene.crowdVariant || 0 }, t);
       fc.restore();
       c.drawImage(ft.canvas, 0, 0);
-    } else if (!p.hasChar && scene.figures && scene.figures.layout !== 'none' && opts.figures !== false && p.kind === 'establish') {
-      // 導入のコマでも、人がいる場面なら引きで小さく描く
-      const ft = S.ftg, fc = ft.ctx; ft.setTime(t);
-      fc.setTransform(1, 0, 0, 1, 0, 0); fc.clearRect(0, 0, w, h);
-      fc.save(); cam.apply(fc);
-      D.figures(ft, L, { figures: scene.figures, era: world.era, time: world.time, location: world.location, expr: 'normal' }, t);
-      fc.restore(); c.drawImage(ft.canvas, 0, 0);
     }
-    if (!p.effect) {
+    if (!p.effect && !p.bg) {
       const w2 = scene.weather, indoor = INDOOR.has(world.location);
       D.weather(tg, L, { rain: w2 === 'rain' && !indoor ? 1 : 0, snow: w2 === 'snow' && !indoor ? 1 : 0, cloudy: w2 === 'cloudy' ? 1 : w2 === 'rain' || w2 === 'snow' ? 0.6 : 0, fog: w2 === 'fog' ? (indoor ? 0.3 : 1) : 0 }, t);
     }
@@ -708,151 +868,17 @@
     return { P, rects };
   }
 
-  /* ================= 6. ページプロンプト（02_prompt_spec.md） ================= */
-  const STYLES = {
-    flat: { label: '簡易カラー（手描きの絵に近い）', line: 'Simple flat-colour manga artwork, clean line art.', colour: true },
-    colour: { label: 'カラー', line: 'Colour: Full colour artwork.', colour: true },
-    watercolour: { label: 'カラー＋水彩寄り', line: 'Colour: Full colour artwork in a pale watercolour style with bold unpainted areas.', colour: true },
-    mono: { label: 'モノクロ（スクリーントーン）', line: 'Black-and-white manga artwork with screentones.', colour: false },
-  };
-  const FIXED = {
-    open: 'Generate a complete manga page. Lay the panels out yourself using the panel layout rules below — do not look for a layout reference image.',
-    order: 'Reading order: this is a JAPANESE manga page — the panels are read RIGHT TO LEFT. Panel 1 is at the TOP RIGHT of the page and the last panel is at the BOTTOM LEFT. Never lay the page out left-to-right.',
-    halo: '重要: Around every character silhouette, add a soft blurred white edge about 3px wide, just outside the black outline, so the characters separate cleanly from the background. Keep it subtle — a soft halo, not a hard sticker-like cutout border.',
-    format: 'The page is vertical portrait format (taller than wide, 2:3 ratio).',
-  };
-  const TAIL = `CRITICAL rules for text in speech bubbles:
-- A bubble contains ONLY the spoken words. NEVER write a character's name inside or near a bubble, and NEVER prefix speech with a name like '佐々木：' or '課長：'.
-- All bubble/caption text must be in Japanese, set vertically (top-to-bottom columns read right-to-left) in a clear manga font — never horizontally. Make the lettering large: fill most of its bubble or caption box, never small or thin. This applies to speech bubbles, inner monologue boxes and narration captions alike.
-- Keep each vertical text column short enough to fit inside its bubble or caption box without overflowing.
-CRITICAL rules for character line art:
-- Maintain consistent character appearance across all panels.
-- Anyone who is NOT listed as a character in this prompt (unnamed passers-by, bystanders, figures only mentioned in a panel description, people from the past) must be designed independently: never give them the face, hairstyle, hair colour or outfit of any listed character, and never draw them in a way that could be mistaken for a named character.
-- Vary the camera work in every panel — angle, shot size, lens height and framing — drawing freely on the full vocabulary of Japanese manga camera work rather than a fixed set of shots. Do NOT repeat the same camera work in consecutive panels.
-- For dramatic or emotional highlight moments, boldly use a large panel to fill significant space. Contrast large panels with small ones to create visual rhythm and impact on the page.
-- The last panel of the page should end on a moment that makes the reader want to turn the page — a reaction shot, a cliffhanger line, an unresolved tension, or a surprising reveal.
-CRITICAL rules for panel layout:
-- NEVER draw panel numbers (①②③④ or 1234), labels, markers or annotations anywhere in the image. Panels are told apart by their borders alone.
-- Draw the panels in EXACTLY the order given above. NEVER reorder them, never merge two panels into one, never split one panel into two, and never drop a panel.
-- Gutters: about 6px between panels that sit side by side, about 16px between rows. The area outside the panels is pure white.`;
-  const TAIL_WHO = `CRITICAL rules for who says what (panels with two or more characters):
-- Follow the Character placement block exactly. Do NOT swap which character is on the right and which is on the left.
-- Every speech bubble must have a visible tail, and that tail must point to the mouth of the ONE character named as its speaker — never to any other character.
-- Each bubble states where to place it. Where a bubble is placed away from its speaker to preserve reading order, keep that placement and stretch the tail across to the speaker — reading order wins over putting the bubble near its speaker.
-- A character marked SILENT must have no speech bubble at all. Do not invent lines for them.
-- The speaker names in this prompt are instructions for tail direction only. They must never appear as drawn text anywhere in the image.
-- Bubbles are read right-to-left then top-to-bottom, so the numbered order above must match that reading order.`;
-
-  // 簡易キャラ表：見た目の種類 × 時代（作品の中では同じ文を使い回す → 場面をまたいで見た目が崩れない）
-  const TYPE_JA = { man: '成人男性', woman: '成人女性', boy: '少年', girl: '少女', oldman: '老人（男）', oldwoman: '老人（女）', middleman: '中年男性', middlewoman: '中年女性', baby: '幼児', soldier: '兵士・騎士', monk: '僧侶・聖職者', ghost: 'おばけ', unknown: '人物' };
-  const TYPE_EN = {
-    man: 'male, about 25 — a slim young man, short black hair, calm eyes',
-    woman: 'female, about 25 — a slender young woman, long dark hair, gentle almond-shaped eyes',
-    boy: 'male, about 12 — a boy with short, slightly messy hair and a bright face',
-    girl: 'female, about 10 — a small girl with round eyes and a lively face',
-    oldman: 'male, about 70 — an old man, bald with a white fringe, slightly stooped, walks with a stick',
-    oldwoman: 'female, about 70 — an old woman, grey hair in a bun, small and gentle',
-    middleman: 'male, about 50 — a sturdy middle-aged man, short hair, a moustache',
-    middlewoman: 'female, about 45 — a middle-aged woman, hair tied up, an apron',
-    baby: 'a toddler of about 2, round cheeks and a tuft of hair',
-    soldier: 'male, adult — an armed soldier or knight',
-    monk: 'male, adult — a priest or monk with a shaved head',
-    ghost: 'a ghost — a figure under a floating white sheet with two dark eye holes',
-    unknown: 'an adult of unclear age and gender, plain features',
-  };
-  const WEAR = {
-    modern: { man: 'a dark kimono and hakama', woman: 'a patterned kimono with an obi', boy: 'a dark school uniform with a cap', girl: 'a bright patterned kimono with a red ribbon', oldman: 'a plain brown kimono', oldwoman: 'a muted purple kimono', middleman: 'a brown kimono', middlewoman: 'a kimono with a white apron', soldier: 'an olive Imperial-era army uniform and cap', monk: 'a black monk’s robe with a brown kesa', baby: 'a small kimono', unknown: 'a plain kimono', ghost: '' },
-    present: { man: 'a casual shirt and dark trousers', woman: 'a light blouse and a knee-length skirt', boy: 'a T-shirt and shorts', girl: 'a knee-length dress with pigtails and a red ribbon', oldman: 'a beige shirt and grey trousers, glasses', oldwoman: 'a long lavender dress and glasses', middleman: 'a white shirt and tie, dark trousers', middlewoman: 'a long dress with an apron', soldier: 'a modern camouflage uniform and helmet', monk: 'a black monk’s robe with a brown kesa', baby: 'a yellow T-shirt and shorts', unknown: 'plain casual clothes', ghost: '' },
-    western: { man: 'a dark frock coat, waistcoat and tie, sometimes a top hat', woman: 'a long Victorian gown', boy: 'a tweed jacket, shorts and a tie', girl: 'a knee-length dress with a pale ribbon', oldman: 'a grey coat, a short beard, a walking stick', oldwoman: 'a long dark gown', middleman: 'a brown coat and tie, a moustache', middlewoman: 'a long dress with an apron', soldier: 'a red military coat with white trousers', monk: 'a black cassock with a cross', baby: 'a white gown', unknown: 'a plain coat', ghost: '' },
-    fantasy: { man: 'a tunic, trousers and a cloak', woman: 'a long gown with a pale cloak', boy: 'a simple tunic', girl: 'a knee-length dress with pigtails and a yellow ribbon', oldman: 'a blue wizard robe and pointed hat, a long beard, a staff', oldwoman: 'a purple robe and a dark cloak', middleman: 'a tunic, a moustache', middlewoman: 'a long dress with an apron', soldier: 'silver plate armour, a helmet and a cloak', monk: 'a white robe with a golden cross', baby: 'a small tunic', unknown: 'a tunic and a grey cloak', ghost: '' },
-  };
-  const LOC_EN = {
-    washitsu: 'a Japanese tatami room with shoji screens and fusuma', yoshitsu: 'a Western-style room with a table, chairs and a window', kitchen: 'a kitchen', genkan: 'an entrance hall and corridor',
-    classroom: 'a school classroom with a blackboard', shop: 'the inside of a shop or café, with a counter', station: 'a railway station platform or the inside of a train', street: 'a town street',
-    alley: 'a narrow back alley', garden: 'a garden', field: 'open fields and meadows', forest: 'a forest path', river: 'a riverbank with a bridge', seaside: 'a seashore',
-    nightsky: 'an open place under a starry night sky', bedroom: 'a bedroom', library: 'a library with tall bookshelves', office: 'an office with desks', hospital: 'a hospital room',
-    shrine: 'a temple or shrine precinct', church: 'a church interior', castle: 'a castle hall', park: 'a park with benches', rooftop: 'a building rooftop with a fence', ship: 'the deck of a ship',
-    snowmountain: 'a snowy mountain', graveyard: 'a graveyard', cave: 'a dark cave', none: 'a plain background',
-  };
-  const TIME_EN = { morning: 'morning light', day: 'daytime', evening: 'evening, the glow of sunset', night: 'night' };
-  const WEATHER_EN = { rain: 'rain is falling', snow: 'snow is falling', cloudy: 'an overcast sky', fog: 'fog hangs in the air' };
-  const ERA_EN = { modern: 'Meiji–early Showa era Japan', present: 'present-day Japan', western: 'a 19th-century European setting', fantasy: 'a fantasy kingdom' };
-
-  /** 場面の登場人物（簡易キャラ表の行）。役割 main / sub と見た目 */
-  function cast(scene) {
-    const f = scene && scene.figures; if (!f || f.layout === 'none') return [];
-    const out = [];
-    const era = scene.era || 'modern';
-    const add = (role, type) => { if (!type) return; const same = out.find((c) => c.type === type); const name = `${TYPE_JA[type] || '人物'}${same ? 'B' : role === 'main' ? '' : ''}`; out.push({ role, type, name: same ? `${TYPE_JA[type]}（2人目）` : TYPE_JA[type] || '人物', en: TYPE_EN[type] || TYPE_EN.unknown, wear: (WEAR[era] || WEAR.modern)[type] || '' }); };
-    add('main', f.main);
-    if (f.layout === 'two') add('sub', f.sub);
-    return out;
-  }
-  function prompt(page, { style = 'flat' } = {}) {
-    if (!page) return '';
-    const S = STYLES[style] || STYLES.flat, sc = page.scene || {}, L = LAYOUTS[page.layout];
-    const people = cast(sc), who = (role) => people.find((c) => c.role === role);
-    const loc = LOC_EN[sc.location || 'none'] || LOC_EN.none;
-    const out = [FIXED.open];
-    if (page.panels.length > 1) out.push(FIXED.order);
-    out.push(S.line);
-    if (S.colour && people.length) out.push(FIXED.halo);
-    out.push(FIXED.format, '', L.en, '', 'Fill each panel with the following scenes:', '');
-    out.push('Backgrounds:');
-    out.push(`- The location notes below are the ART-SETTING reference. Follow each location's design, colour, lighting and props as described, and redraw the location from whatever camera angle the panel needs.`);
-    out.push('- Use the background matching the location described for that panel. Never blend two locations in one panel.');
-    out.push('- Give characters and background the same light source and colour temperature, and always add a contact shadow under the characters.');
-    out.push(`Location notes:\n- 「${sc.location || 'none'}」: ${loc}, ${ERA_EN[sc.era] || ERA_EN.modern}; ${TIME_EN[sc.time] || TIME_EN.day}${WEATHER_EN[sc.weather] ? `; ${WEATHER_EN[sc.weather]}` : ''}.`);
-    if (people.length) {
-      out.push('', 'Character notes — these notes govern face, hair, build, proportions and what they wear. Keep them consistent in every panel:');
-      for (const c of people) out.push(`- 「${c.name}」: ${c.en}.${c.wear ? ` Wearing: ${c.wear}` : ''}`);
-    }
-    page.panels.forEach((p) => {
-      out.push('', `=== Panel ${p.n} ===`);
-      const inPanel = p.hasChar ? people : (p.kind === 'establish' && people.length ? people : []);
-      if (p.hasChar && inPanel.length) out.push(`Characters in this panel: ${inPanel.map((c) => `「${c.name}」`).join(', ')} — draw them exactly as described in the character notes.`);
-      const focal = who(p.focal);
-      const desc = p.kind === 'establish' ? `Establishing view of ${loc}${inPanel.length ? `, the characters small in the frame` : ', no people'}.` : `${focal ? `${focal.name} is the focus of this panel. ` : ''}Scene (from the novel, Japanese): ${p.text}`;
-      out.push(desc);
-      if (p.kind === 'establish') out.push(`Scene (from the novel, Japanese): ${p.text}`);
-      if (p.camera) out.push(`Camera: ${p.camera.en}.`);
-      if (p.effect) out.push(`Background effect: ${EFFECT_EN[p.effect]}.`);
-      out.push("Background: draw this panel's concrete location, following the location notes.");
-      if (p.narration) out.push(`Story narration caption box (rectangular banner at top or bottom of panel, Japanese vertical writing): ${p.narration}`);
-      if (p.lines.length) {
-        const two = p.hasChar && people.length >= 2;
-        const speaks = (c) => p.lines.findIndex((l) => l.speaker === c.role);
-        if (two) {
-          out.push('Character placement (CRITICAL — these sides are fixed for the whole conversation. Use exactly these sides even if the speaking order changes; the two characters must NOT swap sides between panels):');
-          for (const [side, role] of [['RIGHT', 'main'], ['LEFT', 'sub']]) {
-            const c = who(role); if (!c) continue; const k = speaks(c);
-            out.push(`  - ${side}: 「${c.name}」, facing ${side === 'RIGHT' ? 'left' : 'right'}, ${k >= 0 ? `speaks ${['1st', '2nd', '3rd', '4th'][k]}` : 'SILENT in this panel — give this character NO speech bubble'}`);
-          }
-        }
-        out.push('Speech bubbles (白い吹き出し, rounded balloon, Japanese vertical writing). The speaker noted for each bubble tells you where to aim the tail — it is NOT text to draw:');
-        p.lines.forEach((l, k) => {
-          const c = who(l.speaker);
-          out.push(`  ${k + 1}. bubble text only: 「${l.text}」`);
-          if (c) out.push(`     spoken by 「${c.name}」${two ? ` (${l.speaker === 'main' ? 'RIGHT' : 'LEFT'} character)` : ''} — place this bubble near 「${c.name}」's head and draw a short pointed tail from the bubble to 「${c.name}」's mouth.`);
-          else out.push('     spoken by someone who is not in the panel (a voice off-panel, a phone or a letter) — draw the bubble with no tail.');
-        });
-      }
-    });
-    out.push('', TAIL);
-    if (page.panels.some((p) => p.lines.length && p.hasChar) && people.length >= 2) out.push(TAIL_WHO);
-    return out.join('\n');
-  }
-
   /** デバッグ表示用：コマごとの判定と演出（03 のサンプル JSON の形に近い） */
   function describe(page) {
     if (!page) return '';
-    return [`レイアウト ${page.layout}・最重要コマ ${page.key}`, ...page.panels.map((p) => `コマ${p.n}［${p.role} ${p.roleConf.toFixed(2)}${p.flag ? '・要確認' : ''}］${p.intensity != null ? `強さ ${p.intensity.toFixed(2)}` : ''}${p.emotion ? `・${p.emotion} ${p.emoConf.toFixed(2)}` : ''} → ${p.camera ? p.camera.family : 'カメラなし'}${p.effect ? `・${p.effect}` : ''}${p.lines.length ? `・セリフ${p.lines.length}` : ''}`)].join('\n');
+    const code = (p) => { const R = p.read || {}; return [R.gesture && `手:${R.gesture}`, R.face && `顔:${R.face}`, R.pose && R.pose, R.view && R.view, R.crop && `切り取り:${R.crop}`, R.who && `主語:${R.who}`].filter(Boolean).join(' '); };
+    return [`レイアウト ${page.layout}・最重要コマ ${page.key}`, ...page.panels.map((p) => `コマ${p.n}［${p.role} ${p.roleConf.toFixed(2)}${p.flag ? '・要確認' : ''}］${p.content !== 'people' ? (p.content === 'animal' ? '動物だけ・' : '背景だけ・') : ''}${p.intensity != null ? `強さ ${p.intensity.toFixed(2)}` : ''}${p.emotion ? `・${p.emotion} ${p.emoConf.toFixed(2)}${p.emotionBy === 'code' ? '（言い回し）' : ''}` : ''} → ${p.camera ? p.camera.family : 'カメラなし'}${p.effect ? `・${p.effect}` : ''}${p.bg ? `・塗り ${p.bg.kind}` : ''}${p.lines.length ? `・セリフ${p.lines.length}` : ''}${code(p) ? `｜コード：${code(p)}` : ''}`)].join('\n');
   }
 
   const Manga = {
-    THRESHOLDS, ROLES, EMOTIONS, EMO_CAMERA, ROLE_CAMERA, POOL, EFFECT, EFFECT_EN, TENSE, EXPR, LAYOUTS, STYLES, SHOTS,
-    split, sentences, caption, questions, emotionQuestions, stateOf, isPanelKey, mockAnswer, assist, buildPage, chooseLayout, panelRects, pageBox,
-    render, drawPanelScene, placeBubbles, columns, prompt, cast, describe,
+    THRESHOLDS, ROLES, EMOTIONS, EMO_CAMERA, ROLE_CAMERA, POOL, EFFECT, TENSE, EXPR, LAYOUTS, SHOTS, PALETTE, GESTURES, FACES,
+    split, sentences, caption, questions, emotionQuestions, stateOf, isPanelKey, mockAnswer, assist, readText, plainFill, buildPage, chooseLayout, panelRects, pageBox,
+    render, drawPanelScene, placeBubbles, columns, describe,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Manga;
   root.Manga = Manga;
