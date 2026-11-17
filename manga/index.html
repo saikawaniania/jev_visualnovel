@@ -229,6 +229,19 @@ body.illust.effects-off #text-column { padding-top: 64px; margin-left: auto; }
 @media (orientation: landscape) { body.illust.effects-off #text-column { margin-left: auto; max-width: 760px; } }
 body.effects-off #text-column { background: transparent; box-shadow: none; }
 
+/* ページめくり（1 つの場面が 2 ページ以上のときだけ出す）。漫画の読み順なので、左が次のページ */
+#page-nav {
+  position: fixed; z-index: 22; left: 0; right: 0; top: calc(58svh - 46px);
+  display: flex; justify-content: center; align-items: center; gap: 10px; pointer-events: none;
+}
+#page-nav > * { pointer-events: auto; }
+#page-nav button { padding: 4px 12px; font-size: 13px; border-radius: 999px; background: rgba(16, 22, 36, 0.72); color: var(--night-ink); border-color: rgba(241, 240, 234, 0.3); }
+#page-nav button:disabled { opacity: 0.35; cursor: default; }
+#page-nav .count { min-width: 3.6em; text-align: center; font-size: 12px; color: var(--night-ink); background: rgba(16, 22, 36, 0.72); border-radius: 999px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
+@media (orientation: landscape) { #page-nav { top: auto; bottom: 14px; right: auto; width: min(50vw, 72svh); } }
+body.effects-off #page-nav { display: none !important; }
+#stage { touch-action: pan-y; }
+
 #effects-toggle {
   position: fixed;
   right: 16px;
@@ -363,6 +376,11 @@ body.debug #center-line {
     <div class="titles"><span class="work-title" id="work-title"></span><span class="chapter-name" id="chapter-name"></span></div>
     <button type="button" class="settings-btn" onclick="JV.SettingsUI.open()">設定</button>
   </header>
+  <nav id="page-nav" class="hidden" aria-label="ページめくり">
+    <button type="button" id="page-next" onclick="JV.Stage.flip(1)" aria-label="次のページ">‹ 次へ</button>
+    <span class="count" id="page-count" aria-live="polite"></span>
+    <button type="button" id="page-prev" onclick="JV.Stage.flip(-1)" aria-label="前のページ">前へ ›</button>
+  </nav>
   <div id="text-column">
     <article id="text"></article>
   </div>
@@ -950,10 +968,10 @@ JV.Parser = {
   /** 単位の中のセリフ（「」の中身）。吹き出しの候補。多すぎるときは先頭から 8 つまで */
   quotes(text) { return this.quoteItems(text).map((q) => q.text); },
   /**
-   * 吹き出しの候補のセリフ（最大 4 つ、本文の順）。前後の地の文（話し手の手がかり）も付ける。
+   * 吹き出しの候補のセリフ（最大 8 つ、本文の順）。前後の地の文（話し手の手がかり）も付ける。
    * 「」は会話、『』は通知・手紙・電話など。5 つ以上あるときは、！？・長さ・単位の最後のほうを優先して選ぶ
    */
-  QUOTE_MAX: 4,
+  QUOTE_MAX: 8, // 漫画では会話の多い場面をページに分けて描くので 8 つまで
   quoteItems(text) {
     const src = String(text || ''), all = [];
     for (const m of src.matchAll(/「([^「」]{1,120})」|『([^『』]{1,120})』/g)) {
@@ -1436,9 +1454,12 @@ JV.StopDetector = {
     const el = this.centerSegment();
     if (!el) return;
     const unit = Number(el.dataset.u);
-    if (!force && unit === this.lastUnit) return; // 前回と同じなら何もしない
+    // 中央線が断片のどのあたりにあるか（0 上端〜1 下端）。1 つの単位を何ページかに分けたとき、ページを選ぶのに使う
+    const r = el.getBoundingClientRect(), frac = r.height ? Math.max(0, Math.min(1, (this.centerY() - r.top) / r.height)) : 0;
+    const e = { unit, seg: Number(el.dataset.s), el, frac };
+    if (!force && unit === this.lastUnit) { if (this.onWithin) this.onWithin(e); return; } // 同じ単位：判定はしない（ページだけ選び直す）
     this.lastUnit = unit;
-    if (this.onStop) this.onStop({ unit, seg: Number(el.dataset.s), el });
+    if (this.onStop) this.onStop(e);
   },
 
   centerSegment() {
@@ -2211,6 +2232,7 @@ JV.Stage = {
     this.resize();
     if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(st);
     window.addEventListener('resize', () => this.resize());
+    this.bindSwipe();
     this.loop();
   },
 
@@ -2236,6 +2258,8 @@ JV.Stage = {
 
   reset() {
     this.gen++;
+    this.book = null; this.index = 0; this.turn = null;
+    if (document.getElementById('page-nav')) this.updateNav();
     this.page = null;
     this.prev = null;
     this.figKey = '';
@@ -2250,9 +2274,17 @@ JV.Stage = {
 
   /** 判定結果から組んだページを見せる */
   async show(plan) {
-    const page = plan.page;
-    if (!page) return;
-    if (this.page && this.sameKey(this.page) === this.sameKey(page)) { this.page = page; this.dirty = true; return; }
+    const book = plan.pages || (plan.page ? [plan.page] : null);
+    if (!book) return;
+    const idx = Math.max(0, Math.min(book.length - 1, plan.pageIndex || 0)), page = book[idx];
+    // 同じ場面の束：中身が同じなら、ページだけ選び直す（めくる）
+    if (this.book && this.page && this.book.length === book.length && this.book.every((b, i) => this.sameKey(b) === this.sameKey(book[i]))) {
+      this.book = book;
+      if (!this.turnTo(idx)) { this.page = book[this.index]; this.dirty = true; }
+      return;
+    }
+    this.book = book; this.index = idx; this.turn = null;
+    this.updateNav();
     const gen = ++this.gen;
     const k = this.fade();
     this.figKey = this.figuresKey(page.scene || {});
@@ -2271,6 +2303,42 @@ JV.Stage = {
     this.dirty = true;
   },
 
+  /**
+   * ページをめくる。漫画の読み順なので、次のページは左から入り、前のページは右へ抜ける。
+   * めくったら true。自分でめくったページは、次にスクロールを止めるまでそのまま
+   */
+  TURN_MS: 380,
+  turnTo(idx) {
+    if (!this.book || idx < 0 || idx >= this.book.length || idx === this.index) return false;
+    const now = performance.now();
+    this.turn = { dir: idx > this.index ? 1 : -1, t0: now, from: this.page };
+    this.index = idx; this.page = this.book[idx];
+    this.prev = null; this.t0 = now - 10000; // めくるときはコマを順に出さず、ページごと入れる
+    this.dirty = true;
+    this.updateNav();
+    return true;
+  },
+  flip(dir) { return this.book ? this.turnTo(this.index + dir) : false; },
+  updateNav() {
+    const nav = document.getElementById('page-nav'), n = this.book ? this.book.length : 0;
+    nav.classList.toggle('hidden', n < 2);
+    if (n < 2) return;
+    document.getElementById('page-count').textContent = `${this.index + 1} / ${n}`;
+    document.getElementById('page-next').disabled = this.index >= n - 1;
+    document.getElementById('page-prev').disabled = this.index <= 0;
+  },
+  /** 舞台の上で左右にスワイプしてめくる（右へ払うと次のページ。左から次のページが入ってくる向き） */
+  bindSwipe() {
+    let x0 = null, y0 = 0;
+    this.el.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
+    this.el.addEventListener('pointerup', (e) => {
+      if (x0 == null) return;
+      const dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) this.flip(dx > 0 ? 1 : -1);
+    });
+    this.el.addEventListener('pointercancel', () => { x0 = null; });
+  },
+
   /** コマ i の出方（0〜1）：読む順に、少しずつずらして出す */
   reveal(i) {
     const k = this.fade(), e = performance.now() - this.t0 - i * this.REVEAL_GAP * k;
@@ -2281,7 +2349,7 @@ JV.Stage = {
   animating() {
     const k = this.fade(), now = performance.now();
     const n = this.page ? this.page.panels.length : 0;
-    return (this.page && now - this.t0 < (n * this.REVEAL_GAP + this.REVEAL_MS) * k) || (this.prev && now - this.prevT0 < this.OUT_MS * k) || (this.black.ms && now - this.black.t0 < this.black.ms);
+    return (this.page && now - this.t0 < (n * this.REVEAL_GAP + this.REVEAL_MS) * k) || (this.prev && now - this.prevT0 < this.OUT_MS * k) || (this.turn && now - this.turn.t0 < this.TURN_MS * k) || (this.black.ms && now - this.black.t0 < this.black.ms);
   },
   loop() {
     const tick = () => {
@@ -2318,7 +2386,13 @@ JV.Stage = {
       c.fillStyle = 'rgba(30,43,69,.45)'; c.textAlign = 'center'; c.font = `${Math.round(P.w * 0.045)}px ${getComputedStyle(document.body).fontFamily}`;
       c.fillText('スクロールを止めると、', P.x + P.w / 2, P.y + P.h * 0.47);
       c.fillText('その場面が漫画になります', P.x + P.w / 2, P.y + P.h * 0.47 + P.w * 0.07);
+    } else if (this.turn && performance.now() - this.turn.t0 < this.TURN_MS * k) {
+      // めくる：前のページは dir の向きへ抜け、新しいページは反対側から入る（次のページは左から）
+      const e0 = (performance.now() - this.turn.t0) / (this.TURN_MS * k), e = 1 - Math.pow(1 - e0, 3), d = this.turn.dir, W = box.w + box.x * 2;
+      Manga.render(tg, this.turn.from, t, Object.assign({}, opts, { box: Object.assign({}, box, { x: box.x + d * W * e }), alpha: 1 - e * 0.5 }));
+      Manga.render(tg, this.page, t, Object.assign({}, opts, { box: Object.assign({}, box, { x: box.x - d * W * (1 - e) }) }));
     } else {
+      this.turn = null;
       const out = this.prev ? (performance.now() - this.prevT0) / (this.OUT_MS * k) : 1;
       if (this.prev && out < 1) Manga.render(tg, this.prev, t, Object.assign({}, opts, { alpha: 1 - out }));
       else this.prev = null;
@@ -2335,7 +2409,7 @@ JV.Stage = {
   state() {
     const p = this.page;
     return {
-      layout: p && p.layout, key: p && p.key, unit: p && p.unit, frames: this.frames, black: +this.val(this.black).toFixed(2),
+      layout: p && p.layout, key: p && p.key, unit: p && p.unit, frames: this.frames, pages: this.book ? this.book.length : 0, index: this.index || 0, turning: !!this.turn, black: +this.val(this.black).toFixed(2),
       world: p && p.scene ? `${p.scene.era}|${p.scene.location}|${p.scene.time}` : null, weather: p && p.scene ? p.scene.weather : null,
       figs: p && p.scene ? this.figuresKey(p.scene) : null,
       panels: p ? p.panels.map((q) => ({ n: q.n, kind: q.kind, content: q.content, bg: q.bg, faces: q.faces, gestures: q.gestures, role: q.role, camera: q.camera && q.camera.family, effect: q.effect, emotion: q.emotion, intensity: q.intensity, focal: q.focal, expr: q.expr, lines: q.lines.map((l) => ({ text: l.text, speaker: l.speaker })), narration: q.narration })) : [],
@@ -2800,11 +2874,11 @@ JV.Judge = {
    */
   async judgeScene(doc, unit, work, prevScene, { signal } = {}) {
     const state = this.sceneState(doc, unit, work, prevScene);
-    const text = doc.units[unit].text, items = JV.Parser.quoteItems(text), drafts = Manga.split(text, items);
-    state.panels = Manga.stateOf(drafts, items);
+    const text = doc.units[unit].text, items = JV.Parser.quoteItems(text), pages = Manga.paginate(text, items), drafts = pages.flatMap((pg) => pg.drafts);
+    state.panels = Manga.stateOf(drafts, items, pages);
     const t0 = performance.now();
     const adapter = this.adapter();
-    const answers = await adapter.judge(state, Object.assign(this.questions('scene', items, work.era), Manga.questions(drafts)), { signal });
+    const answers = await adapter.judge(state, Object.assign(this.questions('scene', items, work.era), Manga.questions(drafts, pages)), { signal });
     const eq = JV.Settings.get('emotionDetail') === false ? {} : Manga.emotionQuestions(drafts, answers);
     let calls = 1;
     if (Object.keys(eq).length) {
@@ -3000,6 +3074,7 @@ JV.App = {
     { file: 'samples/ryu_no_yubinya.md', label: '竜の郵便屋', note: 'ファンタジー' },
     { file: 'samples/doukutsu_no_kage.md', label: '洞窟の影', note: 'ファンタジー・剣と魔物' },
     { file: 'samples/otera_no_neko.txt', label: 'お寺の猫', note: '現代劇・猫とおばけ' },
+    { file: 'samples/houkago_no_kyoushitsu.txt', label: '放課後の教室', note: '会話の多い場面（ページめくり）' },
   ],
 
   init() {
@@ -3017,6 +3092,10 @@ JV.App = {
     // デバッグ表示の切り替え（D キー。設定画面からも切り替えられる）
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !document.getElementById('settings').classList.contains('hidden')) { JV.SettingsUI.close(); return; }
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !document.getElementById('reader').classList.contains('hidden') && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && document.getElementById('settings').classList.contains('hidden')) {
+        if (JV.Stage.flip(e.key === 'ArrowLeft' ? 1 : -1)) e.preventDefault();
+        return;
+      }
       if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) {
         JV.Settings.set('debug', !JV.Settings.get('debug'));
         JV.Debug.render();
@@ -3086,7 +3165,8 @@ JV.App = {
   },
 
   /** スクロール停止時：画面中央の判定単位が変わったときだけ呼ばれる */
-  onStop({ unit }) {
+  onStop({ unit, seg, frac }) {
+    this.readPos = { unit, seg, frac };
     const doc = this.doc;
     const u = doc.units[unit];
     this.currentUnit = unit;
@@ -3095,6 +3175,28 @@ JV.App = {
     JV.Debug.set('unit', `単位 #${unit}（段落 ${u.paraStart}${u.paraEnd !== u.paraStart ? `〜${u.paraEnd}` : ''}・${u.text.length}字・章 ${u.chapter}）\n${u.text.slice(0, 60).replace(/\n/g, ' / ')}${u.text.length > 60 ? '…' : ''}`);
     this.saveProgress(unit);
     if (JV.Settings.get('effects')) this.judgeAndShow(unit);
+  },
+
+  /** 同じ単位の中でスクロールを止めた：読んでいる位置のページへ（自分でめくったページは、ここで本文の位置に戻る） */
+  onWithin({ unit, seg, frac }) {
+    this.readPos = { unit, seg, frac };
+    const book = JV.Stage.book;
+    if (!book || book.length < 2 || book[0].unit !== unit) return;
+    JV.Stage.turnTo(Manga.pageAt(book, this.offsetIn(unit)));
+  },
+  /** 読んでいる位置を、単位の本文の中の字の位置にする（断片の長さ × 中央線の位置） */
+  offsetIn(unit) {
+    const doc = this.doc, u = doc && doc.units[unit], pos = this.readPos;
+    if (!u || !pos || pos.unit !== unit) return 0;
+    // 一番上までスクロールしたとき：本文の頭は中央線まで下りてこないので、読み始め（最初のページ）とみなす
+    if (window.scrollY <= 2 && unit === Number((JV.StopDetector.segEls[0] || { dataset: {} }).dataset.u)) return 0;
+    let off = 0;
+    for (const s of u.segs) {
+      const len = doc.segments[s].text.replace(/^[\s　]+/, '').length;
+      if (s === pos.seg) return off + Math.round(len * (pos.frac || 0));
+      off += len + 1;
+    }
+    return 0;
   },
 
   /** サイトの中継が一般公開中かを調べる（Netlify のときだけ。GitHub Pages や file:// では何もしない） */
@@ -3249,13 +3351,17 @@ JV.App = {
       narration: this.work.narration,
       lines: items.map((q) => q.text),
     });
-    plan.page = Manga.buildPage({ scene: plan.scene, drafts: Manga.split(u.text, items), answers: r.answers, lines: plan.scene.lines, unit });
+    // 会話の多い場面・途中で場面が変わる場面は、2〜3 ページに分ける。表示するのは、いま読んでいる位置のページ
+    const pages = Manga.paginate(u.text, items);
+    plan.pages = pages.map((pg, k) => Object.assign(Manga.buildPage({ scene: plan.scene, drafts: pg.drafts, answers: r.answers, lines: plan.scene.lines, unit, keyQ: Manga.keyName(k) }), { start: pg.start, end: pg.end, index: k, count: pages.length }));
+    plan.pageIndex = Manga.pageAt(plan.pages, this.offsetIn(unit));
+    plan.page = plan.pages[plan.pageIndex];
     if (JV.Settings.get('effects')) JV.Stage.show(plan);
     const changes = [plan.chapter && '章替わり', plan.tone && '色調・天候', plan.figures && '人物', plan.inner && '心象'].filter(Boolean);
     const src = r.cached ? `キャッシュ(${r.cached === 'db' ? 'IndexedDB' : 'メモリ'})` : `${r.ms}ms`;
     const st = JV.Judge.stats;
     JV.Debug.set('judge', `判定 #${unit}（${r.source}・${src}${r.calls > 1 ? '・2回' : ''}）\n${JV.Judge.describe(r.answers)}\n→ ${[...plan.why, ...changes].join(' / ') || '変化なし'}`);
-    JV.Debug.set('page', `ページ：${Manga.describe(plan.page)}`);
+    JV.Debug.set('page', `ページ ${plan.pageIndex + 1} / ${plan.pages.length}：${Manga.describe(plan.page)}`);
     JV.Debug.set('stats', `呼び出し ${st.calls}・メモリ ${st.memoryHits}・DB ${st.dbHits}・中断 ${st.aborted}・判定中 ${JV.Judge.inflight.size}`);
   },
 
@@ -3414,6 +3520,7 @@ JV.App = {
       if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight / 2 + 4);
     }
     JV.StopDetector.attach(document.getElementById('text'), (e) => this.onStop(e));
+    JV.StopDetector.onWithin = (e) => this.onWithin(e);
   },
 
   showReader() {

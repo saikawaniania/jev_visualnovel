@@ -211,7 +211,7 @@ const bub = await page.evaluate(async () => {
   const one = Object.keys(JV.Schema.toQuestions('scene', { lines: ['ひとつだけ'] }));
   const cur = '「おはよう」と私は言った。\n「封を切ってはいけないよ、お嬢ちゃん！」と老婆が言った。\n『至急、城へ戻れ』';
   const ans = await JV.Adapters.mock.judge({ current: cur }, JV.Schema.toQuestions('scene', { lines: JV.Parser.quoteItems(cur) }));
-  const many = JV.Parser.quoteItems(['あ', 'い', 'う', 'えっ！？', 'お', '最後の一言だ！'].map((x) => `「${x}」`).join('\n'));
+  const many = JV.Parser.quoteItems(['あ', 'い', 'う', 'えっ！？', 'お', 'か', 'き', 'く', 'け', '最後の一言だ！'].map((x) => `「${x}」`).join('\n'));
   const D = JV.Director;
   const ch = (k, label, p = 0.9) => ({ type: 'choice', choice: label, probabilities: { [label]: p }, confidence: p });
   const base = { location: ch('location', '和室'), people: ch('people', '2人'), figure_main: ch('figure_main', '成人女性'), figure_sub: ch('figure_sub', '少女') };
@@ -240,7 +240,7 @@ check(!bub.none.some((k) => /^(line|speaker)/.test(k)), 'セリフがない単�
 check(bub.keys.join() === 'line,speaker_1,speaker_2,speaker_3,line_importance' && bub.lineN === 3, `代表・セリフごとの話し手・重要度を聞く (${bub.keys})`);
 check(bub.ctx.includes('直後の地の文「と言った') && bub.ctx.includes('セリフ1「おはよう」'), `話し手の質問に前後の地の文を添える (${bub.ctx.slice(0, 60)})`);
 check(!bub.one.includes('line') && bub.one.includes('speaker_1'), 'セリフが1つなら代表は聞かない');
-check(bub.many.length === 4 && bub.many.includes('最後の一言だ！') && bub.many.includes('えっ！？'), `候補は4つまで、印象の強いものを残す (${bub.many})`);
+check(bub.many.length === 8 && bub.many.includes('最後の一言だ！') && bub.many.includes('えっ！？'), `候補は8つまで（漫画ではページに分けて描く）、印象の強いものを残す (${bub.many})`);
 check(bub.mock[0] === '2' && bub.mock[1] === '語り手' && bub.mock[2] === '老人（女）' && bub.mock[3] === '場面にいない人物' && bub.mock[4] >= 1, `モック：地の文から話し手を当てる (${bub.mock})`);
 check(bub.roles.narr === 'main' && bub.roles.girl === 'sub' && bub.roles.man === 'other' && bub.roles.other === 'other' && bub.roles.unk === 'main' && bub.roles.hidden === 'other', `話し手の見た目 → 描いている人物 (${JSON.stringify(bub.roles)})`);
 check(bub.l1 && bub.l1.text === 'それは宣戦布告だ' && bub.l1.speaker === 'sub' && bub.l1.importance === 1, `選ばれたセリフ・話し手・重要度 (${JSON.stringify(bub.l1)})`);
@@ -265,7 +265,7 @@ const works = await page.evaluate(async () => {
   return out;
 });
 const W = Object.fromEntries(works.map((w) => [w.label, w]));
-check(works.length === 5, `試し読みは5作品 (${works.map((w) => w.label)})`);
+check(works.length === 6 && W['放課後の教室'] && W['放課後の教室'].era === 'present', `試し読みは6作品（漫画文庫だけの「放課後の教室」を足した） (${works.map((w) => w.label)})`);
 check(W['終電のあとで'] && W['終電のあとで'].era === 'present' && W['終電のあとで'].chapters >= 2, `現代劇は現代日本と判定 (${JSON.stringify(W['終電のあとで'])})`);
 check(W['竜の郵便屋'] && W['竜の郵便屋'].era === 'fantasy' && W['竜の郵便屋'].chapters >= 2, `ファンタジーはファンタジーと判定 (${JSON.stringify(W['竜の郵便屋'])})`);
 check(W['洞窟の影'] && W['洞窟の影'].era === 'fantasy' && W['洞窟の影'].units >= 8, `「洞窟の影」はファンタジー・場面が細かく替わる (${JSON.stringify(W['洞窟の影'])})`);
@@ -324,6 +324,33 @@ const rv = await page.evaluate(async () => {
   return JV.Stage.page.panels.map((p, i) => +JV.Stage.reveal(i).toFixed(2));
 });
 check(rv[0] > 0 && rv.slice(1).every((v, i) => v <= rv[i]), `コマは 1 から順に出る (${rv})`);
+
+// 1 つの場面が何ページかになるとき：読んでいる位置でページを選び、ボタン・← → キー・スワイプでもめくれる
+console.log('ページめくり');
+await page.evaluate(() => JV.App.openText('会話の試験\n試作\n\n　夕方の教室には、少年と少女しか残っていなかった。\n「まだ帰らないの」\n　少女が言った。\n「宿題が終わらないんだ」\n「手伝ってあげようか」\n「いいよ、自分でやる」\n　少年は首を振った。\n「意地っ張りね」\n「そっちこそ」\n「じゃあ、先に帰るから」\n　やがて窓の外が暗くなった。少年はひとりで鉛筆を置いた。\n「……やっぱり、手伝ってもらえばよかった」\n', 'kaiwa.txt'));
+await page.waitForTimeout(2500);
+const nav = () => page.evaluate(() => ({ ...JV.Stage.state(), count: document.getElementById('page-count').textContent, shown: !document.getElementById('page-nav').classList.contains('hidden') }));
+await scrollToText('やっぱり、手伝って');
+await page.waitForTimeout(1500);
+let pn = await nav();
+check(pn.pages >= 2 && pn.index === pn.pages - 1 && pn.shown && pn.count === `${pn.pages} / ${pn.pages}`, `同じ場面の中でスクロールを止めると、読んでいる位置のページへ (${pn.index + 1} / ${pn.pages})`);
+await page.click('#page-prev');
+await page.waitForTimeout(100);
+const mid = await nav();
+await page.waitForTimeout(500);
+pn = await nav();
+check(mid.turning && pn.index === pn.pages - 2 && !pn.turning, `「前へ」でめくる（めくる動きのあと止まる） (${pn.index + 1})`);
+await page.keyboard.press('ArrowLeft');
+await page.waitForTimeout(600);
+check((await nav()).index === pn.pages - 1, '← キーで次のページ');
+check(await page.evaluate(() => document.getElementById('page-next').disabled), '最後のページでは「次へ」を押せない');
+const sb = await page.$eval('#stage', (e) => { const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+await page.mouse.move(sb[0] + 80, sb[1]); await page.mouse.down(); await page.mouse.move(sb[0] - 60, sb[1], { steps: 5 }); await page.mouse.up();
+await page.waitForTimeout(600);
+check((await nav()).index === pn.pages - 2, '左へ払うと前のページ');
+await scrollToText('夕方の教室には');
+await page.waitForTimeout(1500);
+check((await nav()).index < pn.pages - 2 || pn.pages === 2, 'スクロールを止め直すと、本文の位置のページに戻る');
 
 check(!(await page.$('#reader-top .prompt-btn')) && !(await page.$('#prompt-dialog')), 'プロンプトの表示はない');
 

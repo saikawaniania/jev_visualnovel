@@ -154,42 +154,56 @@
    *   lines: このコマのセリフ（items の番号）。1コマ 2つまで
    *   narration: ナレーション（白い四角枠）に入れる地の文。場面の理解に要るものだけ
    */
-  function split(text, items = []) {
-    const src = String(text || '');
-    const flow = []; // { q: items の番号 } または { n: 地の文 }
+  /**
+   * 本文の流れ：地の文の文とセリフを、本文の順に。pos / end は本文の中の位置（字）
+   *   { q: items の番号 } または { n: 地の文の 1 文 }
+   */
+  function flowOf(text, items = []) {
+    const src = String(text || ''), flow = [];
+    const narr = (from, to) => {
+      const chunk = src.slice(from, to);
+      for (const m of chunk.matchAll(SENT)) {
+        const t = m[0].replace(/[\s　]+/g, ' ').trim();
+        if (!t || t === '◇') continue;
+        flow.push({ n: t, pos: from + m.index, end: from + m.index + m[0].length });
+      }
+    };
     let last = 0;
     const used = new Set();
     for (const m of src.matchAll(/「([^「」]{1,120})」|『([^『』]{1,120})』/g)) {
       const t = norm(m[1] || m[2]);
       const idx = items.findIndex((it, i) => !used.has(i) && it.text === t);
       if (idx < 0) continue; // 候補から外れたセリフ・地の文の中の名前は地の文のまま
-      const before = src.slice(last, m.index);
-      if (before.trim()) flow.push({ n: before });
-      flow.push({ q: idx }); used.add(idx);
+      narr(last, m.index);
+      flow.push({ q: idx, pos: m.index, end: m.index + m[0].length }); used.add(idx);
       last = m.index + m[0].length;
     }
-    if (src.slice(last).trim()) flow.push({ n: src.slice(last) });
-
+    narr(last, src.length);
+    return flow;
+  }
+  /** 1 ページ分の流れ → コマの下書き */
+  function draftFlow(flow, items) {
     const quotes = flow.filter((f) => f.q != null);
-    const narrAll = flow.filter((f) => f.n).flatMap((f) => sentences(f.n));
+    const narrAll = flow.filter((f) => f.n).map((f) => f.n);
     const drafts = [];
     const add = (kind, o) => drafts.push(Object.assign({ kind, lines: [], narration: '', text: '', hasChar: kind !== 'establish' }, o));
 
     if (!quotes.length) {
       // セリフのない場面：導入（引き）→ 動作 → 締め（寄り）。短ければ 2 コマ
       const ss = narrAll;
-      if (!ss.length) { add('establish', { text: src.trim() }); return finish(drafts, items); }
-      const three = src.replace(/\s/g, '').length >= 120 && ss.length >= 3;
+      if (!ss.length) { add('establish', { text: '' }); return drafts; }
+      const three = ss.join('').replace(/\s/g, '').length >= 120 && ss.length >= 3;
       add('establish', { narration: caption(ss[0]), text: ss[0] });
       if (three) { const mid = ss[Math.floor(ss.length / 2)]; add('action', { text: ss.slice(1, -1).join('') || mid }); }
       add('close', { text: ss.length > 1 ? ss[ss.length - 1] : ss[0] });
-      return finish(drafts, items);
+      return drafts;
     }
 
     // セリフのある場面
-    const opening = flow[0].n != null ? sentences(flow[0].n) : [];
+    const firstQ = flow.findIndex((f) => f.q != null);
+    const opening = flow.slice(0, firstQ).map((f) => f.n);
     const lastQ = flow.map((f) => f.q != null).lastIndexOf(true);
-    const closing = flow.slice(lastQ + 1).filter((f) => f.n).flatMap((f) => sentences(f.n));
+    const closing = flow.slice(lastQ + 1).map((f) => f.n);
     const hasOpen = opening.length > 0;
     let budget = 4 - (hasOpen ? 1 : 0);
     const wantClose = closing.length > 0 && quotes.length < budget;
@@ -207,14 +221,52 @@
       groups.splice(best, 2, [...groups[best], ...groups[best + 1]]);
     }
     if (hasOpen) add('establish', { narration: caption(opening[0]), text: opening.join('') });
-    // セリフの間の地の文（「と少女が言った」など）は、そのコマの説明に添える
+    // セリフの間と直後の地の文（「と少女が言った」など）は、そのコマの説明に添える
     for (const g of groups) {
       const pos = flow.findIndex((f) => f.q === g[0]), end = flow.findIndex((f) => f.q === g[g.length - 1]);
-      const around = flow.slice(pos + 1, Math.min(flow.length, end + 2)).filter((f) => f.n).map((f) => sentences(f.n)[0] || '').join('');
+      const around = flow.slice(pos + 1, Math.min(flow.length, end + 2)).filter((f) => f.n).map((f) => f.n).join('');
       add('talk', { lines: g.slice(), text: g.map((q) => `「${items[q].text}」`).join('') + around });
     }
     if (wantClose) add('close', { text: closing.join('') });
-    return finish(drafts, items);
+    return drafts;
+  }
+  /** 1 ページとして割る（ページ分けはしない）。起動画面の見本や、ページの中身を作るときに使う */
+  function split(text, items = []) { return finish(draftFlow(flowOf(text, items), items), items); }
+
+  /* ---------- ページ分け：会話の多い場面・途中で場面が変わる場面は、2〜3 ページにする ---------- */
+  // 地の文の文頭で、時間や場面が変わったことを表す言い回し
+  const TURN = /^(やがて|翌朝|翌日|翌晩|その夜|その晩|その日の夕方|しばらくして|しばらくすると|数日後|数日が|夜が明け|日が暮れ|朝になる|夕方になる|夜になる|次の日|それから)/;
+  const PAGE_QUOTES = 3, MAX_PAGES = 3;
+  /**
+   * 本文 → ページの並び [{ drafts, start, end }]。start / end は本文の中の位置（字）で、読んでいる位置からページを選ぶのに使う
+   * - セリフが 5 つ以上あれば、1 ページに 3 つまで（残りが 1 つだけならそのページに入れる）
+   * - 地の文の文頭に場面の変わる言い回し（やがて・翌朝・その夜…）があり、それまでにセリフか 2 文以上あれば、そこで次のページ
+   * - コマの番号はページをまたいで通し番号（Jev の質問のキーを重ねないため）
+   */
+  function paginate(text, items = []) {
+    const src = String(text || ''), flow = flowOf(src, items);
+    const totalQ = flow.filter((f) => f.q != null).length;
+    const cuts = [0];
+    let q = 0, nn = 0, seenQ = 0;
+    flow.forEach((f, i) => {
+      if (i === 0 || cuts.length >= MAX_PAGES) { if (f.q != null) { q++; seenQ++; } else nn++; return; }
+      const turn = f.n && TURN.test(f.n) && (q >= 1 || nn >= 2);
+      const many = f.q != null && totalQ > 4 && q >= PAGE_QUOTES && totalQ - seenQ >= 2;
+      if (turn || many) { cuts.push(i); q = 0; nn = 0; }
+      if (f.q != null) { q++; seenQ++; } else nn++;
+    });
+    let n = 0;
+    return cuts.map((c, k) => {
+      const part = flow.slice(c, cuts[k + 1] ?? flow.length);
+      const drafts = finish(draftFlow(part, items), items);
+      for (const d of drafts) d.n = ++n; // 通し番号
+      return { drafts, start: k ? flow[c].pos : 0, end: k + 1 < cuts.length ? flow[cuts[k + 1]].pos : src.length };
+    });
+  }
+  /** 本文の中の位置（字）→ ページの番号 */
+  function pageAt(pages, offset) {
+    for (let k = pages.length - 1; k >= 0; k--) if (offset >= pages[k].start) return k;
+    return 0;
   }
   function finish(drafts, items) {
     drafts.forEach((d, i) => {
@@ -325,18 +377,23 @@
   function mixHex(a, b, k) { const A = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16)), B = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16)); return '#' + A.map((x, i) => Math.round(x + (B[i] - x) * k).toString(16).padStart(2, '0')).join(''); }
 
   /* ================= 2. Jevアシストの質問 ================= */
-  const isPanelKey = (k) => /^(role|intensity|emotion)_\d+$/.test(k) || k === 'key_panel';
+  const isPanelKey = (k) => /^(role|intensity|emotion)_\d+$/.test(k) || /^key_panel(_\d+)?$/.test(k);
+  /** ページ k（0 から）の最重要コマの質問のキー */
+  const keyName = (k) => (k ? `key_panel_${k + 1}` : 'key_panel');
   /** 1回目：全コマの役割＋（キャラのいるコマは）感情の強さ、ページの最重要コマ。場面判定と同じ問い合わせに足す */
-  function questions(drafts) {
+  function questions(drafts, pages = null) {
     const out = {};
     const roles = Object.fromEntries(ROLES);
     for (const d of drafts) {
       out[`role_${d.n}`] = { type: 'choice', instructions: `コマ${d.n}（panels の ${d.n} 番目）の役割は？`, criteria: { ...roles } };
       if (d.hasChar) out[`intensity_${d.n}`] = { type: 'score', instructions: `コマ${d.n}（panels の ${d.n} 番目）の中心人物の感情の強さは？`, criteria: INTENSITY.slice() };
     }
-    if (drafts.length >= 2) {
-      out.key_panel = { type: 'choice', instructions: 'このページ（panels）で最も重要なコマは？', criteria: Object.fromEntries(drafts.map((d) => [String(d.n), `コマ${d.n}：${d.summary}`])) };
-    }
+    // 最重要コマはページごとに（ページが 1 つなら key_panel、2 ページ目からは key_panel_2 …）
+    (pages || [{ drafts }]).forEach((pg, k) => {
+      if (pg.drafts.length < 2) return;
+      const where = pages && pages.length > 1 ? `${k + 1}ページ目（panels の「ページ」が ${k + 1}）` : 'このページ（panels）';
+      out[keyName(k)] = { type: 'choice', instructions: `${where}で最も重要なコマは？`, criteria: Object.fromEntries(pg.drafts.map((d) => [String(d.n), `コマ${d.n}：${d.summary}`])) };
+    });
     return out;
   }
   /** 2回目：感情の強さが gate_intensity（1.0）以上のコマだけ、感情の細目 */
@@ -350,8 +407,9 @@
     return out;
   }
   /** 判定に渡す state に足すコマの一覧 */
-  function stateOf(drafts, items) {
-    return drafts.map((d) => ({ コマ: d.n, 内容: d.text, ...(d.lines.length ? { セリフ: d.lines.map((q) => items[q].text) } : {}), ...(d.narration ? { ナレーション: d.narration } : {}) }));
+  function stateOf(drafts, items, pages = null) {
+    const pageOf = (d) => (pages ? pages.findIndex((pg) => pg.drafts.includes(d)) + 1 : 1);
+    return drafts.map((d) => ({ ...(pages && pages.length > 1 ? { ページ: pageOf(d) } : {}), コマ: d.n, 内容: d.text, ...(d.lines.length ? { セリフ: d.lines.map((q) => items[q].text) } : {}), ...(d.narration ? { ナレーション: d.narration } : {}) }));
   }
 
   /* ---------- API なしで試すときの判定（キーワード） ---------- */
@@ -387,7 +445,7 @@
       const n = count(s, ['！', '!', '？！', '……']) * 0.6 + Object.values(KW.emotion).reduce((a, kws) => a + count(s, kws), 0) * 0.8 + count(s, KW.peak) * 0.3;
       return clamp(0.2 + n * 0.6, 0, 2);
     };
-    if (key === 'key_panel') {
+    if (/^key_panel/.test(key)) {
       const keys = Object.keys(q.criteria);
       return { type: 'choice', ...probs(keys, keys.map((k, i) => 0.4 + intensityOf(at(Number(k))) + (i === keys.length - 1 ? 0.3 : 0))) };
     }
@@ -426,7 +484,7 @@
    * - 不安のダッチアングルは、感情の強さが「強い」（2段階目相当）のときだけ
    * - 背景効果は感情が強いコマだけ
    */
-  function assist(drafts, answers = {}) {
+  function assist(drafts, answers = {}, keyQ = 'key_panel') {
     const minC = THRESHOLDS.camera_min_confidence;
     let prevFam = null;
     const panels = drafts.map((d) => {
@@ -460,8 +518,8 @@
         effect, flag: roleOk && roleConf < THRESHOLDS.flag_confidence,
       };
     });
-    const K = answers.key_panel, key = K ? parseInt(String(K.choice).replace(/\D/g, ''), 10) : NaN;
-    return { panels, key: key >= 1 && key <= drafts.length ? key : null };
+    const K = answers[keyQ], key = K ? parseInt(String(K.choice).replace(/\D/g, ''), 10) : NaN;
+    return { panels, key: drafts.some((d) => d.n === key) ? key : null };
   }
 
   /* ================= 4. ページを組む ================= */
@@ -473,8 +531,8 @@
    *   content：people（人物）| scenery（背景だけ）| animal（動物だけ）
    *   bg：null（場所を描く）| { kind: flat | gradient, colors }
    */
-  function buildPage({ scene, drafts, answers = {}, lines = [], unit = null }) {
-    const A = assist(drafts, answers);
+  function buildPage({ scene, drafts, answers = {}, lines = [], unit = null, keyQ = 'key_panel' }) {
+    const A = assist(drafts, answers, keyQ);
     const f = scene && scene.figures;
     const people = !!(f && f.layout !== 'none' && (f.main || f.sub));
     const animal = f && f.animal;
@@ -531,7 +589,7 @@
     const tense = panels.some((p) => p.emotion && TENSE.has(p.emotion)) || (scene && scene.mood > 0.66);
     const calm = !tense && (!scene || scene.mood < 0.4);
     const layout = chooseLayout(panels.length, { tense, calm });
-    const key = A.key || (panels.length > 1 ? panels.reduce((b, p) => ((p.intensity || 0) > (b.intensity || 0) ? p : b), panels[0]).n : 1);
+    const key = A.key || (panels.length > 1 ? panels.reduce((b, p) => ((p.intensity || 0) > (b.intensity || 0) ? p : b), panels[0]).n : panels.length ? panels[0].n : null);
     const sig = (p) => `${p.role}:${p.content}:${p.camera ? p.camera.family : '-'}:${p.effect || '-'}:${p.bg ? p.bg.colors.join('') : '-'}:${JSON.stringify([p.faces, p.gestures, p.poses, p.views, p.crop])}:${p.lines.map((l) => l.speaker).join('')}`;
     return { unit, layout, panels, key, scene, tense, key2: `${unit}|${layout}|${panels.map(sig).join('/')}` };
   }
@@ -879,7 +937,7 @@
 
   const Manga = {
     THRESHOLDS, ROLES, EMOTIONS, EMO_CAMERA, ROLE_CAMERA, POOL, EFFECT, TENSE, EXPR, LAYOUTS, SHOTS, PALETTE, GESTURES, FACES,
-    split, sentences, caption, questions, emotionQuestions, stateOf, isPanelKey, mockAnswer, assist, readText, plainFill, buildPage, chooseLayout, panelRects, pageBox,
+    split, paginate, pageAt, keyName, sentences, caption, questions, emotionQuestions, stateOf, isPanelKey, mockAnswer, assist, readText, plainFill, buildPage, chooseLayout, panelRects, pageBox,
     render, drawPanelScene, placeBubbles, columns, describe, LINE_AMP,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Manga;

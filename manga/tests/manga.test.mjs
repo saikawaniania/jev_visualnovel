@@ -16,10 +16,39 @@ const sp = await page.evaluate(() => {
 });
 check(sp.talk.map((d) => d.kind).join() === 'establish,talk,talk,close', `導入 → 会話 → 会話 → 締め (${sp.talk.map((d) => d.kind)})`);
 check(sp.talk[0].narration === '夜更けの停車場は、雪になっていた。' && !sp.talk[0].hasChar && sp.talk.slice(1).every((d) => d.hasChar), '導入のコマは地の文をナレーションに・人物の感情は聞かない');
-check(sp.many.length <= 4 && sp.many.every((d) => d.lines.length <= 2) && sp.many.flatMap((d) => d.lines).length === 4, `セリフが多くても 4 コマまで・1コマ 2 つまで (${JSON.stringify(sp.many.map((d) => d.lines))})`);
+check(sp.many.length <= 4 && sp.many.every((d) => d.lines.length <= 2), `1 ページに割るときは 4 コマまで・1コマ 2 つまで（入りきらない分はページ分けで次のページへ） (${JSON.stringify(sp.many.map((d) => d.lines))})`);
 check(sp.quiet.length === 2 && sp.long.length === 3, `セリフのない場面：短ければ 2 コマ、長ければ 3 コマ (${sp.quiet.length}, ${sp.long.length})`);
 check(sp.startQ[0].kind === 'talk' && sp.startQ[0].lines.join() === '0', `セリフで始まる場面は導入のコマを作らない (${sp.startQ.map((d) => d.kind)})`);
 check(sp.cap.length <= 34 && sp.cap.endsWith('…') && sp.caps.endsWith('…'), `ナレーションは枠に入る長さで切る (${sp.caps})`);
+
+console.log('ページ分け（会話の多い場面・途中で場面が変わる場面）');
+const pg = await page.evaluate(() => {
+  const run = (text) => { const items = JV.Parser.quoteItems(text); const pages = Manga.paginate(text, items); return { items, text, pages }; };
+  const talk7 = '夕方の教室に、二人だけが残っていた。\n「まだ帰らないの」\n少女が言った。\n「宿題が終わらないんだ」\n「手伝ってあげようか」\n「いいよ」\n少年は首を振った。\n「意地っ張りね」\n「そっちこそ」\n「じゃあ、先に帰るから」';
+  const turn = '朝の座敷は静かだった。私は手紙を読み返した。\n「行ってきます」\nやがて日が暮れて、雨が降り出した。私は傘を探した。';
+  const four = '雨だった。\n「あ」\n「い」\n「う」\n「え」\nふたりは黙った。';
+  const five = '雨だった。\n「あ」\n「い」\n「う」\n「え」\n「お」\nふたりは黙った。';
+  const A = run(talk7), B = run(turn), C = run(four), D = run(five);
+  const nums = A.pages.flatMap((p) => p.drafts.map((d) => d.n));
+  const linesOf = (r) => r.pages.map((p) => p.drafts.flatMap((d) => d.lines).length);
+  const q = Manga.questions(A.pages.flatMap((p) => p.drafts), A.pages);
+  const st = Manga.stateOf(A.pages.flatMap((p) => p.drafts), A.items, A.pages);
+  const at = (r, t) => Manga.pageAt(r.pages, r.text.indexOf(t));
+  return {
+    a: linesOf(A), aAll: A.pages.flatMap((p) => p.drafts.flatMap((d) => d.lines)).length, nums, contiguous: A.pages.every((p, k) => k === 0 || p.start === A.pages[k - 1].end) && A.pages[0].start === 0 && A.pages.at(-1).end === talk7.length,
+    b: B.pages.length, bSecond: B.pages[1] && B.pages[1].drafts[0].kind, c: C.pages.length, d: linesOf(D),
+    keys: Object.keys(q).filter((k) => /^key_panel/.test(k)), page2: st.find((x) => x.ページ === 2) && st.find((x) => x.ページ === 2).コマ,
+    at: [at(A, '夕方の教室'), at(A, '意地っ張り'), at(A, 'じゃあ'), at(B, 'やがて'), at(B, '朝の座敷')],
+  };
+});
+check(pg.a.length >= 2 && pg.a.every((n) => n <= 4) && pg.aAll === 7, `セリフが 5 つ以上なら、ページに分けて全部描く (${pg.a}・計 ${pg.aAll})`);
+check(pg.nums.join() === pg.nums.map((_, i) => i + 1).join(), `コマの番号はページをまたいで通し番号 (${pg.nums})`);
+check(pg.contiguous, 'ページの範囲は本文を切れ目なく覆う');
+check(pg.b === 2 && pg.bSecond === 'establish', `「やがて」で場面が変わると次のページ・導入のコマから (${pg.b}, ${pg.bSecond})`);
+check(pg.c === 1 && pg.d.length === 2 && pg.d.reduce((a, b) => a + b, 0) === 5, `セリフ 4 つまでは 1 ページ・5 つなら 2 ページ (${pg.c} / ${pg.d})`);
+check(pg.keys.length === pg.a.length && pg.keys[0] === 'key_panel' && pg.keys[1] === 'key_panel_2', `最重要コマはページごとに聞く (${pg.keys})`);
+check(pg.page2 > 0, 'state のコマにページの番号を付ける');
+check(pg.at[0] === 0 && pg.at[2] === pg.a.length - 1 && pg.at[3] === 1 && pg.at[4] === 0, `読んでいる位置からページを選ぶ (${pg.at})`);
 
 console.log('Jevアシストの質問（03 の質問票）');
 const qs = await page.evaluate(() => {
