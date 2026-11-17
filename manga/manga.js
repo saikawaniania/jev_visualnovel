@@ -749,6 +749,8 @@
     return out;
   }
 
+  // 線のゆがみ（手描きの線の震え）の大きさ。手描き挿絵文庫の 0.4 倍に抑える
+  const LINE_AMP = 0.4;
   /** 作業用の canvas（コマの絵）。大きさごとに 1 枚を使い回す */
   const pool = new Map();
   function scratch(w, h) {
@@ -758,7 +760,7 @@
       if (pool.size > 10) pool.clear();
       const c = document.createElement('canvas'); c.width = w; c.height = h;
       const f = document.createElement('canvas'); f.width = w; f.height = h;
-      s = { tg: T.create(c, { style: 'paper', post: false }), ftg: T.create(f, { style: 'paper', post: false }) };
+      s = { tg: T.create(c, { style: 'paper', post: false, amp: LINE_AMP }), ftg: T.create(f, { style: 'paper', post: false, amp: LINE_AMP }) };
       pool.set(k, s);
     }
     return s;
@@ -878,7 +880,7 @@
   const Manga = {
     THRESHOLDS, ROLES, EMOTIONS, EMO_CAMERA, ROLE_CAMERA, POOL, EFFECT, TENSE, EXPR, LAYOUTS, SHOTS, PALETTE, GESTURES, FACES,
     split, sentences, caption, questions, emotionQuestions, stateOf, isPanelKey, mockAnswer, assist, readText, plainFill, buildPage, chooseLayout, panelRects, pageBox,
-    render, drawPanelScene, placeBubbles, columns, describe,
+    render, drawPanelScene, placeBubbles, columns, describe, LINE_AMP,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Manga;
   root.Manga = Manga;

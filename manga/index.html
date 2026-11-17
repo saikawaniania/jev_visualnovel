@@ -2224,7 +2224,7 @@ JV.Stage = {
     if (cap < 1) { w = Math.round(w * cap); h = Math.round(h * cap); }
     if (this.tg && this.canvas.width === w && this.canvas.height === h) return;
     this.canvas.width = w; this.canvas.height = h;
-    this.tg = Tegaki.create(this.canvas, { style: 'paper', paper: 0.3, vignette: 0, grain: 0.035, fps: 8 });
+    this.tg = Tegaki.create(this.canvas, { style: 'paper', paper: 0.3, vignette: 0, grain: 0.035, fps: 8, amp: Manga.LINE_AMP });
     this.dirty = true;
   },
 
@@ -2963,7 +2963,7 @@ JV.HomeScene = {
     const h = Math.round(w * 3 / 2);
     if (this.tg && this.canvas.width === w) return;
     this.canvas.width = w; this.canvas.height = h;
-    this.tg = Tegaki.create(this.canvas, { style: 'paper', paper: 0.3, vignette: 0, grain: 0.035, fps: this.still ? 0 : 8 });
+    this.tg = Tegaki.create(this.canvas, { style: 'paper', paper: 0.3, vignette: 0, grain: 0.035, fps: this.still ? 0 : 8, amp: Manga.LINE_AMP });
     this.last = 0;
   },
   tick() {
