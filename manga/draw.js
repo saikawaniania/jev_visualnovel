@@ -1,0 +1,1918 @@
+// draw.js — 手描き漫画文庫の「絵」（手描き挿絵文庫の draw.js がもと。体の寸法は変えずに、次を足した）
+//   L.still：コマの中で歩く人をその場で足踏みさせる
+//   person の gesture：手の形（cheer・wave・point・think・cover・akimbo・surprise・hold）
+//   person の view：'back'（後ろ姿・後ろ頭）・'side'（横顔）。talking：口を動かす。表情に cry・sleep を足した
+//   （プレビューアーの人物の描き方を、この絵の寸法に合わせて取り入れたもの）
+// 元の説明：手描きサウンドノベルの「絵」：場所16種・人物・心象・天候を tegaki.js で描く。
+// すべて「場面の値」と時刻 t だけで決まる（Math.random は使わない）ので、同じ場面・同じ時刻なら同じ絵になる。
+//
+//   Draw.layout(tg)                          → 基準線 L（地平線・床・単位）
+//   Draw.background(tg, L, { location, time, era }, t)
+//   Draw.person(tg, L, { type, era, pose, expr, x, y, h, facing, slot, time, seat, alpha }, t)
+//   Draw.figures(tg, L, { figures, era, time, location, expr }, t)   人数・配置ごと
+//   Draw.emotion(tg, L, id, t, alpha)        心象の背景（不安・喜び・落ち着き・悲しみ・怒り）
+//   Draw.weather(tg, L, { rain, snow, cloudy, fog }, t)
+(function (root) {
+  'use strict';
+  const T = root.Tegaki;
+  const { hash, clamp, lerp } = T;
+
+  /* ---------------- 色 ---------------- */
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const hex = (v) => '#' + v.map((x) => Math.round(clamp(x, 0, 255)).toString(16).padStart(2, '0')).join('');
+  const mix = (a, b, k) => { const A = rgb(a), B = rgb(b); return hex(A.map((x, i) => x + (B[i] - x) * k)); };
+  // 時間帯の光：色をその時間の光に寄せる（夜は紺へ、夕方は橙へ）
+  const LIGHT = { morning: ['#FFE6CC', 0.1], day: [null, 0], evening: ['#E07040', 0.2], night: ['#141B44', 0.55] };
+  function shader(time, k = 1) { const [c, w] = LIGHT[time] || LIGHT.day; return c ? (h) => mix(h, c, w * k) : (h) => h; }
+  const SKY = { morning: ['#8FC1E6', '#F9D2AE'], day: ['#62AEE4', '#D3ECF8'], evening: ['#4E4F86', '#F39A5B'], night: ['#090E2C', '#27306A'] };
+  const CLOUD = { morning: '#FFF1E4', day: '#FFFFFF', evening: '#F5B48A', night: '#363E74' };
+
+  /* ---------------- レイアウト ---------------- */
+  function layout(tg) {
+    const W = tg.W, H = tg.H, U = H / 900;
+    return { W, H, U, cx: W / 2, hz: H * 0.58, floor: H * 0.9, tall: H > W * 1.1 };
+  }
+
+  /* ---------------- 共通の部品 ---------------- */
+  function skyFill(tg, time, x, y, w, h) {
+    const c = tg.ctx, [a, b] = SKY[time] || SKY.day, g = c.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, a); g.addColorStop(1, b); c.fillStyle = g; c.fillRect(x, y, w, h);
+  }
+  function cloud(tg, x, y, s, col, seed) {
+    tg.ellipse(x, y, 70 * s, 26 * s, { fill: col, lw: 3, seed, second: false });
+    tg.ellipse(x - 34 * s, y - 14 * s, 36 * s, 26 * s, { fill: col, lw: 3, seed: seed + 1, second: false });
+    tg.ellipse(x + 20 * s, y - 22 * s, 42 * s, 32 * s, { fill: col, lw: 3, seed: seed + 2, second: false });
+    tg.ellipse(x, y + 2 * s, 64 * s, 20 * s, { fill: col, stroke: null, seed: seed + 3 });
+  }
+  // 空：太陽・月・星・雲（箱の中にクリップ）
+  function skyBox(tg, L, time, t, x, y, w, h, { clouds = 3, stars = true } = {}) {
+    const c = tg.ctx; c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
+    skyFill(tg, time, x, y, w, h);
+    const U = L.U;
+    if (time === 'night') {
+      if (stars) for (let k = 0; k < 18; k++) { const tw = 0.6 + 0.4 * Math.sin(t * 2 + k * 1.7); tg.star(x + hash(k, 1) * w, y + hash(k, 2) * h * 0.75, (3 + hash(k, 3) * 4) * U * tw, { fill: '#F6EBC0', lw: 1.5, seed: 900 + k, amp: 0.3, second: false }); }
+      tg.ellipse(x + w * 0.78, y + h * 0.22, 34 * U, 34 * U, { fill: '#F6EBC0', lw: 3, seed: 880 });
+      tg.ellipse(x + w * 0.78 + 12 * U, y + h * 0.22 - 6 * U, 28 * U, 28 * U, { fill: SKY.night[0], stroke: null, seed: 881, amp: 0.4 });
+    } else {
+      const pos = { morning: [0.2, 0.75], day: [0.62, 0.22], evening: [0.8, 0.8] }[time] || [0.62, 0.22];
+      tg.ellipse(x + w * pos[0], y + h * pos[1], 40 * U, 40 * U, { fill: time === 'evening' ? '#F2784B' : '#FFD66B', lw: 3.5, seed: 882 });
+    }
+    for (let k = 0; k < clouds; k++) {
+      const s = (0.7 + hash(k, 9) * 0.6) * U, sp = (6 + k * 4) * U;
+      const cx = x + (((hash(k, 7) * (w + 300) + t * sp) % (w + 300)) - 150);
+      cloud(tg, cx, y + h * (0.18 + 0.2 * hash(k, 8)), s, CLOUD[time] || CLOUD.day, 860 + k * 4);
+    }
+    c.restore();
+  }
+  // 窓：空が見える
+  function windowFrame(tg, L, time, t, x, y, w, h, C, seed, { cross = true } = {}) {
+    skyBox(tg, L, time, t, x, y, w, h, { clouds: 1 });
+    tg.rrect(x, y, w, h, 4, { lw: 5 * L.U, seed });
+    if (cross) {
+      tg.line([[x + w / 2, y], [x + w / 2, y + h]], { lw: 4 * L.U, seed: seed + 1 });
+      tg.line([[x, y + h / 2], [x + w, y + h / 2]], { lw: 4 * L.U, seed: seed + 2 });
+    }
+    tg.rrect(x - 10 * L.U, y + h, w + 20 * L.U, 12 * L.U, 3, { fill: C('#C9A27E'), lw: 3, seed: seed + 3 });
+  }
+  function ground(tg, L, y, col, seed, hatch = { gap: 14, angle: -0.25 }) {
+    tg.rrect(-40, y, L.W + 80, L.H - y + 40, 0, { fill: col, lw: 5 * L.U, seed, hatch });
+  }
+  function tree(tg, L, x, y, s, C, t, seed, kind = 'round') {
+    const sway = Math.sin(t * 1.2 + seed) * 0.03, c = tg.ctx;
+    tg.rrect(x - 14 * s, y - 150 * s, 28 * s, 152 * s, 8, { fill: C('#8E6444'), lw: 4, seed });
+    c.save(); c.translate(x, y - 150 * s); c.rotate(sway);
+    if (kind === 'pine') {
+      for (let k = 0; k < 3; k++) tg.poly([[-90 * s + k * 18 * s, -k * 55 * s + 20 * s], [0, -k * 55 * s - 90 * s], [90 * s - k * 18 * s, -k * 55 * s + 20 * s]], { fill: C(k % 2 ? '#3F7A4A' : '#4A8A52'), lw: 4, seed: seed + 1 + k, hatch: { gap: 9 } });
+    } else {
+      tg.ellipse(0, -60 * s, 100 * s, 90 * s, { fill: C('#4E9A57'), lw: 4, seed: seed + 1, hatch: { gap: 9 } });
+      tg.ellipse(-50 * s, -20 * s, 60 * s, 50 * s, { fill: C('#5AA862'), lw: 4, seed: seed + 2 });
+      tg.ellipse(55 * s, -25 * s, 55 * s, 48 * s, { fill: C('#468E50'), lw: 4, seed: seed + 3 });
+    }
+    c.restore();
+  }
+  function lantern(tg, L, x, y, s, C, time, seed) {
+    tg.line([[x, y], [x, y - 20 * s]], { lw: 3, seed });
+    tg.ellipse(x, y + 26 * s, 20 * s, 28 * s, { fill: time === 'night' ? '#FFB45A' : C('#E8664A'), lw: 3, seed: seed + 1 });
+    if (time === 'night' || time === 'evening') glow(tg, x, y + 26 * s, 90 * s, 'rgba(255,190,110,0.35)');
+  }
+  function glow(tg, x, y, r, col) {
+    const c = tg.ctx; c.save(); c.globalCompositeOperation = 'lighter';
+    const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); c.restore();
+  }
+  function wallFill(tg, L, col, y1, seed) {
+    tg.background(col);
+    const c = tg.ctx; c.save(); c.beginPath(); c.rect(0, 0, L.W, y1); c.clip();
+    tg.hatch([0, 0, L.W, y1], { color: 'rgba(120,80,40,.06)', gap: 18, seed }); c.restore();
+  }
+  // 建物（街路・路地）：時代で作りを変える
+  function building(tg, L, x, w, top, base, era, C, time, seed) {
+    const U = L.U, h = base - top;
+    const col = { modern: ['#8A6A4E', '#5A4636'], present: ['#C8C2B8', '#9AA0A8'], western: ['#C9B49A', '#A88F74'], fantasy: ['#D8C8A8', '#B89A78'] }[era] || ['#8A6A4E', '#5A4636'];
+    tg.rrect(x, top, w, h, 4, { fill: C(col[hash(seed, 1) > 0.5 ? 0 : 1]), lw: 5 * U, seed, hatch: { gap: 16, angle: 1.4, color: 'rgba(0,0,0,.08)' } });
+    if (era === 'modern') {
+      tg.poly([[x - 16 * U, top + 6 * U], [x + w / 2, top - 46 * U], [x + w + 16 * U, top + 6 * U]], { fill: C('#4A4A52'), lw: 4 * U, seed: seed + 1, hatch: { gap: 7, angle: 0.2 } });
+      tg.rrect(x + w * 0.15, base - h * 0.42, w * 0.7, h * 0.42, 2, { fill: C('#3A2E28'), lw: 4 * U, seed: seed + 2 });
+      tg.rrect(x + w * 0.1, base - h * 0.5, w * 0.8, h * 0.1, 2, { fill: C(hash(seed, 3) > 0.5 ? '#2F4A6A' : '#7A2E2E'), lw: 3 * U, seed: seed + 3 });
+    } else if (era === 'fantasy') {
+      tg.poly([[x - 10 * U, top + 4 * U], [x + w / 2, top - 70 * U], [x + w + 10 * U, top + 4 * U]], { fill: C('#A84A3A'), lw: 4 * U, seed: seed + 1, hatch: { gap: 8 } });
+      tg.rrect(x + w * 0.35, base - h * 0.35, w * 0.3, h * 0.35, 14, { fill: C('#6A4A32'), lw: 4 * U, seed: seed + 2 });
+    } else {
+      tg.rrect(x + w * 0.35, base - h * 0.3, w * 0.3, h * 0.3, 3, { fill: C(era === 'present' ? '#7A8A9A' : '#5A4232'), lw: 4 * U, seed: seed + 2 });
+    }
+    const rows = Math.max(1, Math.floor((h * (era === 'modern' ? 0.4 : 0.62)) / (60 * U))), cols = Math.max(1, Math.floor(w / (70 * U)));
+    for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
+      const wx = x + (k + 0.5) * w / cols - 16 * U, wy = top + 20 * U + r * 60 * U;
+      const lit = time === 'night' || time === 'evening' ? hash(seed, r, k) > 0.35 : false;
+      tg.rrect(wx, wy, 32 * U, 38 * U, 3, { fill: lit ? '#FFD58A' : C('#A8C8DC'), lw: 3 * U, seed: seed + 10 + r * 7 + k, second: false });
+    }
+  }
+
+  /* ---------------- 場所（28種＋無地） ---------------- */
+  const BG = {
+    none(tg, L, s, t) { tg.background(s.time === 'night' ? '#2B2F55' : '#F2EADB'); },
+
+    washitsu(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.68;
+      wallFill(tg, L, C('#EADCBF'), fy, 10);
+      // 障子
+      const sx = L.W * 0.08, sw = L.W * 0.5, sy = fy - 430 * U, sh = 430 * U;
+      const c = tg.ctx; c.save(); c.globalAlpha = 1; tg.rrect(sx, sy, sw, sh, 2, { fill: s.time === 'night' ? C('#E8DDC0') : '#FBF6EA', lw: 6 * U, seed: 11 }); c.restore();
+      if (s.time !== 'night') glow(tg, sx + sw / 2, sy + sh / 2, sw * 0.7, s.time === 'evening' ? 'rgba(255,170,90,0.25)' : 'rgba(255,250,230,0.25)');
+      for (let k = 1; k < 6; k++) tg.line([[sx + sw * k / 6, sy], [sx + sw * k / 6, sy + sh]], { lw: 3 * U, seed: 12 + k, amp: 0.8 });
+      for (let k = 1; k < 5; k++) tg.line([[sx, sy + sh * k / 5], [sx + sw, sy + sh * k / 5]], { lw: 3 * U, seed: 20 + k, amp: 0.8 });
+      // 床の間と掛軸
+      const tx = L.W * 0.66, tw = L.W * 0.26;
+      tg.rrect(tx, sy - 20 * U, tw, sh + 20 * U, 2, { fill: C('#D8C6A2'), lw: 6 * U, seed: 30 });
+      tg.rrect(tx + tw * 0.36, sy + 20 * U, tw * 0.28, sh * 0.62, 3, { fill: C('#F4EEDC'), lw: 4 * U, seed: 31 });
+      tg.line([[tx + tw * 0.5, sy + 60 * U], [tx + tw * 0.46, sy + 120 * U], [tx + tw * 0.54, sy + 170 * U]], { lw: 5 * U, seed: 32 });
+      tg.rrect(tx, fy - 40 * U, tw, 40 * U, 2, { fill: C('#7A5A3E'), lw: 5 * U, seed: 33 });
+      // 長押
+      tg.rrect(-20, sy - 60 * U, L.W + 40, 22 * U, 2, { fill: C('#9A7652'), lw: 5 * U, seed: 34 });
+      // 畳
+      ground(tg, L, fy, C('#C9C27A'), 35, { gap: 7, angle: 0.02, color: 'rgba(90,90,30,.18)' });
+      for (let k = -1; k < 4; k++) tg.line([[L.W * (0.15 + k * 0.32), fy], [L.W * (0.05 + k * 0.38), L.H]], { lw: 5 * U, seed: 36 + k, color: C('#5E6A3A') });
+      tg.line([[0, fy + (L.H - fy) * 0.5], [L.W, fy + (L.H - fy) * 0.5]], { lw: 5 * U, seed: 41 });
+    },
+
+    yoshitsu(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.7;
+      wallFill(tg, L, C('#E6D3B3'), fy, 50);
+      const c = tg.ctx; c.save(); c.globalAlpha = 0.25; for (let x = 0; x < L.W; x += 46 * U) tg.line([[x, 0], [x, fy]], { lw: 6 * U, seed: 51 + x, color: C('#C9A97E'), amp: 0.6 }); c.restore();
+      windowFrame(tg, L, s.time, t, L.W * 0.1, fy - 470 * U, 300 * U, 300 * U, C, 52);
+      // カーテン
+      for (const sd of [0, 1]) tg.poly([[L.W * 0.1 - 30 * U + sd * 330 * U, fy - 500 * U], [L.W * 0.1 + 40 * U + sd * 260 * U, fy - 500 * U], [L.W * 0.1 + 20 * U + sd * 300 * U, fy - 120 * U], [L.W * 0.1 - 40 * U + sd * 340 * U, fy - 120 * U]], { fill: C('#9A3E4A'), lw: 4 * U, seed: 56 + sd, hatch: { gap: 12, angle: 1.5, color: 'rgba(60,0,10,.25)' } });
+      // 暖炉か本棚
+      const bx = L.W * 0.62;
+      if (s.era === 'western' || s.era === 'fantasy') {
+        tg.rrect(bx, fy - 300 * U, 280 * U, 300 * U, 4, { fill: C('#B8A48A'), lw: 5 * U, seed: 58, hatch: { gap: 14, angle: 0 } });
+        tg.rrect(bx + 60 * U, fy - 180 * U, 160 * U, 180 * U, 30, { fill: '#2A1E1A', lw: 5 * U, seed: 59 });
+        for (let k = 0; k < 3; k++) { const f = Math.sin(t * 7 + k * 2) * 8 * U; tg.poly([[bx + 90 * U + k * 40 * U, fy - 10 * U], [bx + 110 * U + k * 40 * U, fy - 90 * U - f], [bx + 130 * U + k * 40 * U, fy - 10 * U]], { fill: k % 2 ? '#F2B84B' : '#E0703E', lw: 3, seed: 60 + k }); }
+        glow(tg, bx + 140 * U, fy - 60 * U, 260 * U, 'rgba(255,150,70,0.3)');
+      } else {
+        tg.rrect(bx, fy - 420 * U, 260 * U, 420 * U, 4, { fill: C('#7A5638'), lw: 5 * U, seed: 58 });
+        for (let r = 0; r < 4; r++) {
+          tg.line([[bx, fy - 420 * U + (r + 1) * 100 * U], [bx + 260 * U, fy - 420 * U + (r + 1) * 100 * U]], { lw: 4 * U, seed: 62 + r });
+          for (let k = 0; k < 7; k++) tg.rrect(bx + 14 * U + k * 34 * U, fy - 410 * U + r * 100 * U + hash(r, k) * 20 * U, 26 * U, 88 * U - hash(r, k) * 20 * U, 2, { fill: C(['#B5485A', '#3F7A8A', '#C9A24B', '#5A6A3A'][(r + k) % 4]), lw: 2.5 * U, seed: 70 + r * 8 + k, second: false });
+        }
+      }
+      ground(tg, L, fy, C('#9A6A44'), 90, { gap: 40, angle: 0, color: 'rgba(60,30,10,.25)' });
+      // 絨毯
+      tg.ellipse(L.W * 0.5, fy + (L.H - fy) * 0.55, L.W * 0.36, (L.H - fy) * 0.35, { fill: C('#8A3E3E'), lw: 5 * U, seed: 91, hatch: { gap: 10 } });
+      if (s.time === 'night') { tg.line([[L.W * 0.42, 0], [L.W * 0.42, 90 * U]], { lw: 3, seed: 92 }); tg.ellipse(L.W * 0.42, 110 * U, 34 * U, 24 * U, { fill: '#FFD58A', lw: 3, seed: 93 }); glow(tg, L.W * 0.42, 120 * U, 380 * U, 'rgba(255,210,140,0.3)'); }
+    },
+
+    kitchen(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C(s.era === 'present' ? '#E8E4DA' : '#CDB898'), fy, 100);
+      windowFrame(tg, L, s.time, t, L.W * 0.38, fy - 520 * U, 260 * U, 190 * U, C, 101);
+      // 棚と鍋
+      tg.rrect(L.W * 0.06, fy - 470 * U, 280 * U, 18 * U, 2, { fill: C('#8A6444'), lw: 4 * U, seed: 105 });
+      for (let k = 0; k < 4; k++) tg.rrect(L.W * 0.06 + 20 * U + k * 64 * U, fy - 540 * U, 46 * U, 70 * U, 10, { fill: C(['#E8E2D0', '#6A8AA8', '#C97A4A', '#E8E2D0'][k]), lw: 3 * U, seed: 106 + k });
+      if (s.era === 'present') {
+        tg.rrect(-20, fy - 230 * U, L.W + 40, 230 * U, 4, { fill: C('#F2EEE6'), lw: 5 * U, seed: 110 });
+        tg.rrect(-20, fy - 250 * U, L.W + 40, 24 * U, 2, { fill: C('#B8B4AC'), lw: 4 * U, seed: 111 });
+        for (let k = 0; k < 5; k++) tg.rrect(L.W * (0.04 + k * 0.2), fy - 210 * U, L.W * 0.17, 180 * U, 6, { fill: C('#E2DCD0'), lw: 3.5 * U, seed: 112 + k, second: false });
+        tg.line([[L.W * 0.55, fy - 250 * U], [L.W * 0.55, fy - 320 * U], [L.W * 0.6, fy - 320 * U]], { lw: 6 * U, seed: 118 });
+      } else {
+        // 竈
+        const kx = L.W * 0.62;
+        tg.rrect(kx, fy - 210 * U, 300 * U, 210 * U, 18, { fill: C('#B8A08A'), lw: 5 * U, seed: 110, hatch: { gap: 12 } });
+        tg.ellipse(kx + 150 * U, fy - 60 * U, 46 * U, 40 * U, { fill: '#2A1E1A', lw: 4 * U, seed: 111 });
+        glow(tg, kx + 150 * U, fy - 60 * U, 120 * U, 'rgba(255,140,60,0.4)');
+        tg.ellipse(kx + 150 * U, fy - 230 * U, 90 * U, 34 * U, { fill: C('#3A3A3A'), lw: 4 * U, seed: 112 });
+        for (let k = 0; k < 3; k++) { const ph = (t * 0.5 + k / 3) % 1; tg.line([[kx + 120 * U + k * 30 * U, fy - 270 * U - ph * 120 * U], [kx + 130 * U + k * 30 * U + Math.sin(t * 2 + k) * 14 * U, fy - 320 * U - ph * 120 * U]], { lw: 4 * U, seed: 113 + k, stroke: 'rgba(240,240,240,' + (0.7 * (1 - ph)).toFixed(2) + ')' }); }
+      }
+      ground(tg, L, fy, C(s.era === 'present' ? '#C8B89A' : '#8A7A66'), 120, { gap: 18, angle: -0.2 });
+    },
+
+    genkan(tg, L, s, t, C) {
+      const U = L.U, vx = L.W * 0.5, vy = L.H * 0.48, fy = L.H * 0.9;
+      wallFill(tg, L, C('#DCC8A6'), L.H, 130);
+      // 奥へ続く廊下（一点透視）
+      const dw = 150 * U, dh = 260 * U;
+      tg.poly([[0, fy], [vx - dw, vy + dh / 2], [vx + dw, vy + dh / 2], [L.W, fy], [L.W, L.H], [0, L.H]], { fill: C('#A87A50'), lw: 5 * U, seed: 131, hatch: { gap: 30, angle: 0, color: 'rgba(60,30,10,.2)' } });
+      for (let k = 1; k < 6; k++) { const f = k / 6; tg.line([[lerp(vx - dw, 0, f), lerp(vy + dh / 2, fy, f)], [lerp(vx + dw, L.W, f), lerp(vy + dh / 2, fy, f)]], { lw: 3 * U, seed: 132 + k, amp: 0.8 }); }
+      tg.poly([[0, 0], [vx - dw, vy - dh / 2], [vx - dw, vy + dh / 2], [0, fy]], { fill: C('#CDB48E'), lw: 5 * U, seed: 140 });
+      tg.poly([[L.W, 0], [vx + dw, vy - dh / 2], [vx + dw, vy + dh / 2], [L.W, fy]], { fill: C('#C4A983'), lw: 5 * U, seed: 141 });
+      // 突き当たりの戸
+      tg.rrect(vx - dw, vy - dh / 2, dw * 2, dh, 3, { fill: s.era === 'modern' ? '#F4EEDC' : C('#7A5638'), lw: 5 * U, seed: 142 });
+      if (s.era === 'modern') { for (let k = 1; k < 4; k++) tg.line([[vx - dw + dw * 2 * k / 4, vy - dh / 2], [vx - dw + dw * 2 * k / 4, vy + dh / 2]], { lw: 2.5 * U, seed: 143 + k }); }
+      else tg.ellipse(vx + dw * 0.6, vy, 8 * U, 8 * U, { fill: '#E8C66A', lw: 2, seed: 147 });
+      // 横の戸
+      for (const sd of [-1, 1]) { const x0 = sd < 0 ? L.W * 0.12 : L.W * 0.88; tg.poly([[x0, L.H * 0.2], [x0 + sd * -60 * U, L.H * 0.3], [x0 + sd * -60 * U, L.H * 0.72], [x0, L.H * 0.82]], { fill: C('#8A6444'), lw: 4 * U, seed: 148 + sd }); }
+      // 上がり框
+      tg.rrect(-20, fy - 10 * U, L.W + 40, 26 * U, 3, { fill: C('#6A4A32'), lw: 5 * U, seed: 150 });
+      if (s.time === 'night') glow(tg, vx, vy - dh * 0.8, 300 * U, 'rgba(255,200,130,0.25)');
+    },
+
+    classroom(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C('#E4D8C0'), fy, 160);
+      tg.rrect(L.W * 0.2, fy - 470 * U, L.W * 0.6, 250 * U, 6, { fill: C('#3E6A52'), lw: 8 * U, seed: 161 });
+      tg.rrect(L.W * 0.2, fy - 220 * U, L.W * 0.6, 16 * U, 2, { fill: C('#8A6444'), lw: 4 * U, seed: 162 });
+      tg.line([[L.W * 0.27, fy - 400 * U], [L.W * 0.42, fy - 410 * U]], { lw: 4 * U, seed: 163, stroke: 'rgba(255,255,255,.75)' });
+      tg.line([[L.W * 0.27, fy - 350 * U], [L.W * 0.5, fy - 345 * U]], { lw: 4 * U, seed: 164, stroke: 'rgba(255,255,255,.75)' });
+      tg.text(s.era === 'present' ? '自習' : '修身', L.W * 0.66, fy - 300 * U, { size: 54 * U, color: 'rgba(255,255,255,.85)', stroke: null, strokeW: 0, weight: 700, boilAmp: 0.5 });
+      // 窓（左）
+      for (let k = 0; k < 2; k++) windowFrame(tg, L, s.time, t, L.W * 0.02 + k * 0 , fy - 520 * U + k * 0, L.W * 0.14, 220 * U, C, 165 + k * 5);
+      ground(tg, L, fy, C('#A8845E'), 180, { gap: 34, angle: 0, color: 'rgba(60,30,10,.2)' });
+      // 机
+      for (let r = 0; r < 2; r++) for (let k = 0; k < 4; k++) {
+        const w = (170 + r * 40) * U, x = L.W * (0.1 + k * 0.24) - w / 2 + r * 40 * U, y = fy + 30 * U + r * 90 * U;
+        tg.rrect(x, y, w, 24 * U, 3, { fill: C('#B88A5A'), lw: 4 * U, seed: 190 + r * 5 + k });
+        tg.line([[x + 14 * U, y + 24 * U], [x + 14 * U, y + 80 * U]], { lw: 5 * U, seed: 200 + r * 5 + k });
+        tg.line([[x + w - 14 * U, y + 24 * U], [x + w - 14 * U, y + 80 * U]], { lw: 5 * U, seed: 210 + r * 5 + k });
+      }
+    },
+
+    shop(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.74;
+      wallFill(tg, L, C('#C9A983'), fy, 230);
+      // 棚と瓶
+      for (let r = 0; r < 3; r++) {
+        const y = fy - 520 * U + r * 120 * U;
+        tg.rrect(L.W * 0.05, y, L.W * 0.9, 14 * U, 2, { fill: C('#6A4A32'), lw: 4 * U, seed: 231 + r });
+        for (let k = 0; k < 11; k++) { if (hash(r, k, 3) < 0.25) continue; const x = L.W * (0.08 + k * 0.08), hh = (50 + hash(r, k) * 40) * U; tg.rrect(x, y - hh, 30 * U, hh, 8, { fill: C(['#5A8A6A', '#B5485A', '#C9A24B', '#6A7AA8', '#E8E2D0'][(r * 3 + k) % 5]), lw: 2.5 * U, seed: 240 + r * 12 + k, second: false }); }
+      }
+      // 吊り下げの灯り
+      for (let k = 0; k < 3; k++) { const x = L.W * (0.22 + k * 0.28), sw = Math.sin(t * 1.3 + k) * 6 * U; tg.line([[x, 0], [x + sw, 70 * U]], { lw: 3, seed: 280 + k }); tg.poly([[x + sw - 36 * U, 110 * U], [x + sw, 66 * U], [x + sw + 36 * U, 110 * U]], { fill: C('#3A3A3A'), lw: 3, seed: 284 + k }); glow(tg, x + sw, 120 * U, 220 * U, s.time === 'night' || s.time === 'evening' ? 'rgba(255,200,120,0.35)' : 'rgba(255,220,160,0.18)'); }
+      ground(tg, L, fy, C('#7A5A40'), 290, { gap: 20, angle: -0.2 });
+      // カウンター
+      tg.rrect(L.W * 0.48, fy - 150 * U, L.W * 0.6, 240 * U, 6, { fill: C('#8A5A36'), lw: 6 * U, seed: 291, hatch: { gap: 18, angle: 1.5, color: 'rgba(40,20,0,.25)' } });
+      tg.rrect(L.W * 0.46, fy - 168 * U, L.W * 0.62, 26 * U, 4, { fill: C('#A87048'), lw: 5 * U, seed: 292 });
+      tg.rrect(L.W * 0.62, fy - 230 * U, 52 * U, 62 * U, 10, { fill: '#F4EEDC', lw: 3.5 * U, seed: 293 });
+      for (let k = 0; k < 2; k++) { const ph = (t * 0.6 + k / 2) % 1; tg.line([[L.W * 0.62 + 20 * U + k * 14 * U, fy - 240 * U - ph * 60 * U], [L.W * 0.62 + 26 * U + k * 14 * U + Math.sin(t * 3 + k) * 8 * U, fy - 270 * U - ph * 60 * U]], { lw: 3 * U, seed: 294 + k, stroke: 'rgba(120,100,90,' + (0.7 * (1 - ph)).toFixed(2) + ')' }); }
+    },
+
+    station(tg, L, s, t, C) {
+      const U = L.U, py = L.H * 0.72;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, py, { clouds: 2 });
+      // 遠くの町並み
+      for (let k = 0; k < 9; k++) tg.rrect(k * L.W / 8 - 30 * U, py - 120 * U - hash(k, 5) * 90 * U, L.W / 8 - 10 * U, 300 * U, 2, { fill: C('#8A90A0'), lw: 3 * U, seed: 300 + k, second: false });
+      // 線路
+      tg.rrect(-20, py - 40 * U, L.W + 40, 60 * U, 0, { fill: C('#6A6058'), lw: 4 * U, seed: 310, hatch: { gap: 22, angle: 1.57, color: 'rgba(0,0,0,.25)' } });
+      tg.line([[0, py - 30 * U], [L.W, py - 30 * U]], { lw: 5 * U, seed: 311, stroke: C('#B8B8C0') });
+      tg.line([[0, py - 2 * U], [L.W, py - 2 * U]], { lw: 5 * U, seed: 312, stroke: C('#B8B8C0') });
+      // 屋根と柱
+      tg.poly([[-20, 0], [L.W + 20, 0], [L.W + 20, 70 * U], [-20, 110 * U]], { fill: C(s.era === 'present' ? '#9AA4B0' : '#6A5A4A'), lw: 5 * U, seed: 313, hatch: { gap: 14, angle: 0.1 } });
+      for (let k = 0; k < 4; k++) tg.rrect(L.W * (0.08 + k * 0.3), 80 * U, 22 * U, py + 30 * U, 3, { fill: C('#5A4A3E'), lw: 4 * U, seed: 315 + k });
+      // 駅名標
+      tg.rrect(L.W * 0.4, py - 260 * U, 240 * U, 70 * U, 6, { fill: '#F8F4EA', lw: 4 * U, seed: 320 });
+      tg.text(s.era === 'present' ? 'えき' : 'ていしやば', L.W * 0.4 + 120 * U, py - 212 * U, { size: 30 * U, color: C('#2A2320'), stroke: null, strokeW: 0, weight: 700, boilAmp: 0.4 });
+      // ホーム
+      tg.rrect(-20, py + 20 * U, L.W + 40, L.H - py, 0, { fill: C('#B8AE9E'), lw: 5 * U, seed: 321, hatch: { gap: 30, angle: 0, color: 'rgba(0,0,0,.08)' } });
+      tg.rrect(-20, py + 20 * U, L.W + 40, 16 * U, 0, { fill: C('#E8D86A'), lw: 3 * U, seed: 322 });
+      if (s.time === 'night' || s.time === 'evening') for (let k = 0; k < 3; k++) glow(tg, L.W * (0.15 + k * 0.3), 120 * U, 260 * U, 'rgba(255,220,150,0.3)');
+    },
+
+    street(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.74;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      let x = -40 * U, k = 0;
+      while (x < L.W) { const w = (180 + hash(k, 2) * 120) * U, top = gy - (260 + hash(k, 3) * (s.era === 'present' ? 260 : 120)) * U; building(tg, L, x, w, top, gy, s.era, C, s.time, 340 + k * 20); x += w + 14 * U; k++; }
+      ground(tg, L, gy, C(s.era === 'present' ? '#8A8E94' : '#B8A486'), 500, { gap: 24, angle: -0.15 });
+      // 電柱・街灯
+      for (let i = 0; i < 2; i++) {
+        const px = L.W * (0.18 + i * 0.6);
+        tg.rrect(px - 8 * U, gy - 380 * U, 16 * U, 400 * U, 3, { fill: C('#5A4A3E'), lw: 3.5 * U, seed: 510 + i });
+        if (s.era === 'present') { tg.line([[px - 50 * U, gy - 350 * U], [px + 50 * U, gy - 350 * U]], { lw: 4 * U, seed: 514 + i }); tg.line([[px, gy - 350 * U], [px + L.W * 0.6, gy - 330 * U]], { lw: 2 * U, seed: 518 + i, amp: 1 }); }
+        else { tg.rrect(px - 26 * U, gy - 420 * U, 52 * U, 52 * U, 6, { fill: s.time === 'night' || s.time === 'evening' ? '#FFD58A' : C('#E8E2D0'), lw: 3.5 * U, seed: 520 + i }); if (s.time === 'night' || s.time === 'evening') glow(tg, px, gy - 394 * U, 240 * U, 'rgba(255,210,130,0.35)'); }
+      }
+    },
+
+    alley(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.8;
+      skyBox(tg, L, s.time, t, L.W * 0.3, 0, L.W * 0.4, gy, { clouds: 1 });
+      // 両側に迫る壁
+      building(tg, L, -60 * U, L.W * 0.36 + 60 * U, -40, gy, s.era, C, s.time, 600);
+      building(tg, L, L.W * 0.64, L.W * 0.36 + 60 * U, -40, gy, s.era, C, s.time, 640);
+      // 奥の壁
+      tg.rrect(L.W * 0.36, gy - 340 * U, L.W * 0.28, 340 * U, 3, { fill: C('#7A6A5A'), lw: 4 * U, seed: 680, hatch: { gap: 12 } });
+      lantern(tg, L, L.W * 0.36 + 30 * U, gy - 420 * U, U, C, s.time, 690);
+      // 鉢植え・配管
+      tg.line([[L.W * 0.64 - 10 * U, 0], [L.W * 0.64 - 10 * U, gy]], { lw: 8 * U, seed: 693, stroke: C('#5A5A5E') });
+      for (let k = 0; k < 3; k++) { const x = L.W * (0.38 + k * 0.08); tg.rrect(x, gy - 50 * U, 50 * U, 50 * U, 6, { fill: C('#B86A44'), lw: 3.5 * U, seed: 700 + k }); tg.ellipse(x + 25 * U, gy - 70 * U, 40 * U, 30 * U, { fill: C('#4E8A50'), lw: 3.5 * U, seed: 705 + k }); }
+      ground(tg, L, gy, C('#8A8070'), 710, { gap: 16, angle: -0.6 });
+    },
+
+    garden(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.66;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      tree(tg, L, L.W * 0.82, gy + 20 * U, 1.5 * U, C, t, 720, s.era === 'modern' ? 'pine' : 'round');
+      tree(tg, L, L.W * 0.12, gy + 10 * U, 1.1 * U, C, t, 730);
+      // 垣根
+      for (let x = -10; x < L.W + 20; x += 34 * U) tg.line([[x, gy - 110 * U], [x, gy + 4 * U]], { lw: 6 * U, seed: 740 + Math.round(x), stroke: C('#9A7A4A') });
+      tg.line([[0, gy - 80 * U], [L.W, gy - 84 * U]], { lw: 6 * U, seed: 741, stroke: C('#7A5A32') });
+      tg.line([[0, gy - 30 * U], [L.W, gy - 26 * U]], { lw: 6 * U, seed: 742, stroke: C('#7A5A32') });
+      ground(tg, L, gy, C('#7DB060'), 743, { gap: 12, angle: -0.3 });
+      // 池・石灯籠・植え込み
+      tg.ellipse(L.W * 0.3, gy + (L.H - gy) * 0.55, L.W * 0.18, 50 * U, { fill: C('#6AA8C8'), lw: 5 * U, seed: 744 });
+      tg.line([[L.W * 0.24, gy + (L.H - gy) * 0.55], [L.W * 0.3 + Math.sin(t) * 10 * U, gy + (L.H - gy) * 0.55 - 4 * U]], { lw: 3 * U, seed: 745, stroke: 'rgba(255,255,255,.6)' });
+      if (s.era === 'modern' || s.era === 'present') {
+        const lx = L.W * 0.62, ly = gy + 70 * U;
+        tg.rrect(lx - 14 * U, ly - 70 * U, 28 * U, 70 * U, 3, { fill: C('#A8A49A'), lw: 4 * U, seed: 746 });
+        tg.rrect(lx - 32 * U, ly - 120 * U, 64 * U, 50 * U, 6, { fill: s.time === 'night' ? '#FFD58A' : C('#B8B4AA'), lw: 4 * U, seed: 747 });
+        tg.poly([[lx - 50 * U, ly - 118 * U], [lx, ly - 160 * U], [lx + 50 * U, ly - 118 * U]], { fill: C('#9A968C'), lw: 4 * U, seed: 748 });
+      } else {
+        for (let k = 0; k < 5; k++) tg.ellipse(L.W * (0.55 + k * 0.08), gy + 40 * U, 22 * U, 22 * U, { fill: C(['#E8718D', '#F2B84B', '#F4EEDC'][k % 3]), lw: 3 * U, seed: 750 + k });
+      }
+      for (let k = 0; k < 3; k++) tg.ellipse(L.W * (0.05 + k * 0.35), gy + 6 * U, 80 * U, 40 * U, { fill: C('#4E8A50'), lw: 4 * U, seed: 760 + k, hatch: { gap: 9 } });
+    },
+
+    field(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.56;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 4 });
+      tg.poly([[-40, gy], [L.W * 0.2, gy - 140 * U], [L.W * 0.45, gy - 40 * U], [L.W * 0.7, gy - 180 * U], [L.W + 40, gy - 30 * U], [L.W + 40, gy + 10], [-40, gy + 10]], { fill: C('#7A8EA8'), lw: 4 * U, seed: 770, hatch: { gap: 14, color: 'rgba(0,0,0,.08)' } });
+      ground(tg, L, gy, C('#9CC46A'), 771, { gap: 16, angle: -0.1 });
+      // 畑の畝（遠近）
+      for (let k = 0; k < 8; k++) { const y = gy + (L.H - gy) * Math.pow(k / 8, 1.6); tg.line([[-20, y], [L.W + 20, y + 6 * U]], { lw: (2 + k * 0.6) * U, seed: 772 + k, stroke: C('#6A8A3E') }); }
+      // 揺れる草
+      for (let k = 0; k < 16; k++) { const x = hash(k, 1) * L.W, y = L.H - hash(k, 2) * (L.H - gy) * 0.4, sw = Math.sin(t * 2 + k) * 8 * U; tg.line([[x, y], [x + sw, y - 40 * U]], { lw: 3 * U, seed: 790 + k, stroke: C('#4E7A30') }); }
+      tg.line([[L.W * 0.55, L.H], [L.W * 0.5, gy]], { lw: 30 * U, seed: 810, stroke: C('#C8B080') });
+    },
+
+    forest(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.76;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 1 });
+      const c = tg.ctx; c.save(); c.globalAlpha = 0.9;
+      tg.rrect(-20, -20, L.W + 40, gy * 0.6, 40, { fill: C('#3E6A44'), lw: 4 * U, seed: 820, hatch: { gap: 12, color: 'rgba(0,0,0,.15)' } }); c.restore();
+      for (let k = 0; k < 7; k++) tg.ellipse(hash(k, 4) * L.W, gy * (0.15 + hash(k, 5) * 0.4), (120 + hash(k, 6) * 100) * U, (80 + hash(k, 7) * 60) * U, { fill: C(['#4E8A50', '#3F7A4A', '#5A9A58'][k % 3]), lw: 4 * U, seed: 822 + k, hatch: { gap: 10 } });
+      ground(tg, L, gy, C('#6A8A44'), 840, { gap: 14, angle: -0.3 });
+      tg.poly([[L.W * 0.4, L.H], [L.W * 0.47, gy], [L.W * 0.53, gy], [L.W * 0.7, L.H]], { fill: C('#B89A6A'), lw: 4 * U, seed: 841 });
+      // 幹（奥ほど細く薄く）
+      for (let k = 0; k < 9; k++) {
+        const far = k < 4, x = L.W * (far ? 0.15 + k * 0.22 : (k - 4) * 0.25 - 0.02) + hash(k, 8) * 40 * U, w = (far ? 22 : 48) * U;
+        tg.rrect(x, -20, w, gy + (far ? -10 * U : 40 * U), 6, { fill: C(far ? '#7A6A52' : '#5A4232'), lw: 4 * U, seed: 850 + k, hatch: far ? undefined : { gap: 10, angle: 1.5 } });
+      }
+      if (s.time !== 'night') { c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.12 + 0.04 * Math.sin(t); c.fillStyle = '#FFF2C0'; c.beginPath(); c.moveTo(L.W * 0.55, 0); c.lineTo(L.W * 0.65, 0); c.lineTo(L.W * 0.5, gy); c.lineTo(L.W * 0.35, gy); c.fill(); c.restore(); }
+    },
+
+    river(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.5;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      ground(tg, L, gy - 10 * U, C('#8AB868'), 870, { gap: 14 });
+      // 川
+      const wy0 = gy + 50 * U, wy1 = L.H * 0.8;
+      tg.poly([[-20, wy0], [L.W + 20, wy0 - 20 * U], [L.W + 20, wy1], [-20, wy1 + 30 * U]], { fill: C('#5E9EC8'), lw: 5 * U, seed: 871 });
+      for (let k = 0; k < 10; k++) { const y = lerp(wy0, wy1, (k + 0.5) / 10), x = ((hash(k, 3) * L.W + t * (30 + k * 6) * U) % (L.W + 200)) - 100; tg.line([[x, y], [x + 60 * U, y - 2 * U]], { lw: 3 * U, seed: 872 + k, stroke: 'rgba(255,255,255,.65)' }); }
+      // 遠くの橋
+      const bx = L.W * 0.62, by = wy0 - 10 * U;
+      tg.line([[bx - 220 * U, by], [bx, by - 60 * U], [bx + 220 * U, by]], { lw: 12 * U, seed: 885, stroke: C('#8A5A3A') });
+      for (let k = -2; k <= 2; k++) tg.line([[bx + k * 80 * U, by - 60 * U * (1 - Math.abs(k) / 3) ], [bx + k * 80 * U, by + 40 * U]], { lw: 6 * U, seed: 886 + k, stroke: C('#6A4A32') });
+      // 柳
+      const wx = L.W * 0.12;
+      tg.rrect(wx - 12 * U, gy - 240 * U, 24 * U, 260 * U, 6, { fill: C('#6A5A44'), lw: 4 * U, seed: 892 });
+      for (let k = 0; k < 9; k++) { const a = (k - 4) * 22 * U, sw = Math.sin(t * 1.4 + k * 0.6) * 12 * U; tg.line([[wx + a * 0.3, gy - 240 * U], [wx + a, gy - 190 * U], [wx + a * 1.2 + sw, gy - 40 * U]], { lw: 4 * U, seed: 893 + k, stroke: C('#5A9A4A') }); }
+      ground(tg, L, wy1 + 10 * U, C('#9AC070'), 905, { gap: 14 });
+    },
+
+    seaside(tg, L, s, t, C) {
+      const U = L.U, hz = L.H * 0.48;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, hz, { clouds: 3 });
+      const sea = s.time === 'night' ? '#1E2A5A' : s.time === 'evening' ? '#C87A6A' : '#3E8EC8';
+      tg.rrect(-20, hz, L.W + 40, L.H * 0.3, 0, { fill: sea, lw: 4 * U, seed: 910 });
+      if (s.time === 'evening' || s.time === 'night') { const c = tg.ctx; c.save(); c.globalAlpha = 0.5; for (let k = 0; k < 6; k++) tg.line([[L.W * 0.7 - (30 + k * 12) * U, hz + 14 * U + k * 18 * U], [L.W * 0.7 + (30 + k * 12) * U, hz + 14 * U + k * 18 * U]], { lw: 4 * U, seed: 911 + k, stroke: s.time === 'night' ? '#F6EBC0' : '#FFD08A' }); c.restore(); }
+      for (let k = 0; k < 12; k++) { const y = hz + 20 * U + (k % 6) * 30 * U, x = ((hash(k, 2) * L.W + t * 20 * U * (1 + (k % 3))) % (L.W + 200)) - 100; tg.line([[x, y], [x + 30 * U, y - 8 * U], [x + 60 * U, y]], { lw: 3 * U, seed: 920 + k, stroke: 'rgba(255,255,255,.7)' }); }
+      // 砂浜と打ち寄せる波
+      const sy = L.H * 0.74, wv = Math.sin(t * 0.9) * 14 * U;
+      ground(tg, L, sy, C('#E8D2A0'), 940, { gap: 16, angle: -0.1, color: 'rgba(120,90,40,.12)' });
+      const pts = []; for (let k = 0; k <= 12; k++) pts.push([k * L.W / 12, sy + wv + Math.sin(k * 1.3 + t * 1.5) * 8 * U]);
+      tg.line(pts, { lw: 5 * U, seed: 941, stroke: '#FFFFFF' });
+      if (s.time !== 'night') for (let k = 0; k < 2; k++) { const x = ((t * 30 + k * 400) % (L.W + 200)) - 100, y = hz * (0.45 + 0.1 * k) + Math.sin(t * 2 + k) * 10 * U; tg.line([[x - 18 * U, y], [x, y + 8 * U], [x + 18 * U, y]], { lw: 3 * U, seed: 950 + k }); }
+    },
+
+    nightsky(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.78, c = tg.ctx;
+      const g = c.createLinearGradient(0, 0, 0, gy); g.addColorStop(0, '#060A24'); g.addColorStop(1, s.time === 'evening' ? '#5A4A7A' : '#2A3270'); c.fillStyle = g; c.fillRect(0, 0, L.W, gy);
+      // 天の川
+      c.save(); c.globalAlpha = 0.25; c.translate(L.W * 0.5, gy * 0.5); c.rotate(-0.5); const mw = c.createLinearGradient(0, -80 * U, 0, 80 * U); mw.addColorStop(0, 'rgba(200,200,255,0)'); mw.addColorStop(0.5, 'rgba(220,220,255,0.9)'); mw.addColorStop(1, 'rgba(200,200,255,0)'); c.fillStyle = mw; c.fillRect(-L.W, -80 * U, L.W * 2, 160 * U); c.restore();
+      for (let k = 0; k < 60; k++) { const tw = 0.5 + 0.5 * Math.sin(t * 2.4 + k * 2.1); const x = hash(k, 11) * L.W, y = hash(k, 12) * gy * 0.92; if (k < 14) tg.star(x, y, (4 + hash(k, 13) * 5) * U * (0.6 + 0.4 * tw), { fill: '#FFF6D0', lw: 1.5, seed: 960 + k, amp: 0.3, second: false }); else { c.fillStyle = `rgba(255,250,230,${0.4 + 0.6 * tw})`; c.fillRect(x, y, 2.4 * U, 2.4 * U); } }
+      tg.ellipse(L.W * 0.2, gy * 0.25, 46 * U, 46 * U, { fill: '#F6EBC0', lw: 3, seed: 1030 });
+      glow(tg, L.W * 0.2, gy * 0.25, 200 * U, 'rgba(246,235,192,0.25)');
+      // 流れ星（8秒に一度）
+      const ph = (t % 8) / 8; if (ph < 0.12) { const k = ph / 0.12, x = L.W * (0.9 - k * 0.5), y = gy * (0.1 + k * 0.25); tg.line([[x, y], [x + 90 * U, y - 45 * U]], { lw: 3 * U, seed: 1031, stroke: `rgba(255,255,230,${1 - k})` }); }
+      tg.poly([[-40, gy + 20 * U], [L.W * 0.3, gy - 80 * U], [L.W * 0.65, gy - 30 * U], [L.W + 40, gy - 110 * U], [L.W + 40, L.H + 40], [-40, L.H + 40]], { fill: C('#1E2A3A'), lw: 5 * U, seed: 1032, hatch: { gap: 14, color: 'rgba(255,255,255,.04)' } });
+    },
+  };
+
+  /* ---------------- 足した場所（13種）。時代で作りを変えるものもある ---------------- */
+  const JP = (era) => era === 'modern' || era === 'present';
+  // 本棚（列ごとに色の違う背表紙）
+  function shelf(tg, L, x, top, w, h, C, seed) {
+    const U = L.U, rows = Math.max(2, Math.round(h / (100 * U)));
+    tg.rrect(x, top, w, h, 4, { fill: C('#7A5638'), lw: 5 * U, seed });
+    for (let r = 0; r < rows; r++) {
+      const ry = top + (r + 1) * h / rows;
+      tg.line([[x, ry], [x + w, ry]], { lw: 4 * U, seed: seed + 1 + r });
+      const n = Math.max(3, Math.floor(w / (34 * U)));
+      for (let k = 0; k < n; k++) { const bh = h / rows - 14 * U - hash(seed, r, k) * 18 * U; tg.rrect(x + 8 * U + k * (w - 16 * U) / n, ry - bh - 4 * U, (w - 16 * U) / n - 6 * U, bh, 2, { fill: C(['#B5485A', '#3F7A8A', '#C9A24B', '#5A6A3A', '#6A4A8A'][(r * 3 + k) % 5]), lw: 2.5 * U, seed: seed + 10 + r * 9 + k, second: false }); }
+    }
+  }
+  function torch(tg, L, x, y, t, seed) {
+    const U = L.U, f = Math.sin(t * 9 + seed) * 6 * U;
+    tg.rrect(x - 6 * U, y, 12 * U, 60 * U, 3, { fill: '#5A3E2A', lw: 3 * U, seed });
+    tg.poly([[x - 14 * U, y], [x, y - 40 * U - f], [x + 14 * U, y]], { fill: '#F2A040', lw: 3 * U, seed: seed + 1 });
+    glow(tg, x, y - 14 * U, 180 * U, 'rgba(255,160,70,0.35)');
+  }
+  function bush(tg, L, x, y, s, C, seed) { tg.ellipse(x, y, 70 * s, 40 * s, { fill: C('#4E8A50'), lw: 4, seed, hatch: { gap: 9 } }); }
+
+  Object.assign(BG, {
+    bedroom(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.7;
+      if (s.era === 'modern') {
+        // 和室に布団と行灯
+        wallFill(tg, L, C('#EADCBF'), fy, 1100);
+        tg.rrect(L.W * 0.08, fy - 400 * U, L.W * 0.36, 400 * U, 2, { fill: s.time === 'night' ? C('#E8DDC0') : '#FBF6EA', lw: 6 * U, seed: 1101 });
+        for (let k = 1; k < 4; k++) tg.line([[L.W * (0.08 + 0.09 * k), fy - 400 * U], [L.W * (0.08 + 0.09 * k), fy]], { lw: 3 * U, seed: 1102 + k });
+        ground(tg, L, fy, C('#C9C27A'), 1106, { gap: 7, angle: 0.02, color: 'rgba(90,90,30,.18)' });
+        tg.rrect(L.W * 0.5, fy + 40 * U, L.W * 0.38, 120 * U, 18, { fill: C('#F2EEE4'), lw: 5 * U, seed: 1107 });
+        tg.rrect(L.W * 0.56, fy + 50 * U, L.W * 0.32, 104 * U, 18, { fill: C('#B5485A'), lw: 5 * U, seed: 1108, hatch: { gap: 12 } });
+        tg.ellipse(L.W * 0.53, fy + 90 * U, 40 * U, 22 * U, { fill: C('#F8F4EA'), lw: 4 * U, seed: 1109 });
+        const ax = L.W * 0.9; tg.rrect(ax - 30 * U, fy - 40 * U, 60 * U, 90 * U, 4, { fill: s.time === 'night' ? '#FFD58A' : C('#F4EEDC'), lw: 4 * U, seed: 1110 });
+        if (s.time === 'night' || s.time === 'evening') glow(tg, ax, fy, 260 * U, 'rgba(255,200,120,0.35)');
+        return;
+      }
+      wallFill(tg, L, C(s.era === 'present' ? '#DCE2E6' : '#D8C4A8'), fy, 1100);
+      windowFrame(tg, L, s.time, t, L.W * 0.1, fy - 430 * U, 240 * U, 260 * U, C, 1111);
+      ground(tg, L, fy, C('#9A6A44'), 1115, { gap: 40, angle: 0, color: 'rgba(60,30,10,.25)' });
+      const bx = L.W * 0.5, bw = L.W * 0.4;
+      tg.rrect(bx, fy - 210 * U, 30 * U, 260 * U, 6, { fill: C('#7A5638'), lw: 5 * U, seed: 1116 });
+      tg.rrect(bx, fy - 60 * U, bw, 110 * U, 10, { fill: C('#F2EEE4'), lw: 5 * U, seed: 1117 });
+      tg.rrect(bx + bw * 0.25, fy - 70 * U, bw * 0.75, 120 * U, 10, { fill: C(s.era === 'fantasy' ? '#6A5AA8' : '#5B7FA6'), lw: 5 * U, seed: 1118, hatch: { gap: 12 } });
+      tg.ellipse(bx + 80 * U, fy - 70 * U, 50 * U, 24 * U, { fill: C('#FFFFFF'), lw: 4 * U, seed: 1119 });
+      const nx = L.W * 0.36; tg.rrect(nx, fy - 120 * U, 90 * U, 120 * U, 4, { fill: C('#8A6444'), lw: 4 * U, seed: 1120 });
+      tg.poly([[nx + 20 * U, fy - 190 * U], [nx + 70 * U, fy - 190 * U], [nx + 85 * U, fy - 140 * U], [nx + 5 * U, fy - 140 * U]], { fill: s.time === 'night' ? '#FFD58A' : C('#F4E2B8'), lw: 3 * U, seed: 1121 });
+      if (s.time === 'night') glow(tg, nx + 45 * U, fy - 160 * U, 240 * U, 'rgba(255,210,130,0.35)');
+    },
+
+    library(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C('#CDB894'), fy, 1200);
+      const n = Math.max(3, Math.round(L.W / (330 * U)));
+      for (let k = 0; k < n; k++) shelf(tg, L, k * L.W / n + 20 * U, fy - 560 * U, L.W / n - 40 * U, 560 * U, C, 1201 + k * 80);
+      ground(tg, L, fy, C('#8A5A3A'), 1290, { gap: 40, angle: 0, color: 'rgba(60,30,10,.25)' });
+      tg.rrect(L.W * 0.3, fy + 30 * U, L.W * 0.4, 30 * U, 4, { fill: C('#6A4A32'), lw: 5 * U, seed: 1291 });
+      for (const k of [0.33, 0.67]) tg.line([[L.W * k, fy + 60 * U], [L.W * k, fy + 150 * U]], { lw: 6 * U, seed: 1292 + k * 10 });
+      const lx = L.W * 0.5; tg.rrect(lx - 22 * U, fy - 10 * U, 44 * U, 40 * U, 6, { fill: C('#3F7A4A'), lw: 3 * U, seed: 1295 });
+      glow(tg, lx, fy, 200 * U, 'rgba(255,220,140,0.3)');
+    },
+
+    office(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.7, pres = s.era === 'present';
+      wallFill(tg, L, C(pres ? '#E2E4E2' : '#D6C6A6'), fy, 1300);
+      const wx = L.W * 0.08, ww = L.W * 0.5;
+      windowFrame(tg, L, s.time, t, wx, fy - 440 * U, ww, 280 * U, C, 1301, { cross: false });
+      if (pres) for (let k = 1; k < 8; k++) tg.line([[wx, fy - 440 * U + k * 35 * U], [wx + ww, fy - 440 * U + k * 35 * U]], { lw: 2 * U, seed: 1302 + k, stroke: 'rgba(80,80,90,.45)' });
+      ground(tg, L, fy, C(pres ? '#8A8E96' : '#7A5A3E'), 1310, { gap: 40, angle: 0, color: 'rgba(0,0,0,.15)' });
+      for (let k = 0; k < 2; k++) {
+        const dx = L.W * (0.12 + k * 0.5), dw = L.W * 0.32;
+        tg.rrect(dx, fy - 10 * U, dw, 26 * U, 3, { fill: C(pres ? '#C8CCD2' : '#7A5638'), lw: 5 * U, seed: 1311 + k });
+        tg.rrect(dx + 10 * U, fy + 16 * U, dw - 20 * U, 90 * U, 3, { fill: C(pres ? '#B0B6BE' : '#6A4A32'), lw: 4 * U, seed: 1313 + k });
+        if (pres) { tg.rrect(dx + dw * 0.3, fy - 110 * U, dw * 0.4, 90 * U, 4, { fill: '#2A2E38', lw: 4 * U, seed: 1315 + k }); tg.rrect(dx + dw * 0.33, fy - 102 * U, dw * 0.34, 74 * U, 2, { fill: s.time === 'night' ? '#9AD0F0' : '#6A90B0', lw: 2 * U, seed: 1317 + k }); }
+        else { tg.rrect(dx + dw * 0.2, fy - 30 * U, dw * 0.3, 20 * U, 2, { fill: C('#F4EEDC'), lw: 3 * U, seed: 1315 + k }); tg.rrect(dx + dw * 0.7, fy - 80 * U, 12 * U, 70 * U, 3, { fill: C('#C9A24B'), lw: 3 * U, seed: 1317 + k }); }
+      }
+      tg.rrect(L.W * 0.7, fy - 470 * U, 120 * U, 90 * U, 4, { fill: C('#F4EEDC'), lw: 4 * U, seed: 1320 });
+      tg.ellipse(L.W * 0.7 + 60 * U, fy - 425 * U, 34 * U, 34 * U, { fill: C('#FFFFFF'), lw: 3 * U, seed: 1321 });
+    },
+
+    hospital(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.7;
+      wallFill(tg, L, C('#D4E6DC'), fy, 1400);
+      windowFrame(tg, L, s.time, t, L.W * 0.62, fy - 430 * U, 260 * U, 260 * U, C, 1401);
+      ground(tg, L, fy, C('#C8CCC4'), 1405, { gap: 50, angle: 0, color: 'rgba(0,0,0,.08)' });
+      // カーテン
+      const cx = L.W * 0.08; tg.line([[cx - 20 * U, fy - 520 * U], [cx + L.W * 0.3, fy - 520 * U]], { lw: 5 * U, seed: 1406 });
+      tg.poly([[cx, fy - 515 * U], [cx + L.W * 0.18, fy - 515 * U], [cx + L.W * 0.17, fy], [cx - 10 * U, fy]], { fill: C('#EAF0F2'), lw: 4 * U, seed: 1407, hatch: { gap: 18, angle: 1.55, color: 'rgba(80,110,130,.25)' } });
+      // ベッド
+      const bx = L.W * 0.3, bw = L.W * 0.36;
+      tg.rrect(bx, fy - 40 * U, bw, 90 * U, 8, { fill: C('#FFFFFF'), lw: 5 * U, seed: 1408 });
+      tg.rrect(bx + bw * 0.3, fy - 50 * U, bw * 0.7, 100 * U, 8, { fill: C('#BFD8E8'), lw: 5 * U, seed: 1409 });
+      tg.line([[bx, fy - 150 * U], [bx, fy + 90 * U]], { lw: 8 * U, seed: 1410, stroke: C('#9AA4AC') });
+      tg.line([[bx + bw, fy - 80 * U], [bx + bw, fy + 90 * U]], { lw: 8 * U, seed: 1411, stroke: C('#9AA4AC') });
+      // 点滴
+      const ix = bx - 60 * U; tg.line([[ix, fy - 300 * U], [ix, fy + 80 * U]], { lw: 4 * U, seed: 1412, stroke: C('#9AA4AC') });
+      tg.rrect(ix - 20 * U, fy - 300 * U, 40 * U, 60 * U, 8, { fill: 'rgba(220,240,255,.8)', lw: 3 * U, seed: 1413 });
+    },
+
+    shrine(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.66;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 2 });
+      for (const [x, sc] of [[0.06, 1.4], [0.94, 1.5]]) tree(tg, L, L.W * x, gy + 10 * U, sc * U, C, t, 1500 + x * 100, 'pine');
+      // 本堂
+      const hx = L.W * 0.5, hw = L.W * 0.4;
+      tg.rrect(hx, gy - 220 * U, hw, 230 * U, 3, { fill: C('#8A5A3A'), lw: 5 * U, seed: 1501, hatch: { gap: 14, angle: 1.55, color: 'rgba(0,0,0,.12)' } });
+      tg.poly([[hx - 60 * U, gy - 200 * U], [hx + hw / 2, gy - 340 * U], [hx + hw + 60 * U, gy - 200 * U]], { fill: C('#4A4A52'), lw: 5 * U, seed: 1502, hatch: { gap: 8, angle: 0.15 } });
+      tg.rrect(hx + hw * 0.3, gy - 150 * U, hw * 0.4, 150 * U, 2, { fill: C('#3A2A22'), lw: 4 * U, seed: 1503 });
+      tg.ellipse(hx + hw / 2, gy - 190 * U, 26 * U, 26 * U, { fill: C('#E8C66A'), lw: 3 * U, seed: 1504 });
+      ground(tg, L, gy, C('#D8D0BE'), 1505, { gap: 9, angle: 0.3, color: 'rgba(90,80,60,.15)' });
+      // 鳥居
+      const tx = L.W * 0.22, tw = L.W * 0.2, red = C('#C8402E');
+      for (const k of [0, 1]) tg.rrect(tx + k * tw - 14 * U, gy - 330 * U, 28 * U, 400 * U, 4, { fill: red, lw: 5 * U, seed: 1506 + k });
+      tg.poly([[tx - 60 * U, gy - 350 * U], [tx + tw + 60 * U, gy - 350 * U], [tx + tw + 70 * U, gy - 380 * U], [tx - 70 * U, gy - 380 * U]], { fill: C('#2A2320'), lw: 4 * U, seed: 1508 });
+      tg.rrect(tx - 40 * U, gy - 350 * U, tw + 80 * U, 30 * U, 3, { fill: red, lw: 4 * U, seed: 1509 });
+      tg.rrect(tx - 20 * U, gy - 285 * U, tw + 40 * U, 22 * U, 3, { fill: red, lw: 4 * U, seed: 1510 });
+      // 石灯籠
+      const lx = L.W * 0.47; tg.rrect(lx - 14 * U, gy - 60 * U, 28 * U, 120 * U, 3, { fill: C('#A8A49A'), lw: 4 * U, seed: 1511 }); tg.rrect(lx - 34 * U, gy - 110 * U, 68 * U, 50 * U, 4, { fill: C('#B8B4AA'), lw: 4 * U, seed: 1512 }); tg.poly([[lx - 50 * U, gy - 110 * U], [lx, gy - 150 * U], [lx + 50 * U, gy - 110 * U]], { fill: C('#9A968C'), lw: 4 * U, seed: 1513 });
+      if (s.time === 'night' || s.time === 'evening') glow(tg, lx, gy - 85 * U, 140 * U, 'rgba(255,190,110,0.4)');
+    },
+
+    church(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C('#C8BCA8'), fy, 1600);
+      const c = tg.ctx; c.save(); c.globalAlpha = 0.3; for (let y = 40 * U; y < fy; y += 60 * U) tg.line([[0, y], [L.W, y]], { lw: 3 * U, seed: 1601 + y, stroke: C('#8A7E6A'), amp: 0.6 }); c.restore();
+      // ステンドグラスの窓
+      const n = 3;
+      for (let k = 0; k < n; k++) {
+        const wx = L.W * (0.18 + k * 0.32) - 60 * U, wy = fy - 520 * U, ww = 120 * U, wh = 300 * U;
+        tg.shape([[wx, wy + wh], [wx, wy + 60 * U], [wx + ww * 0.15, wy + 15 * U], [wx + ww / 2, wy], [wx + ww * 0.85, wy + 15 * U], [wx + ww, wy + 60 * U], [wx + ww, wy + wh]], { fill: s.time === 'night' ? '#2A3270' : '#F2E2A8', lw: 5 * U, seed: 1610 + k });
+        const cols = ['#C8402E', '#3A6AB0', '#E8C04A', '#4A9A5A'];
+        for (let r = 0; r < 4; r++) for (let q = 0; q < 2; q++) tg.rrect(wx + 10 * U + q * (ww - 20 * U) / 2, wy + 70 * U + r * 55 * U, (ww - 30 * U) / 2, 48 * U, 2, { fill: C(cols[(r + q + k) % 4]), lw: 2.5 * U, seed: 1620 + k * 10 + r * 2 + q, alpha: s.time === 'night' ? 0.5 : 0.85, second: false });
+        if (s.time !== 'night') glow(tg, wx + ww / 2, wy + wh / 2, 200 * U, 'rgba(255,230,170,0.22)');
+      }
+      ground(tg, L, fy, C('#9A8A72'), 1650, { gap: 50, angle: 0, color: 'rgba(0,0,0,.1)' });
+      // 祭壇と十字架
+      const ax = L.W * 0.5;
+      tg.rrect(ax - 120 * U, fy - 90 * U, 240 * U, 90 * U, 3, { fill: C('#F2EEE4'), lw: 5 * U, seed: 1651 });
+      tg.rrect(ax - 10 * U, fy - 260 * U, 20 * U, 150 * U, 2, { fill: C('#C9A24B'), lw: 4 * U, seed: 1652 });
+      tg.rrect(ax - 50 * U, fy - 220 * U, 100 * U, 20 * U, 2, { fill: C('#C9A24B'), lw: 4 * U, seed: 1653 });
+      for (const sd of [-1, 1]) { tg.rrect(ax + sd * 90 * U - 6 * U, fy - 130 * U, 12 * U, 40 * U, 2, { fill: '#F8F2E0', lw: 2 * U, seed: 1654 + sd }); glow(tg, ax + sd * 90 * U, fy - 136 * U, 60 * U, 'rgba(255,200,110,0.4)'); }
+      // 長椅子
+      for (let k = 0; k < 2; k++) for (const sd of [-1, 1]) tg.rrect(ax + sd * (180 + k * 0) * U - (sd < 0 ? L.W * 0.35 : 0), fy + 50 * U + k * 90 * U, L.W * 0.35 - 180 * U, 40 * U, 4, { fill: C('#7A5638'), lw: 5 * U, seed: 1660 + k * 2 + sd });
+    },
+
+    castle(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      wallFill(tg, L, C('#A8A094'), fy, 1700);
+      for (let r = 0; r * 70 * U < fy; r++) for (let k = -1; k * 140 * U < L.W; k++) tg.rrect(k * 140 * U + (r % 2) * 70 * U, r * 70 * U, 140 * U, 70 * U, 2, { lw: 2 * U, seed: 1701 + r * 31 + k, stroke: 'rgba(60,50,40,.35)', second: false, amp: 0.8 });
+      // 旗
+      for (const x of [0.2, 0.8]) tg.poly([[L.W * x - 60 * U, fy - 560 * U], [L.W * x + 60 * U, fy - 560 * U], [L.W * x + 60 * U, fy - 300 * U], [L.W * x, fy - 340 * U], [L.W * x - 60 * U, fy - 300 * U]], { fill: C(s.era === 'fantasy' ? '#3A5A8A' : '#9A2E2E'), lw: 5 * U, seed: 1790 + x * 10, hatch: { gap: 12, angle: 1.55, color: 'rgba(0,0,0,.2)' } });
+      for (const x of [0.2, 0.8]) tg.star(L.W * x, fy - 460 * U, 30 * U, { fill: C('#E8C66A'), lw: 3 * U, seed: 1795 + x * 10 });
+      // 柱
+      for (const x of [0.06, 0.94]) tg.rrect(L.W * x - 40 * U, 0, 80 * U, fy, 4, { fill: C('#C8C0B4'), lw: 5 * U, seed: 1797 + x * 10, hatch: { gap: 16, angle: 1.57, color: 'rgba(0,0,0,.1)' } });
+      ground(tg, L, fy, C('#8A847A'), 1799, { gap: 60, angle: 0, color: 'rgba(0,0,0,.1)' });
+      // 玉座と赤い絨毯
+      const ax = L.W * 0.5;
+      tg.poly([[ax - 90 * U, fy], [ax + 90 * U, fy], [ax + 220 * U, L.H + 10], [ax - 220 * U, L.H + 10]], { fill: C('#A8323A'), lw: 5 * U, seed: 1800 });
+      tg.rrect(ax - 80 * U, fy - 320 * U, 160 * U, 260 * U, 30, { fill: C('#9A2E3A'), lw: 5 * U, seed: 1801 });
+      tg.rrect(ax - 100 * U, fy - 110 * U, 200 * U, 110 * U, 8, { fill: C('#C9A24B'), lw: 5 * U, seed: 1802 });
+      tg.star(ax, fy - 330 * U, 30 * U, { fill: C('#E8C66A'), lw: 3 * U, seed: 1803 });
+      if (s.era === 'fantasy' || s.time === 'night') for (const x of [0.33, 0.67]) torch(tg, L, L.W * x, fy - 300 * U, t, 1810 + x * 10);
+    },
+
+    park(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.64;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      tree(tg, L, L.W * 0.12, gy + 30 * U, 1.5 * U, C, t, 1900);
+      tree(tg, L, L.W * 0.9, gy + 20 * U, 1.3 * U, C, t, 1905);
+      ground(tg, L, gy, C('#8CC07A'), 1910, { gap: 16, angle: -0.2 });
+      tg.poly([[L.W * 0.42, gy], [L.W * 0.58, gy], [L.W * 0.8, L.H + 10], [L.W * 0.2, L.H + 10]], { fill: C('#D8C49A'), lw: 4 * U, seed: 1911 });
+      if (s.era === 'western') {
+        // 噴水
+        const fx = L.W * 0.5, fy2 = gy + 40 * U;
+        tg.ellipse(fx, fy2, 170 * U, 40 * U, { fill: C('#B8B4AA'), lw: 5 * U, seed: 1912 });
+        tg.ellipse(fx, fy2 - 6 * U, 140 * U, 28 * U, { fill: C('#7AB8D8'), lw: 3 * U, seed: 1913 });
+        tg.rrect(fx - 16 * U, fy2 - 120 * U, 32 * U, 110 * U, 4, { fill: C('#B8B4AA'), lw: 4 * U, seed: 1914 });
+        for (const sd of [-1, 1]) tg.line([[fx, fy2 - 120 * U], [fx + sd * 50 * U, fy2 - 160 * U - Math.sin(t * 4) * 6 * U], [fx + sd * 100 * U, fy2 - 30 * U]], { lw: 4 * U, seed: 1915 + sd, stroke: '#CFEAF6' });
+      } else {
+        // すべり台とブランコ
+        const sx = L.W * 0.66;
+        tg.line([[sx, gy + 60 * U], [sx, gy - 140 * U]], { lw: 8 * U, seed: 1916, stroke: C('#D0503A') });
+        tg.poly([[sx, gy - 140 * U], [sx + 30 * U, gy - 140 * U], [sx + 200 * U, gy + 50 * U], [sx + 170 * U, gy + 60 * U]], { fill: C('#E8B04A'), lw: 4 * U, seed: 1917 });
+        const bx = L.W * 0.26;
+        tg.line([[bx, gy + 40 * U], [bx + 40 * U, gy - 160 * U], [bx + 200 * U, gy - 160 * U], [bx + 240 * U, gy + 40 * U]], { lw: 7 * U, seed: 1918, stroke: C('#4A7AB0') });
+        for (const k of [0, 1]) { const sw = Math.sin(t * 1.6 + k) * 14 * U, x0 = bx + 80 * U + k * 80 * U; tg.line([[x0, gy - 160 * U], [x0 + sw, gy - 20 * U]], { lw: 3 * U, seed: 1919 + k }); tg.rrect(x0 + sw - 20 * U, gy - 22 * U, 40 * U, 10 * U, 2, { fill: C('#8A6444'), lw: 3 * U, seed: 1921 + k }); }
+      }
+      // ベンチ
+      const bx = L.W * 0.06; tg.rrect(bx, gy + 90 * U, 200 * U, 18 * U, 3, { fill: C('#8A6444'), lw: 4 * U, seed: 1923 }); tg.rrect(bx, gy + 40 * U, 200 * U, 18 * U, 3, { fill: C('#8A6444'), lw: 4 * U, seed: 1924 });
+      for (const k of [0.1, 0.9]) tg.line([[bx + 200 * U * k, gy + 108 * U], [bx + 200 * U * k, gy + 150 * U]], { lw: 5 * U, seed: 1925 + k * 10 });
+    },
+
+    rooftop(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.7;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      for (let k = 0; k < 6; k++) { const bw = (120 + hash(k, 41) * 120) * U, bh = (80 + hash(k, 42) * 160) * U, bx = k * L.W / 6 + hash(k, 43) * 40 * U; tg.rrect(bx, gy - bh, bw, bh + 10, 2, { fill: C('#9AA4B4'), lw: 3 * U, seed: 2000 + k, alpha: 0.7, second: false }); }
+      ground(tg, L, gy, C('#B8B8B4'), 2010, { gap: 60, angle: 0, color: 'rgba(0,0,0,.1)' });
+      // 給水塔
+      const wx = L.W * 0.8; tg.rrect(wx, gy - 240 * U, 160 * U, 150 * U, 20, { fill: C('#C8CCD0'), lw: 5 * U, seed: 2011 }); for (const k of [0.15, 0.85]) tg.line([[wx + 160 * U * k, gy - 90 * U], [wx + 160 * U * k, gy + 10 * U]], { lw: 6 * U, seed: 2012 + k * 10 });
+      // フェンス
+      const top = gy - 160 * U, c = tg.ctx; c.save(); c.globalAlpha = 0.75;
+      for (let x = 0; x <= L.W; x += 46 * U) { tg.line([[x, top], [x + 46 * U, gy]], { lw: 2 * U, seed: 2020 + x, stroke: C('#5A6A6A'), amp: 0.5 }); tg.line([[x + 46 * U, top], [x, gy]], { lw: 2 * U, seed: 2021 + x, stroke: C('#5A6A6A'), amp: 0.5 }); }
+      c.restore();
+      tg.line([[-10, top], [L.W + 10, top]], { lw: 7 * U, seed: 2030, stroke: C('#5A6A6A') });
+      for (let x = 0; x <= L.W; x += 230 * U) tg.line([[x, top], [x, gy]], { lw: 7 * U, seed: 2031 + x, stroke: C('#5A6A6A') });
+    },
+
+    ship(tg, L, s, t, C) {
+      const U = L.U, hz = L.H * 0.5, dy = L.H * 0.7, bob = Math.sin(t * 1.3) * 6 * U;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, hz, { clouds: 3 });
+      tg.rrect(-40, hz, L.W + 80, dy - hz + 40, 0, { fill: C('#3E7AA8'), lw: 4 * U, seed: 2100, hatch: { gap: 14, angle: 0.05, color: 'rgba(255,255,255,.18)' } });
+      for (let k = 0; k < 5; k++) { const x = ((k * 330 + t * 30) % (L.W + 200)) - 100; tg.line([[x, hz + 40 * U + k * 22 * U], [x + 40 * U, hz + 30 * U + k * 22 * U], [x + 80 * U, hz + 40 * U + k * 22 * U]], { lw: 3 * U, seed: 2101 + k, stroke: '#FFFFFF' }); }
+      const c = tg.ctx; c.save(); c.translate(0, bob);
+      // 帆柱と帆（近代以前は帆、現代は煙突）
+      if (s.era === 'present' || s.era === 'modern') {
+        const fx = L.W * 0.72; tg.rrect(fx, dy - 300 * U, 110 * U, 300 * U, 6, { fill: C('#2A2E3A'), lw: 5 * U, seed: 2110 }); tg.rrect(fx, dy - 300 * U, 110 * U, 40 * U, 4, { fill: C('#C8402E'), lw: 4 * U, seed: 2111 });
+        for (let k = 0; k < 3; k++) { const a = (t * 0.4 + k / 3) % 1; tg.ellipse(fx + 55 * U + a * 80 * U, dy - 330 * U - a * 160 * U, (24 + a * 30) * U, (18 + a * 22) * U, { fill: 'rgba(200,200,210,.7)', stroke: null, seed: 2112 + k }); }
+      } else {
+        const mx = L.W * 0.62;
+        tg.rrect(mx - 14 * U, -20, 28 * U, dy + 20, 6, { fill: C('#7A5638'), lw: 5 * U, seed: 2110 });
+        tg.poly([[mx + 20 * U, 40 * U], [mx + 300 * U + Math.sin(t) * 8 * U, 90 * U], [mx + 340 * U, dy - 170 * U], [mx + 20 * U, dy - 150 * U]], { fill: C('#F4EEDC'), lw: 5 * U, seed: 2111, hatch: { gap: 18, angle: 1.4, color: 'rgba(120,100,70,.18)' } });
+        tg.line([[mx, 20 * U], [L.W + 20, dy - 40 * U]], { lw: 3 * U, seed: 2112 });
+      }
+      // 甲板と手すり
+      ground(tg, L, dy, C('#B88A5A'), 2120, { gap: 40, angle: 0, color: 'rgba(80,50,20,.3)' });
+      tg.line([[-10, dy - 90 * U], [L.W + 10, dy - 90 * U]], { lw: 8 * U, seed: 2121, stroke: C('#7A5638') });
+      for (let x = 20 * U; x < L.W; x += 90 * U) tg.line([[x, dy - 90 * U], [x, dy]], { lw: 6 * U, seed: 2122 + x, stroke: C('#7A5638') });
+      c.restore();
+    },
+
+    snowmountain(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.66;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 2 });
+      tg.poly([[-40, gy], [L.W * 0.25, gy - 380 * U], [L.W * 0.5, gy - 120 * U], [L.W * 0.72, gy - 460 * U], [L.W + 40, gy - 100 * U], [L.W + 40, gy + 10], [-40, gy + 10]], { fill: C('#8A9AB4'), lw: 5 * U, seed: 2200, hatch: { gap: 12, angle: 0.8, color: 'rgba(40,50,80,.15)' } });
+      tg.poly([[L.W * 0.25 - 80 * U, gy - 300 * U], [L.W * 0.25, gy - 380 * U], [L.W * 0.25 + 70 * U, gy - 310 * U], [L.W * 0.25 + 20 * U, gy - 280 * U]], { fill: C('#FFFFFF'), lw: 4 * U, seed: 2201 });
+      tg.poly([[L.W * 0.72 - 100 * U, gy - 360 * U], [L.W * 0.72, gy - 460 * U], [L.W * 0.72 + 110 * U, gy - 350 * U], [L.W * 0.72 + 10 * U, gy - 330 * U]], { fill: C('#FFFFFF'), lw: 4 * U, seed: 2202 });
+      ground(tg, L, gy, C('#F4F6FA'), 2203, { gap: 22, angle: -0.15, color: 'rgba(120,140,180,.18)' });
+      for (const [x, sc] of [[0.08, 1.2], [0.2, 0.9], [0.86, 1.3]]) { tree(tg, L, L.W * x, gy + 40 * U, sc * U, (h) => mix(C(h), '#E8EEF6', 0.25), t, 2210 + x * 100, 'pine'); tg.ellipse(L.W * x, gy - 230 * sc * U, 50 * sc * U, 16 * sc * U, { fill: '#FFFFFF', lw: 3 * U, seed: 2220 + x * 100 }); }
+    },
+
+    graveyard(tg, L, s, t, C) {
+      const U = L.U, gy = L.H * 0.64;
+      skyBox(tg, L, s.time, t, 0, 0, L.W, gy, { clouds: 3 });
+      ground(tg, L, gy, C(JP(s.era) ? '#C8C0AA' : '#6A8A5A'), 2300, { gap: 14, angle: -0.25 });
+      if (JP(s.era)) {
+        tree(tg, L, L.W * 0.9, gy + 10 * U, 1.4 * U, C, t, 2301, 'pine');
+        for (let k = 0; k < 5; k++) {
+          const x = L.W * (0.1 + k * 0.17), y = gy + (k % 2) * 60 * U + 40 * U, sc = k % 2 ? 1 : 0.85;
+          tg.rrect(x - 70 * sc * U, y - 20 * U, 140 * sc * U, 40 * U, 3, { fill: C('#9A968C'), lw: 4 * U, seed: 2310 + k * 4 });
+          tg.rrect(x - 40 * sc * U, y - 190 * sc * U, 80 * sc * U, 175 * sc * U, 4, { fill: C('#B8B4AA'), lw: 4 * U, seed: 2311 + k * 4, hatch: { gap: 14, angle: 1.55, color: 'rgba(0,0,0,.08)' } });
+          for (const d of [-1, 0, 1]) tg.rrect(x + 80 * sc * U + d * 14 * U, y - 200 * sc * U + Math.abs(d) * 10 * U, 10 * U, 190 * sc * U, 2, { fill: C('#D8CCAA'), lw: 2 * U, seed: 2312 + k * 4 + d, second: false });
+        }
+      } else {
+        // 枯れ木と十字架・丸い墓石
+        const tx = L.W * 0.88; tg.line([[tx, gy + 40 * U], [tx, gy - 260 * U]], { lw: 18 * U, seed: 2301, stroke: C('#4A3A32') });
+        for (const [a, l] of [[-0.8, 120], [-2.3, 140], [-1.4, 90]]) tg.line([[tx, gy - 180 * U], [tx + Math.cos(a) * l * U, gy - 180 * U + Math.sin(a) * l * U]], { lw: 8 * U, seed: 2302 + a * 10, stroke: C('#4A3A32') });
+        for (let k = 0; k < 5; k++) {
+          const x = L.W * (0.1 + k * 0.17), y = gy + (k % 2) * 60 * U + 40 * U, sc = k % 2 ? 1 : 0.85;
+          if (k % 2) { tg.rrect(x - 10 * U, y - 170 * sc * U, 20 * U, 170 * sc * U, 2, { fill: C('#A8A49A'), lw: 4 * U, seed: 2310 + k }); tg.rrect(x - 50 * U, y - 130 * sc * U, 100 * U, 20 * U, 2, { fill: C('#A8A49A'), lw: 4 * U, seed: 2320 + k }); }
+          else tg.rrect(x - 50 * sc * U, y - 140 * sc * U, 100 * sc * U, 140 * sc * U, 45 * sc * U, { fill: C('#A8A49A'), lw: 4 * U, seed: 2310 + k, hatch: { gap: 14, angle: 1.55, color: 'rgba(0,0,0,.08)' } });
+        }
+      }
+    },
+
+    cave(tg, L, s, t, C) {
+      const U = L.U, fy = L.H * 0.72;
+      tg.background(C('#2E2A2E'));
+      // 奥の明かり（出口）
+      tg.ellipse(L.W * 0.7, fy - 180 * U, 170 * U, 200 * U, { fill: s.time === 'night' ? '#2A3270' : C('#E8E0C4'), lw: 5 * U, seed: 2400 });
+      if (s.time !== 'night') glow(tg, L.W * 0.7, fy - 180 * U, 420 * U, 'rgba(255,240,200,0.25)');
+      // 岩肌
+      tg.poly([[-40, -40], [L.W * 0.5, -40], [L.W * 0.42, 140 * U], [L.W * 0.22, 260 * U], [L.W * 0.12, fy - 120 * U], [-40, fy]], { fill: C('#4A4448'), lw: 5 * U, seed: 2401, hatch: { gap: 12, angle: 0.9, color: 'rgba(0,0,0,.25)' } });
+      tg.poly([[L.W * 0.5, -40], [L.W + 40, -40], [L.W + 40, fy], [L.W * 0.92, fy - 160 * U], [L.W * 0.86, 160 * U]], { fill: C('#524A4E'), lw: 5 * U, seed: 2402, hatch: { gap: 12, angle: -0.9, color: 'rgba(0,0,0,.25)' } });
+      for (let k = 0; k < 7; k++) { const x = L.W * (0.15 + k * 0.12), l = (50 + hash(k, 51) * 90) * U; tg.poly([[x - 22 * U, -10], [x, l], [x + 22 * U, -10]], { fill: C('#5A5258'), lw: 4 * U, seed: 2410 + k }); }
+      ground(tg, L, fy, C('#3E383C'), 2420, { gap: 16, angle: -0.3, color: 'rgba(0,0,0,.3)' });
+      for (let k = 0; k < 4; k++) tg.ellipse(L.W * (0.1 + k * 0.27), fy + (30 + k % 2 * 50) * U, (50 + k * 8) * U, 26 * U, { fill: C('#5A5258'), lw: 4 * U, seed: 2430 + k });
+      torch(tg, L, L.W * 0.2, fy - 260 * U, t, 2440);
+    },
+  });
+  BG.unknown = BG.none;
+  const OUTDOOR_SKY = new Set(['station', 'street', 'alley', 'garden', 'field', 'forest', 'river', 'seaside', 'nightsky', 'shrine', 'park', 'rooftop', 'ship', 'snowmountain', 'graveyard']);
+
+  function background(tg, L, s, t) {
+    const time = s.location === 'nightsky' && s.time !== 'evening' ? 'night' : (s.time || 'day');
+    const sc = Object.assign({}, s, { time, era: s.era || 'modern' });
+    const C = shader(time, OUTDOOR_SKY.has(s.location) ? 0.85 : 1);
+    (BG[s.location] || BG.none)(tg, L, sc, t, C);
+    // 夜と夕方は全体に光を当てる（窓の明かり・月明かりの方向）
+    if (time === 'night' && s.location !== 'nightsky') tg.light(L.W * 0.3, L.H * 0.2, [[0, '#FFFFFF'], [0.5, '#C9CCEE'], [1, '#6A6C98']]);
+    if (time === 'evening') tg.light(L.W * 0.8, L.H * 0.3, [[0, '#FFFFFF'], [1, '#EAB9A0']]);
+  }
+
+  /* ================= 人物 ================= */
+  // 服装：時代 × 人物の種類。slot（主人物 0・相手 1・群衆 2〜）で色を変える
+  const pick = (arr, slot) => arr[slot % arr.length];
+  const COSTUME = {
+    modern: {
+      man: (k) => ({ kind: 'robe', top: pick(['#3E4A5E', '#5A4A3E', '#4A5A4A'], k), accent: pick(['#8A7A5A', '#3A3030'], k), hair: 'short' }),
+      woman: (k) => ({ kind: 'robe', top: pick(['#B5485A', '#4E6E9A', '#7A5A9A'], k), accent: pick(['#E8C66A', '#F2E6D0'], k), hair: 'bun', pattern: true }),
+      boy: () => ({ kind: 'uniform', top: '#2E3240', bottom: '#2E3240', hair: 'short', hat: 'cap' }),
+      girl: (k) => ({ kind: 'robe', top: pick(['#E58A8A', '#E5B85A', '#8AB8E5'], k), accent: '#C0392B', hair: 'bob', ribbon: '#D04A4A', pattern: true }),
+      oldman: () => ({ kind: 'robe', top: '#6E6458', accent: '#4A4038', hair: 'bald', cane: true }),
+      oldwoman: () => ({ kind: 'robe', top: '#6E5E72', accent: '#4A3E48', hair: 'bun', grey: true }),
+      unknown: (k) => ({ kind: 'robe', top: pick(['#6A7078', '#7A6A5A'], k), accent: '#4A4A4A', hair: 'short' }),
+      middleman: (k) => ({ kind: 'robe', top: pick(['#5A4A3A', '#3E4A5E'], k), accent: '#3A3030', hair: 'short', beard: 'mustache' }),
+      middlewoman: (k) => ({ kind: 'robe', top: pick(['#6A5A7A', '#7A5A4A'], k), accent: '#E8D8B0', hair: 'bun', apron: '#F4EEDC' }),
+      baby: (k) => ({ kind: 'robe', top: pick(['#F2C8A0', '#C8E0A0'], k), accent: '#E07A7A', hair: 'tuft' }),
+      soldier: () => ({ kind: 'uniform', top: '#6A6440', bottom: '#5A5436', hair: 'short', hat: 'cap', hatColor: '#5A5436' }),
+      monk: () => ({ kind: 'robe', top: '#2A2A30', accent: '#C9A24B', hair: 'shaved', kesa: '#8A6A3A' }),
+    },
+    present: {
+      man: (k) => ({ kind: 'shirt', top: pick(['#5B7FA6', '#E8E2D6', '#6A8A5A'], k), bottom: '#3B4252', hair: 'short', tie: k % 2 === 0 }),
+      woman: (k) => ({ kind: 'dress', top: pick(['#F2E6D8', '#E8C8C0', '#D8E2EE'], k), bottom: pick(['#8C5A7A', '#5A7A8C', '#C9A24B'], k), length: 'knee', hair: 'long' }),
+      boy: (k) => ({ kind: 'shorts', top: pick(['#E07A4A', '#4AA07A'], k), bottom: '#3B5A8C', hair: 'spiky' }),
+      girl: (k) => ({ kind: 'dress', top: pick(['#F5B5C5', '#B5D5F5'], k), bottom: pick(['#F5B5C5', '#B5D5F5'], k), length: 'knee', hair: 'pigtails', ribbon: '#E8505A' }),
+      oldman: () => ({ kind: 'shirt', top: '#8A7A5E', bottom: '#5A5A5A', hair: 'bald', glasses: true }),
+      oldwoman: () => ({ kind: 'dress', top: '#9A8AA8', bottom: '#6A5A70', length: 'ankle', hair: 'bun', grey: true, glasses: true }),
+      unknown: (k) => ({ kind: 'shirt', top: pick(['#8A9099', '#A8907A'], k), bottom: '#4A4E58', hair: 'short' }),
+      middleman: (k) => ({ kind: 'shirt', top: pick(['#E8E2D6', '#C8D0DA'], k), bottom: '#3B4252', hair: 'parted', tie: true, glasses: k % 2 === 0 }),
+      middlewoman: (k) => ({ kind: 'dress', top: pick(['#C8D8C0', '#E8D0C0'], k), bottom: '#7A6A5A', length: 'ankle', hair: 'bob', apron: '#F4EEDC' }),
+      baby: (k) => ({ kind: 'shorts', top: pick(['#F5D56A', '#F5A5B5'], k), bottom: '#7AB0D0', hair: 'tuft' }),
+      soldier: () => ({ kind: 'uniform', top: '#4A5A3A', bottom: '#4A5A3A', hair: 'short', hat: 'helmet', hatColor: '#4A5A3A' }),
+      monk: () => ({ kind: 'robe', top: '#2A2A30', accent: '#C9A24B', hair: 'shaved', kesa: '#8A6A3A' }),
+    },
+    western: {
+      man: (k) => ({ kind: 'coat', top: pick(['#2E3A4A', '#4A3A2E'], k), bottom: '#4A4038', hair: 'short', hat: k % 2 ? null : 'top', tie: true }),
+      woman: (k) => ({ kind: 'dress', top: pick(['#A84A5A', '#4A6A8A', '#6A8A5A'], k), bottom: pick(['#A84A5A', '#4A6A8A', '#6A8A5A'], k), length: 'gown', hair: 'long' }),
+      boy: () => ({ kind: 'shorts', top: '#5A6A3A', bottom: '#4A4038', hair: 'short', tie: true }),
+      girl: (k) => ({ kind: 'dress', top: pick(['#6A9AD0', '#E8A0B0'], k), bottom: pick(['#6A9AD0', '#E8A0B0'], k), length: 'knee', hair: 'long', ribbon: '#F4EEDC' }),
+      oldman: () => ({ kind: 'coat', top: '#4A4A4A', bottom: '#3A3A3A', hair: 'bald', beard: 'short', cane: true }),
+      oldwoman: () => ({ kind: 'dress', top: '#5A4A5A', bottom: '#5A4A5A', length: 'gown', hair: 'bun', grey: true }),
+      unknown: () => ({ kind: 'coat', top: '#5A5A62', bottom: '#3A3A42', hair: 'short' }),
+      middleman: (k) => ({ kind: 'coat', top: pick(['#4A3A2E', '#3A4A3A'], k), bottom: '#4A4038', hair: 'short', beard: 'mustache', tie: true }),
+      middlewoman: (k) => ({ kind: 'dress', top: pick(['#7A5A4A', '#4A5A7A'], k), bottom: pick(['#7A5A4A', '#4A5A7A'], k), length: 'ankle', hair: 'bun', apron: '#F4EEDC' }),
+      baby: () => ({ kind: 'dress', top: '#F4F0E8', bottom: '#F4F0E8', length: 'knee', hair: 'tuft' }),
+      soldier: () => ({ kind: 'uniform', top: '#A8323A', bottom: '#F2EEE4', hair: 'short', hat: 'cap', hatColor: '#1E2028' }),
+      monk: () => ({ kind: 'robe', top: '#2A2224', accent: '#2A2224', hair: 'short', cross: true }),
+    },
+    fantasy: {
+      man: (k) => ({ kind: 'tunic', top: pick(['#5A7A4A', '#4A5A8A'], k), bottom: '#5A4A3A', cloak: pick(['#8A3A3A', '#3A5A3A'], k), hair: 'short' }),
+      woman: (k) => ({ kind: 'dress', top: pick(['#6A5AA8', '#3A8A8A'], k), bottom: pick(['#6A5AA8', '#3A8A8A'], k), length: 'gown', hair: 'long' }),
+      boy: (k) => ({ kind: 'tunic', top: pick(['#A8743A', '#3A7AA8'], k), bottom: '#5A4A3A', hair: 'spiky' }),
+      girl: (k) => ({ kind: 'dress', top: pick(['#D07AA0', '#7AB0D0'], k), bottom: pick(['#D07AA0', '#7AB0D0'], k), length: 'knee', hair: 'pigtails', ribbon: '#F2D06A' }),
+      oldman: () => ({ kind: 'robe', top: '#3A4A8A', accent: '#C9A24B', hair: 'bald', beard: 'long', hat: 'wizard', cane: true }),
+      oldwoman: () => ({ kind: 'robe', top: '#5A3A6A', accent: '#C9A24B', hair: 'bun', grey: true, cloak: '#3A2A4A' }),
+      unknown: () => ({ kind: 'tunic', top: '#6A6A5A', bottom: '#4A4A3A', cloak: '#4A4A52', hair: 'short' }),
+      middleman: (k) => ({ kind: 'tunic', top: pick(['#7A6A4A', '#5A6A7A'], k), bottom: '#5A4A3A', hair: 'short', beard: 'mustache' }),
+      middlewoman: (k) => ({ kind: 'dress', top: pick(['#8A6A4A', '#6A7A5A'], k), bottom: pick(['#8A6A4A', '#6A7A5A'], k), length: 'ankle', hair: 'bun', apron: '#F4EEDC' }),
+      baby: () => ({ kind: 'tunic', top: '#D8C8A8', bottom: '#B8A888', hair: 'tuft' }),
+      soldier: (k) => ({ kind: 'armor', top: '#9AA0A8', bottom: '#6A6E76', cloak: pick(['#3A5A8A', '#8A3A3A'], k), hair: 'short', hat: 'helm', hatColor: '#9AA0A8' }),
+      monk: () => ({ kind: 'robe', top: '#E8E2D0', accent: '#C9A24B', hair: 'shaved', cross: true }),
+    },
+  };
+  const HAIR = { jp: ['#2A2320', '#3B2A22', '#2E2626'], west: ['#6B4A2E', '#D9B266', '#9A4A2A', '#3B2A22'] };
+  const SKIN = ['#F7D7BE', '#F2CBA9', '#EFC4A0'];
+
+  // パターンB：同じ種類の人が2人並ぶときの2人目。髪型を替え、服の色を別の色に寄せる
+  const HAIR_B = { short: 'parted', parted: 'short', spiky: 'short', long: 'ponytail', ponytail: 'long', bun: 'bob', bob: 'long', pigtails: 'bob', bald: 'short', shaved: 'shaved', tuft: 'tuft' };
+  const TINT_B = ['#2E6A8A', '#8A3A4A', '#4A7A3A'];
+  function costume(type, era, slot, variant = 'A') {
+    const table = COSTUME[era] || COSTUME.modern, fn = table[type] || table.unknown;
+    const c = Object.assign({ skin: pick(SKIN, slot), shoes: '#4A3A32' }, fn(slot));
+    const B = variant === 'B';
+    c.hairColor = c.grey || type === 'oldman' ? '#D9D6CF' : pick(era === 'western' || era === 'fantasy' ? HAIR.west : HAIR.jp, slot + (type === 'woman' || type === 'middlewoman' ? 1 : 0) + (B ? 2 : 0));
+    if (B) {
+      c.hair = HAIR_B[c.hair] || c.hair;
+      const tint = pick(TINT_B, slot + type.length);
+      for (const k of ['top', 'bottom', 'accent']) if (c[k]) c[k] = mix(c[k], tint, 0.5);
+      if (c.hat === 'top') c.hat = null;
+    }
+    return c;
+  }
+
+  // 体の寸法（h＝身長。顔は大きめ・目は低めにして柔らかい印象に）
+  function dims(type, h) {
+    const baby = type === 'baby', child = type === 'boy' || type === 'girl' || baby, old = type === 'oldman' || type === 'oldwoman';
+    const r = h * (baby ? 0.19 : child ? 0.15 : 0.122);
+    const hy = -h + r * 1.02;
+    const neck = hy + r * 0.98;
+    const shY = neck + h * 0.035;
+    const hipY = -h * (baby ? 0.36 : child ? 0.43 : 0.47);
+    const narrow = type === 'woman' || type === 'oldwoman' || type === 'girl' || type === 'middlewoman';
+    const sw = h * (child ? 0.085 : narrow ? 0.085 : 0.1);
+    return { r, hy, neck, shY, hipY, sw, child, old, limb: h * (child ? 0.05 : 0.044) };
+  }
+
+  // 姿勢 → 関節の位置（右向き＝+x が前。左右反転は呼ぶ側で）
+  function joints(pose, d, h, t, seed, seat, o_gesture) {
+    const ph = t + seed * 1.37;
+    const J = { dy: Math.sin(ph * 1.6) * 0.004 * h, rot: 0, mouth: 0, legs: true };
+    let hipY = d.hipY;
+    const leg = (x0, x1, y1) => ({ hip: [x0, hipY], knee: [lerp(x0, x1, 0.5), lerp(hipY, y1, 0.5)], foot: [x1, y1] });
+    J.legL = leg(-0.045 * h, -0.05 * h, 0); J.legR = leg(0.045 * h, 0.05 * h, 0);
+    const arm = (sd, ex, ey, hx, hy) => ({ sh: [sd * d.sw, d.shY], el: [ex, ey], hand: [hx, hy] });
+    J.armL = arm(-1, -d.sw - 0.015 * h, lerp(d.shY, hipY, 0.5), -d.sw - 0.022 * h, hipY + 0.02 * h);
+    J.armR = arm(1, d.sw + 0.015 * h, lerp(d.shY, hipY, 0.5), d.sw + 0.022 * h, hipY + 0.02 * h);
+    if (pose === 'walk') {
+      const w = ph * 5.5, s = Math.sin(w);
+      J.dy = -Math.abs(Math.sin(w)) * 0.014 * h;
+      J.legL = leg(-0.04 * h, -0.04 * h + s * 0.07 * h, -Math.max(0, Math.cos(w)) * 0.03 * h);
+      J.legR = leg(0.04 * h, 0.04 * h - s * 0.07 * h, -Math.max(0, -Math.cos(w)) * 0.03 * h);
+      J.legL.knee[0] += 0.02 * h; J.legR.knee[0] += 0.02 * h;
+      J.armL.hand[0] -= s * 0.05 * h; J.armL.el[0] -= s * 0.025 * h;
+      J.armR.hand[0] += s * 0.05 * h; J.armR.el[0] += s * 0.025 * h;
+      J.rot = 0.03;
+    } else if (pose === 'run') {
+      // 走る：大きな歩幅・前かがみ・腕を曲げて振る
+      const w = ph * 11, sn = Math.sin(w);
+      J.dy = -Math.abs(Math.sin(w)) * 0.03 * h;
+      J.legL = leg(-0.03 * h, -0.03 * h + sn * 0.13 * h, -Math.max(0, Math.cos(w)) * 0.07 * h);
+      J.legR = leg(0.03 * h, 0.03 * h - sn * 0.13 * h, -Math.max(0, -Math.cos(w)) * 0.07 * h);
+      J.legL.knee[0] += 0.05 * h; J.legR.knee[0] += 0.05 * h;
+      J.armL.el = [-d.sw - sn * 0.06 * h, lerp(d.shY, hipY, 0.45)]; J.armL.hand = [-d.sw - sn * 0.06 * h + 0.07 * h, lerp(d.shY, hipY, 0.3)];
+      J.armR.el = [d.sw + sn * 0.06 * h, lerp(d.shY, hipY, 0.45)]; J.armR.hand = [d.sw + sn * 0.06 * h + 0.07 * h, lerp(d.shY, hipY, 0.3)];
+      J.rot = 0.13;
+    } else if (pose === 'crouch') {
+      // しゃがむ：腰を落とし、ひざを抱える（椅子のときと同じく脚は元の高さに描く）
+      const sy = -0.16 * h, drop = sy - hipY; J.drop = drop; hipY = sy; J.chair = true; J.noChair = true;
+      J.legL = { hip: [-0.03 * h, sy], knee: [0.09 * h, sy - 0.09 * h], foot: [0.04 * h, 0] };
+      J.legR = { hip: [0.03 * h, sy], knee: [0.13 * h, sy - 0.08 * h], foot: [0.09 * h, 0] };
+      J.armL.el = [d.sw * 0.6, lerp(d.shY, d.hipY, 0.7)]; J.armL.hand = [0.1 * h, sy - 0.1 * h - drop];
+      J.armR.el = [d.sw * 1.1, lerp(d.shY, d.hipY, 0.7)]; J.armR.hand = [0.14 * h, sy - 0.09 * h - drop];
+    } else if (pose === 'wave') {
+      // 手を振る：手前の手を上げて左右に
+      J.armR.el = [d.sw + 0.07 * h, d.shY - 0.02 * h];
+      J.armR.hand = [d.sw + 0.07 * h + Math.sin(ph * 7) * 0.04 * h, d.shY - 0.14 * h];
+    } else if (pose === 'cry') {
+      // 泣く：両手を顔に当てて肩をふるわせる
+      J.dy = Math.sin(ph * 14) * 0.003 * h;
+      J.armL.el = [-d.sw * 0.2, lerp(d.shY, hipY, 0.35)]; J.armR.el = [d.sw * 0.9, lerp(d.shY, hipY, 0.35)];
+      J.armL.hand = [-d.r * 0.45 + d.r * 0.1, d.hy + d.r * 0.5]; J.armR.hand = [d.r * 0.65 + d.r * 0.1, d.hy + d.r * 0.5];
+      J.handsFront = true;
+    } else if (pose === 'hug') {
+      // 抱き合う：両腕を前へ回す
+      J.armL.el = [d.sw + 0.05 * h, d.shY + 0.07 * h]; J.armL.hand = [d.sw + 0.13 * h, d.shY + 0.03 * h];
+      J.armR.el = [d.sw + 0.08 * h, d.shY + 0.1 * h]; J.armR.hand = [d.sw + 0.15 * h, d.shY + 0.06 * h];
+      J.rot = 0.05;
+    } else if (pose === 'sword') {
+      // 剣を振る：手前の腕を肩から弧を描いて振り下ろす（剣は手から描く）
+      const k = (Math.sin(ph * 3.2) + 1) / 2, a = lerp(-2.3, 0.5, k * k);
+      const L1 = 0.12 * h, sh = [d.sw, d.shY];
+      J.armR.el = [sh[0] + Math.cos(a) * L1 * 0.9, sh[1] + Math.sin(a) * L1 * 0.9];
+      J.armR.hand = [sh[0] + Math.cos(a) * L1 * 1.7, sh[1] + Math.sin(a) * L1 * 1.7];
+      J.sword = a; J.rot = 0.04;
+      J.legL = leg(-0.06 * h, -0.08 * h, 0); J.legR = leg(0.05 * h, 0.1 * h, 0);
+    } else if (pose === 'punch') {
+      // 拳を突き出す：手前の腕をまっすぐ前へ、繰り返し
+      const e = Math.max(0, Math.sin(ph * 5));
+      J.armR.el = [d.sw + (0.07 + 0.05 * e) * h, d.shY + 0.035 * h];
+      J.armR.hand = [d.sw + (0.14 + 0.1 * e) * h, d.shY + 0.03 * h];
+      J.armL.el = [-d.sw * 0.2, d.shY + 0.1 * h]; J.armL.hand = [d.sw * 0.4, d.shY + 0.05 * h];
+      J.fist = true; J.rot = 0.06 * e;
+      J.legL = leg(-0.07 * h, -0.09 * h, 0); J.legR = leg(0.05 * h, 0.1 * h, 0);
+    } else if (pose === 'talk') {
+      J.armR.el = [d.sw + 0.07 * h, d.shY + 0.11 * h];
+      J.armR.hand = [d.sw + 0.12 * h, d.shY + 0.03 * h + Math.sin(ph * 3.2) * 0.018 * h];
+      J.mouth = Math.sin(ph * 9) > 0.1 ? 1 : 0;
+    } else if (pose === 'sit') {
+      if (seat === 'seiza') {
+        const drop = -0.12 * h - hipY; J.drop = drop; hipY += drop; J.legs = false; J.seiza = true;
+        J.armL.hand = [-d.sw * 0.4, hipY + 0.02 * h + -drop]; J.armR.hand = [d.sw * 0.5, hipY + 0.02 * h + -drop];
+      } else {
+        const sy = -0.27 * h, drop = sy - hipY; J.drop = drop; hipY = sy; J.chair = true;
+        J.legL = { hip: [-0.04 * h, sy], knee: [0.09 * h, sy - 0.005 * h], foot: [0.1 * h, 0] };
+        J.legR = { hip: [0.045 * h, sy], knee: [0.15 * h, sy], foot: [0.16 * h, 0] };
+        J.armL.hand = [0.06 * h, sy - 0.02 * h - drop]; J.armR.hand = [0.12 * h, sy - 0.02 * h - drop];
+        J.armL.el = [-d.sw * 0.6, lerp(d.shY, d.hipY, 0.6)]; J.armR.el = [d.sw * 1.1, lerp(d.shY, d.hipY, 0.6)];
+      }
+    }
+    if (o_gesture && GESTURE_POSES.has(pose)) gesture(J, o_gesture, d, h, hipY, ph);
+    return J;
+  }
+  // 手の形を付けられる姿勢（走る・抱き合う・剣など、腕の動きが決まっている姿勢には付けない）
+  const GESTURE_POSES = new Set(['stand', 'talk', 'sit', 'walk', 'wave']);
+  /**
+   * 手の形（H＝頭の縦の長さ＝2r）。手前の腕（armR・+x 側）が「右手」。
+   * 肘は体の外側へ。手が顔の前に来る型（think・cover）は、前腕と手を頭より後に描く（J.foreFront）
+   */
+  function gesture(J, g, d, h, hipY, ph) {
+    const H = d.r * 2, { sw, shY, hy, r } = d, mid = lerp(shY, hipY, 0.5);
+    const set = (a, el, hand) => { a.el = el; a.hand = hand; };
+    if (g === 'cheer') {
+      set(J.armL, [-sw - 0.35 * H, shY - 0.15 * H], [-sw - 0.3 * H, hy - r - 0.45 * H]);
+      set(J.armR, [sw + 0.35 * H, shY - 0.15 * H], [sw + 0.3 * H, hy - r - 0.45 * H]);
+    } else if (g === 'wave') {
+      set(J.armR, [sw + 0.55 * H, shY + 0.35 * H], [sw + 0.55 * H + Math.sin(ph * 7) * 0.08 * H, hy]);
+    } else if (g === 'point') {
+      set(J.armR, [sw + 0.95 * H, shY + 0.3 * H], [sw + 1.9 * H, shY + 0.35 * H]);
+    } else if (g === 'think') {
+      set(J.armR, [sw + 0.25 * H, mid], [d.r * 0.25, hy + r * 1.05]);
+      J.foreFront = ['R'];
+    } else if (g === 'cover') {
+      set(J.armL, [-sw * 0.6, mid], [-r * 0.15, hy + r * 0.7]);
+      set(J.armR, [sw * 1.1, mid], [r * 0.45, hy + r * 0.7]);
+      J.foreFront = ['L', 'R'];
+    } else if (g === 'akimbo') {
+      set(J.armL, [-sw - 0.55 * H, mid], [-sw - 0.05 * H, hipY - 0.03 * h]);
+      set(J.armR, [sw + 0.55 * H, mid], [sw + 0.05 * H, hipY - 0.03 * h]);
+    } else if (g === 'surprise') {
+      set(J.armL, [-sw - 0.45 * H, shY + 0.15 * H], [-sw - 0.7 * H, shY - 0.35 * H]);
+      set(J.armR, [sw + 0.45 * H, shY + 0.15 * H], [sw + 0.7 * H, shY - 0.35 * H]);
+      J.rot = -0.04;
+    } else if (g === 'hold') {
+      // 手が体の内側に来るので、肘は下に曲げる
+      set(J.armL, [-sw - 0.05 * H, lerp(shY, hipY, 0.62)], [-0.2 * H, lerp(shY, hipY, 0.8)]);
+      set(J.armR, [sw + 0.05 * H, lerp(shY, hipY, 0.62)], [0.25 * H, lerp(shY, hipY, 0.78)]);
+    }
+  }
+
+  // おばけ：白い布をかぶった形でふわふわ浮く（体の関節は使わない）
+  function ghost(tg, L, o, t) {
+    const c = tg.ctx, h = o.h, lw = Math.max(1.6, h * 0.122 * 0.06) * 0.8, seed = 2600 + (o.slot || 0) * 300, ph = t + (o.slot || 0) * 1.7;
+    const R = h * 0.2, fl = Math.sin(ph * 1.8) * h * 0.025, top = -h * 0.95 + fl, base = -h * 0.2 + fl;
+    c.save(); if (o.alpha != null) c.globalAlpha *= o.alpha;
+    c.translate(o.x, o.y);
+    c.save(); c.fillStyle = 'rgba(20,10,20,.12)'; c.beginPath(); c.ellipse(0, 0, h * 0.1, h * 0.014, 0, 0, Math.PI * 2); c.fill(); c.restore();
+    c.scale(o.facing || 1, 1);
+    const S = o.shade || ((x) => x), pts = [];
+    for (let k = 0; k <= 12; k++) { const a = Math.PI + Math.PI * k / 12; pts.push([Math.cos(a) * R, top + R + Math.sin(a) * R]); }
+    pts.push([R * 1.05, base - h * 0.05]);
+    for (let k = 0; k <= 8; k++) { const x = lerp(R * 1.25, -R * 1.4, k / 8), wave = Math.sin(ph * 4 + k * 1.3) * h * 0.012; pts.push([x - Math.sin(ph * 2) * h * 0.02 * (k / 8), base + (k % 2 ? -h * 0.04 : 0) + wave]); }
+    pts.push([-R * 1.05, base - h * 0.05]);
+    tg.shape(pts, { fill: S('#F4F6FA'), lw: lw * 1.1, seed, alpha: 0.9 });
+    // 手（ゆらゆら）
+    for (const sd of [-1, 1]) tg.ellipse(sd * R * 1.05, top + R * 1.9 + Math.sin(ph * 3 + sd) * h * 0.01, R * 0.25, R * 0.14, { fill: S('#F4F6FA'), lw, seed: seed + 3 + sd, alpha: 0.9 });
+    const ink = '#2A2320', ey = top + R * 0.95, dx = R * 0.12;
+    const surprised = o.expr === 'surprise' || o.expr === 'anxiety';
+    for (const sd of [-1, 1]) tg.ellipse(dx + sd * R * 0.32, ey, R * 0.08, R * (surprised ? 0.18 : 0.14), { fill: ink, lw: lw * 0.5, seed: seed + 6 + sd, amp: 0.3 });
+    if (o.expr === 'joy') tg.line([[dx - R * 0.14, ey + R * 0.38], [dx, ey + R * 0.48], [dx + R * 0.14, ey + R * 0.38]], { lw: lw, seed: seed + 9, amp: 0.3, stroke: ink });
+    else tg.ellipse(dx, ey + R * 0.42, R * 0.1, R * (surprised ? 0.16 : 0.1), { fill: '#3A2A2A', lw: lw * 0.6, seed: seed + 9, amp: 0.3 });
+    for (const sd of [-1, 1]) tg.ellipse(dx + sd * R * 0.52, ey + R * 0.28, R * 0.12, R * 0.06, { fill: '#C8D8F0', stroke: null, seed: seed + 11 + sd, alpha: 0.7 });
+    c.restore();
+  }
+
+  function person(tg, L, o, t) {
+    if (o.type === 'ghost') return ghost(tg, L, o, t);
+    const c = tg.ctx, h = o.h, type = o.type || 'unknown', d = dims(type, h), cos = costume(type, o.era || 'modern', o.slot || 0, o.variant);
+    const S = o.shade || ((x) => x);
+    // 線の太さ：顔の輪郭・耳も含めて、人物の線はすべて眉と同じ太さ（顔の部品は faceBase がそれぞれの太さで描く）
+    const lw = browW(d), hlw = lw, seed = 2000 + (o.slot || 0) * 300;
+    const pose = o.pose || 'stand';
+    const J = joints(pose, d, h, t, o.slot || 0, o.seat, o.gesture);
+    const view = pose === 'lie' ? null : o.view; // 'back' 後ろ姿 | 'side' 横顔
+    if (o.talking) J.mouth = Math.sin((t + (o.slot || 0)) * 9) > 0.1 ? 1 : 0;
+    // 後ろ姿：手の形を左右反転（右手の指定が絵の左側に来る）
+    if (view === 'back') for (const a of [J.armL, J.armR]) for (const k of ['sh', 'el', 'hand']) a[k] = [-a[k][0], a[k][1]];
+    c.save();
+    if (o.alpha != null) c.globalAlpha *= o.alpha;
+    c.translate(o.x, o.y);
+    // 影
+    c.save(); c.fillStyle = 'rgba(20,10,20,.18)'; c.beginPath(); c.ellipse(0, 0, h * 0.13, h * 0.018, 0, 0, Math.PI * 2); c.fill(); c.restore();
+    c.scale(o.facing || 1, 1);
+    // 横たわる：足を右、頭を左にして床に寝かせる
+    if (pose === 'lie') { c.translate(h * 0.5, -h * 0.085); c.rotate(-Math.PI / 2); }
+    // 椅子・座布団（体より奥）
+    if (J.chair && !J.noChair) { tg.rrect(-0.1 * h, -0.28 * h, 0.24 * h, 0.03 * h, 3, { fill: S('#8A6444'), lw, seed: seed + 1 }); tg.line([[-0.08 * h, -0.25 * h], [-0.08 * h, 0]], { lw: lw * 1.6, seed: seed + 2 }); tg.line([[0.12 * h, -0.25 * h], [0.12 * h, 0]], { lw: lw * 1.6, seed: seed + 3 }); tg.rrect(-0.11 * h, -0.5 * h, 0.03 * h, 0.25 * h, 3, { fill: S('#8A6444'), lw, seed: seed + 4 }); }
+    if (J.seiza) tg.rrect(-0.15 * h, -0.025 * h, 0.32 * h, 0.035 * h, 8, { fill: S('#A8484A'), lw, seed: seed + 5 });
+    c.translate(0, J.dy + (J.drop || 0));
+    c.rotate(J.rot);
+    const up = -(J.drop || 0); // 座ったとき脚は元の高さに描く
+
+    const { r, hy, shY, hipY, sw } = d;
+    const skin = S(cos.skin), top = S(cos.top), bottom = S(cos.bottom || cos.top);
+    // マント（いちばん奥）
+    if (cos.cloak) tg.poly([[-sw * 1.05, shY], [sw * 1.05, shY], [sw * 1.6, -0.08 * h + up], [-sw * 1.7, -0.06 * h + up]], { fill: S(cos.cloak), lw, seed: seed + 6, hatch: { gap: 10, angle: 1.4 } });
+    // 後ろ髪（後ろ姿では頭より手前に描く。横顔では頭の後ろ側へずらす）
+    if (view !== 'back') rearHair(tg, cos, d, S, lw, seed, (HEAD[type] || HEAD.unknown).w, view);
+    // 脚
+    const longSkirt = cos.kind === 'robe' || (cos.kind === 'dress' && (cos.length === 'ankle' || cos.length === 'gown'));
+    const legCol = cos.kind === 'shorts' || cos.kind === 'dress' ? skin : bottom;
+    const drawLeg = (g, sd) => {
+      const P = (p) => [p[0], p[1] + (J.chair || J.seiza ? 0 : 0)];
+      const hip = P(g.hip), knee = P(g.knee), foot = P(g.foot);
+      const pts = J.chair ? [[hip[0], hip[1]], knee, [foot[0], foot[1] + up]] : [hip, knee, foot];
+      if (J.chair) { pts[0] = [hip[0], hip[1] + up]; pts[1] = [knee[0], knee[1] + up]; }
+      // 素肌→靴→ズボンの順。靴が素足で塗りつぶされないようにする。
+      const bare = cos.kind === 'shorts' || legCol === skin;
+      if ((!longSkirt || J.chair) && bare) {
+        const skinPts = cos.kind === 'shorts' ? [lerpP(pts[0], pts[1], 0.85), pts[1], pts[2]] : pts;
+        tg.limb(skinPts, { color: skin, lw: d.limb * 0.85, seed: seed + (cos.kind === 'shorts' ? 12 : 10) + sd, outline: lw });
+      }
+      shoe(tg, pts[2], h, S(cos.shoes), lw, seed + 14 + sd);
+      if (!longSkirt || J.chair) {
+        if (cos.kind === 'shorts') {
+          clothTube(tg, [pts[0], lerpP(pts[0], pts[1], 0.9)], d.limb * 1.25, bottom, lw, seed + 10 + sd, true);
+        } else if (!bare) {
+          const hem = [pts[2][0], pts[2][1] - 0.012 * h];
+          clothTube(tg, [pts[0], pts[1], hem], d.limb * 1.1, bottom, lw, seed + 10 + sd, true);
+        }
+      }
+    };
+    if (J.legs) { drawLeg(J.legL, 0); drawLeg(J.legR, 1); }
+    if (J.seiza) tg.rrect(-0.1 * h, hipY - 0.02 * h, 0.24 * h, 0.13 * h, 0.05 * h, { fill: longSkirt ? top : bottom, lw, seed: seed + 16 });
+    // 胴体・裾
+    torso(tg, cos, d, h, J, S, lw, seed, up, view);
+    // 前掛け・袈裟・十字架
+    if (cos.apron && !J.chair && !J.seiza && view !== 'back') tg.rrect(-sw * 0.7, hipY - 0.07 * h, sw * 1.4, 0.22 * h, 6, { fill: S(cos.apron), lw, seed: seed + 55 });
+    if (cos.kesa && view !== 'back') tg.poly([[sw * 0.5, shY], [sw * 0.9, shY + 0.02 * h], [-sw * 0.6, hipY - 0.06 * h], [-sw * 0.95, hipY - 0.1 * h]], { fill: S(cos.kesa), lw, seed: seed + 56, hatch: { gap: 7, angle: 0.8 } });
+    if (cos.cross && view !== 'back') { tg.line([[0, shY + 0.04 * h], [0, shY + 0.13 * h]], { lw: lw * 1.6, seed: seed + 57, stroke: S('#C9A24B') }); tg.line([[-0.025 * h, shY + 0.07 * h], [0.025 * h, shY + 0.07 * h]], { lw: lw * 1.6, seed: seed + 58, stroke: S('#C9A24B') }); }
+    // 腕
+    // 腕は太い線なので、関節の位置から描くと上端が肩の線より上に出て、肩が上がって見える。
+    // 腕の長さはそのままで、腕全体を「太さの半分＋縁取り」だけ下げて、上端を肩の線にそろえる
+    const sleeveOf = () => d.limb * (cos.kind === 'robe' ? 1.5 : 1.05);
+    const armDrop = sleeveOf() / 2 + lw;
+    for (const a of [J.armL, J.armR]) for (const k of ['sh', 'el', 'hand']) a[k] = [a[k][0], a[k][1] + armDrop];
+    const drawArm = (a, sd, foreground = false) => {
+      // 手→袖の順を、正面・背面・横向き・顔前への重ね描きで共通にする。
+      const deferred = !foreground && view !== 'back' && (J.handsFront || J.foreFront?.includes(sd ? 'R' : 'L'));
+      if (!deferred) hand(tg, a.hand, d, skin, lw, seed + 24 + sd, J.fist && sd, a.el);
+      const dir = unitP(a.el, a.hand);
+      const cuff = [a.hand[0] - dir[0] * d.limb * 0.18, a.hand[1] - dir[1] * d.limb * 0.18];
+      if (!foreground && cos.kind === 'robe') {
+        // 袂は重力方向へ垂らし、袋の底の角を残す。
+        const m = lerpP(a.sh, a.el, 0.6);
+        clothShape(tg, [a.sh, m, [a.el[0], a.el[1] + 0.07 * h], [m[0], m[1] + 0.07 * h]], { fill: top, lw, seed: seed + 20 + sd });
+      }
+      if (deferred) {
+        // 顔前へ描き直す前腕・手はここでは省き、上腕だけを残す。
+        tg.limb([a.sh, a.el], { color: top, lw: sleeveOf() - lw, outline: lw, seed: seed + 22 + sd });
+      } else {
+        clothTube(tg, foreground ? [a.el, cuff] : [a.sh, a.el, cuff], sleeveOf(), top, lw, seed + 22 + sd);
+      }
+      if (foreground) tg.ellipse(a.el[0], a.el[1], sleeveOf() * 0.32, sleeveOf() * 0.32,
+        { fill: top, stroke: null, seed: seed + 184 + sd, amp: 0 });
+      if (!foreground) {
+        // 袖付けの内側だけを線なしの同色でつなぐ。外側の肩の線は残す。
+        const inward = a.sh[0] < 0 ? 1 : -1;
+        const w = sleeveOf(), x = a.sh[0], y = a.sh[1];
+        // 肩の内側の弧と胴の縦線を一緒に隠す。小さな円では線が残る。
+        clothShape(tg, [[x + inward * w * 0.7, shY + lw * 1.1],
+          [x - inward * w * 0.12, shY + lw * 1.1],
+          [x - inward * w * 0.12, y + w * 0.52],
+          [x + inward * w * 0.62, y + w * 0.52]],
+          { fill: top, stroke: null, seed: seed + 180 + sd, amp: 0 });
+      }
+    };
+    drawArm(J.armL, 0);
+    // 杖（手前の手で持つ）
+    if (cos.cane && pose !== 'lie' && pose !== 'sit') tg.line([[J.armR.hand[0] + 0.01 * h, J.armR.hand[1]], [J.armR.hand[0] + 0.03 * h, -J.dy]], { lw: lw * 2, seed: seed + 26, stroke: S('#6A4A32') });
+    drawArm(J.armR, 1);
+    if (J.sword != null) {
+      // 剣：柄から刃先まで、腕の向きにそって
+      const a = J.sword + 0.5, hx = J.armR.hand[0], hy0 = J.armR.hand[1], len = 0.34 * h;
+      tg.line([[hx, hy0], [hx + Math.cos(a) * len, hy0 + Math.sin(a) * len]], { lw: lw * 2.6, seed: seed + 27, stroke: '#D8DEE6' });
+      tg.line([[hx - Math.cos(a + 1.57) * 0.03 * h, hy0 - Math.sin(a + 1.57) * 0.03 * h], [hx + Math.cos(a + 1.57) * 0.03 * h, hy0 + Math.sin(a + 1.57) * 0.03 * h]], { lw: lw * 2.2, seed: seed + 28, stroke: S('#8A6A3A') });
+    }
+    // 首と頭
+    // 顔のベース（持ち主の手描きの見本から）：輪郭・耳・眉・縦長の目・点の鼻・一本線の口
+    const base = HEAD[type] || HEAD.unknown;
+    if (view === 'side') {
+      tg.rrect(-r * 0.29, hy + r * 0.82, r * 0.41, shY - hy - r * 0.82 + lw, 1,
+        { fill: skin, lw, seed: seed + 30, amp: 0.2, second: false });
+    } else neck(tg, d, skin, lw, seed + 30);
+    const expr = pose === 'cry' ? 'cry' : o.expr || 'normal';
+    if (view === 'back') {
+      const looseHair = cos.hair === 'long' || cos.hair === 'bob';
+      if (looseHair) rearHair(tg, cos, d, S, lw, seed, base.w, view);
+      headBack(tg, base, d, skin, cos, S, lw, seed, type, hlw);
+      if (!looseHair) rearHair(tg, cos, d, S, lw, seed, base.w, view);
+    } else if (view === 'side') {
+      headSide(tg, base, d, skin, cos, S, lw, seed, type, expr, J.mouth, t, pose, hlw);
+    } else {
+      headBase(tg, base, d, skin, hlw, seed);
+      hairBase(tg, base, cos, d, S, lw, seed);
+      faceBase(tg, base, d, expr, J.mouth, t, seed, lw, cos, S, pose);
+    }
+    // 顔の前でも手を先に描き、その上に袖口をかぶせる。
+    if (J.handsFront && view !== 'back') for (const [sd, a] of [J.armL, J.armR].entries()) drawArm(a, sd, true);
+    if (J.foreFront && view !== 'back') for (const k of J.foreFront) {
+      drawArm(k === 'L' ? J.armL : J.armR, k === 'L' ? 0 : 1, true);
+    }
+    hat(tg, cos, d, S, lw, seed);
+    c.restore();
+  }
+  const lerpP = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k)];
+
+  // 眉の線の太さ（faceBase の fl × 0.8）
+  const browW = (d) => Math.max(1.6, d.r * 0.06) * 0.8;
+
+  // 共通部品。既存の部品 seed を受け取り、重ね描きでも形をそろえる。
+  function hand(tg, p, d, skin, lw, seed, fist = false, elbow = [p[0], p[1] - 1]) {
+    const u = unitP(elbow, p), n = [-u[1], u[0]], k = fist ? 1.25 : 1, w = d.limb * k;
+    // 細い手首から掌へ広げる。袖口の後ろに隠れる側は細くする。
+    const points = [[-0.48, -0.30], [-0.12, -0.56], [0.43, -0.48], [0.66, -0.12],
+      [0.46, 0.43], [0.06, 0.62], [-0.20, 0.40], [-0.48, 0.30]];
+    tg.shape(points.map(([a, b]) => [p[0] + (u[0] * a + n[0] * b) * w, p[1] + (u[1] * a + n[1] * b) * w]),
+      { fill: skin, lw, seed, amp: 0.45, second: false });
+  }
+  function unitP(a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+    return len > 0.001 ? [dx / len, dy / len] : [0, 1];
+  }
+  // tg.shape の滑らかな曲線を保ちながら、角の前後に点を置いて角丸を小さくする。
+  // 顔には使わず、袖口・袂・裾など布の輪郭専用。
+  function clothShape(tg, corners, o) {
+    const pts = [];
+    for (let i = 0; i < corners.length; i++) {
+      const p = corners[i], prev = corners[(i + corners.length - 1) % corners.length], next = corners[(i + 1) % corners.length];
+      const cornerRadius = o.roundCorners?.includes(i) ? 3 : 0.7;
+      const a = Math.min(0.2, cornerRadius / Math.max(0.001, Math.hypot(p[0] - prev[0], p[1] - prev[1])));
+      const b = Math.min(0.2, cornerRadius / Math.max(0.001, Math.hypot(p[0] - next[0], p[1] - next[1])));
+      pts.push(lerpP(p, prev, a), p, lerpP(p, next, b));
+    }
+    tg.shape(pts, { amp: 0.4, second: false, ...o });
+  }
+  function clothTube(tg, points, width, color, lw, seed, hem = false) {
+    // 関節は従来と同じ丸い太線。折り返して重なる腕でも輪郭が交差しない。
+    const end = points[points.length - 1], prev = points[points.length - 2];
+    const u = unitP(prev, end), n = [-u[1], u[0]], half = width / 2;
+    const length = Math.hypot(end[0] - prev[0], end[1] - prev[1]);
+    const inset = Math.min(half + lw, length * 0.45);
+    const tip = [end[0] - u[0] * inset, end[1] - u[1] * inset];
+    tg.limb([...points.slice(0, -1), tip], { color, lw: width - lw, outline: lw, seed });
+    // 端だけ平らな袖口を重ねる。接続側には線を引かない。
+    const root = [end[0] - u[0] * (inset + half), end[1] - u[1] * (inset + half)];
+    const P = (p, sign) => [p[0] + n[0] * half * sign, p[1] + n[1] * half * sign];
+    const edge = [P(root, 1), P(end, 1), P(end, -1), P(root, -1)];
+    if (hem) {
+      // ズボンの折り返しは一枚の裾として描く。
+      clothShape(tg, edge, { fill: color, lw, seed: seed + 190, amp: 0.25 });
+      return;
+    }
+    clothShape(tg, edge, { fill: color, stroke: null, seed: seed + 190, amp: 0 });
+    tg.line(edge, { lw, seed: seed + 210, amp: 0.25, step: 2, second: false });
+  }
+  function shoe(tg, p, h, color, lw, seed) {
+    tg.ellipse(p[0] + 0.015 * h, p[1] - 0.008 * h, 0.032 * h, 0.014 * h, { fill: color, lw, seed });
+  }
+  function neck(tg, d, skin, lw, seed) {
+    const { r, hy, shY } = d;
+    tg.rrect(-r * 0.2, hy + r * 0.6, r * 0.4, shY - hy - r * 0.5, 4, { fill: skin, lw, seed, second: false });
+  }
+  function rearHair(tg, cos, d, S, lw, seed, W, view) {
+    const side = view === 'side';
+    tg.ctx.save();
+    if (side && cos.hair !== 'pigtails') tg.ctx.translate(-d.r * 0.35, 0);
+    hairBack(tg, cos, d, S, lw, seed, W, side);
+    tg.ctx.restore();
+  }
+  // 耳の高さと大きさは同じ人物の HEAD.ear から取る。
+  // 向きによる見え方と、輪郭・髪に隠れる順序は呼び出し側で維持。
+  function ears(tg, B, d, pts, skin, lw, seed, view) {
+    const { r, hy } = d, E = B.ear, ey = hy + E.y * r;
+    if (view === 'side') {
+      tg.ellipse(-0.08 * r, ey, E.front[0] * 1.25 * r, E.front[1] * (0.24 / 0.22) * r, { fill: skin, lw, seed: seed + 33 });
+      return;
+    }
+    for (const sd of [-1, 1]) {
+      const [rx, ry] = view === 'back' ? E.front : sd < 0 ? E.back : E.front;
+      tg.ellipse(sideX(pts, ey, sd), ey, rx * (view === 'back' ? 1.1 : 1) * r, ry * r, { fill: skin, lw, seed: seed + 32 + sd });
+    }
+  }
+  function collar(tg, cos, d, h, S, lw, seed, view) {
+    const { sw, shY } = d, top = S(cos.top);
+    // 後ろ姿には前衿・胸元のリボン・ネクタイを描かない。
+    // 詰め衿は首を囲むので後ろ姿にも残す。
+    if (cos.kind === 'uniform') { tg.rrect(-sw * 0.35, shY - 0.012 * h, sw * 0.7, 0.03 * h, 3, { fill: top, lw, seed: seed + 45 }); }
+    if (view === 'back') return;
+    if (cos.kind === 'robe') {
+      // 衿（左前ではなく右前に重ねる）
+      tg.line([[-sw * 0.45, shY - 0.005 * h], [sw * 0.15, shY + 0.11 * h]], { lw, seed: seed + 47 });
+      tg.line([[sw * 0.45, shY - 0.005 * h], [0, shY + 0.07 * h]], { lw, seed: seed + 48 });
+      tg.poly([[-sw * 0.4, shY], [0, shY + 0.07 * h], [sw * 0.4, shY]], { fill: S('#F4EEDC'), lw, seed: seed + 49 });
+      return;
+    }
+    if (cos.kind === 'dress') {
+      tg.ellipse(0, shY + 0.012 * h, sw * 0.4, 0.018 * h, { fill: S('#F8F2E6'), lw, seed: seed + 42 });
+      if (cos.ribbon) tg.poly([[-0.03 * h, shY + 0.03 * h], [0, shY + 0.045 * h], [0.03 * h, shY + 0.03 * h], [0.03 * h, shY + 0.065 * h], [0, shY + 0.05 * h], [-0.03 * h, shY + 0.065 * h]], { fill: S(cos.ribbon), lw, seed: seed + 43 });
+      return;
+    }
+    if (cos.kind === 'coat') tg.poly([[-sw * 0.35, shY], [0, shY + 0.1 * h], [sw * 0.35, shY]], { fill: S('#F4EEDC'), lw, seed: seed + 45 });
+    if (cos.kind === 'shirt' || cos.kind === 'shorts') tg.poly([[-sw * 0.38, shY], [0, shY + 0.04 * h], [sw * 0.38, shY], [sw * 0.2, shY + 0.015 * h], [-sw * 0.2, shY + 0.015 * h]], { fill: S('#F8F4EC'), lw, seed: seed + 45 });
+    if (cos.tie) tg.poly([[-0.012 * h, shY + 0.03 * h], [0.012 * h, shY + 0.03 * h], [0.018 * h, shY + 0.12 * h], [0, shY + 0.14 * h], [-0.018 * h, shY + 0.12 * h]], { fill: S('#9A3A3A'), lw, seed: seed + 50 });
+  }
+
+  function torso(tg, cos, d, h, J, S, lw, seed, up, view) {
+    const { shY, hipY, sw } = d, top = S(cos.top), bottom = S(cos.bottom || cos.top);
+    const waist = hipY - 0.06 * h;
+    const walkSwing = J.legs && J.legL ? (J.legL.foot[0] + J.legR.foot[0]) * 0.3 : 0;
+    if (cos.kind === 'robe') {
+      const hem = J.seiza ? hipY + 0.06 * h : J.chair ? hipY + 0.04 * h : -0.025 * h;
+      clothShape(tg, [[-sw, shY], [sw, shY], [sw * 1.05, waist], [sw * 1.2 + walkSwing, hem], [-sw * 1.2 + walkSwing, hem], [-sw * 1.05, waist]], { fill: top, lw, seed: seed + 40, hatch: { gap: 9 } });
+      if (cos.pattern) for (let k = 0; k < 5; k++) { const px = lerp(-sw, sw, hash(seed, k, 1)), py = lerp(waist + 0.03 * h, hem - 0.02 * h, hash(seed, k, 2)); tg.ellipse(px, py, 0.012 * h, 0.012 * h, { fill: S('#F4EEDC'), stroke: null, seed: seed + 41 + k, amp: 0.4 }); }
+      collar(tg, cos, d, h, S, lw, seed, view);
+      tg.rrect(-sw * 1.06, waist - 0.035 * h, sw * 2.12, 0.06 * h, 3, { fill: S(cos.accent || '#8A7A5A'), lw, seed: seed + 50 });
+      return;
+    }
+    if (cos.kind === 'dress') {
+      const len = J.chair ? hipY + 0.06 * h : cos.length === 'gown' ? -0.015 * h : cos.length === 'ankle' ? -0.04 * h : hipY + 0.17 * h;
+      const flare = cos.length === 'gown' ? 2.1 : cos.length === 'ankle' ? 1.5 : 1.75;
+      clothShape(tg, [[-sw * 0.95, waist + 0.01 * h], [sw * 0.95, waist + 0.01 * h], [sw * flare + walkSwing, len], [-sw * flare + walkSwing, len]], { fill: bottom, lw, seed: seed + 40, hatch: { gap: 10, angle: 1.4 } });
+      clothShape(tg, [[-sw, shY], [sw, shY], [sw * 0.85, waist + 0.015 * h], [-sw * 0.85, waist + 0.015 * h]], { fill: top, lw, seed: seed + 41 });
+      collar(tg, cos, d, h, S, lw, seed, view);
+      return;
+    }
+    const tun = cos.kind === 'tunic' || cos.kind === 'armor';
+    const coatLen = cos.kind === 'coat' && !J.chair ? -0.2 * h : tun && !J.chair ? hipY + 0.12 * h : hipY + 0.035 * h;
+    const fl = cos.kind === 'coat' ? 1.3 : tun ? 1.2 : 1.0;
+    clothShape(tg, [[-sw, shY], [sw, shY], [sw * 0.95, waist], [sw * fl + walkSwing * 0.5, coatLen], [-sw * fl + walkSwing * 0.5, coatLen], [-sw * 0.95, waist]], { fill: top, lw, seed: seed + 40, hatch: cos.kind === 'shirt' ? undefined : { gap: 10 } });
+    if (cos.kind === 'coat' && view !== 'back') { tg.line([[0, shY + 0.02 * h], [0, coatLen]], { lw, seed: seed + 44 }); }
+    if (cos.kind === 'uniform' && view !== 'back') { for (let k = 0; k < 4; k++) tg.ellipse(0, shY + 0.04 * h + k * 0.045 * h, 0.008 * h, 0.008 * h, { fill: S('#E8C66A'), lw: lw * 0.6, seed: seed + 46 + k, amp: 0.3 }); }
+    collar(tg, cos, d, h, S, lw, seed, view);
+    if (cos.kind === 'tunic' || cos.kind === 'armor') tg.rrect(-sw * 1.02, waist - 0.01 * h, sw * 2.04, 0.035 * h, 3, { fill: S('#5A3E2A'), lw, seed: seed + 51 });
+    if (cos.kind === 'armor') { for (let k = 1; k < 4; k++) tg.line([[-sw * 0.9, shY + k * 0.05 * h], [sw * 0.9, shY + k * 0.05 * h]], { lw: lw * 0.8, seed: seed + 52 + k }); tg.ellipse(0, shY + 0.02 * h, sw * 0.5, 0.025 * h, { fill: S('#B8BEC6'), lw, seed: seed + 56 }); }
+  }
+
+  // 後ろ髪（W＝頭の横幅。大人の顔は細いので、そのぶん髪も細くする）
+  function hairBack(tg, cos, d, S, lw, seed, W = 1, side = false) {
+    const { r: R, hy } = d, r = R, col = S(cos.hairColor), w = R * W;
+    if (cos.hair === 'long') tg.rrect(-w * 1.1, hy - r * 0.5, w * 2.2, r * 2.5, r * 0.9, { fill: col, lw, seed: seed + 60, hatch: { gap: 7, angle: 1.45 } });
+    if (cos.hair === 'bob') tg.rrect(-w * 1.14, hy - r * 0.6, w * 2.28, r * 1.55, r * 0.8, { fill: col, lw, seed: seed + 60, hatch: { gap: 7, angle: 1.45 } });
+    if (cos.hair === 'pigtails') for (const sd of side ? [-1] : [-1, 1]) { tg.ellipse(side ? -w * 0.75 : sd * w * 1.14, hy + r * 0.45, r * 0.32, r * 0.55, { fill: col, lw, seed: seed + 61 + sd, hatch: { gap: 6, angle: 1.4 } }); }
+    if (cos.hair === 'bun') tg.ellipse(-r * 0.15, hy - r * 1.0, r * 0.5, r * 0.4, { fill: col, lw, seed: seed + 64, hatch: { gap: 6 } });
+    if (cos.hair === 'ponytail') tg.poly([[-w * 0.7, hy - r * 0.6], [-w * 1.2, hy - r * 0.2], [-w * 1.25, hy + r * 1.1], [-w * 0.95, hy + r * 1.3], [-w * 0.8, hy + r * 0.3]], { fill: col, lw, seed: seed + 65, hatch: { gap: 6, angle: 1.45 }, step: 12 });
+  }
+  function hat(tg, cos, d, S, lw, seed) {
+    const { r, hy } = d;
+    if (cos.hat === 'helmet' || cos.hat === 'helm') {
+      // 鉄かぶと：額より上を覆う半円（騎士はとさか付き）
+      const pts = []; for (let k = 0; k <= 16; k++) { const a = Math.PI + Math.PI * k / 16; pts.push([Math.cos(a) * r * 1.02, hy - r * 0.18 + Math.sin(a) * r * 0.9]); }
+      if (cos.hat === 'helm') tg.poly([[-r * 0.1, hy - r * 1.0], [r * 0.2, hy - r * 1.55], [r * 0.9, hy - r * 1.3], [r * 0.3, hy - r * 0.95]], { fill: S('#B83A3A'), lw, seed: seed + 84, step: 10 });
+      tg.shape(pts, { fill: S(cos.hatColor || '#4A5A3A'), lw, seed: seed + 85 });
+      tg.rrect(-r * 1.1, hy - r * 0.26, r * 2.2, r * 0.16, r * 0.08, { fill: S(cos.hatColor || '#4A5A3A'), lw, seed: seed + 86 });
+      if (cos.hat === 'helm') tg.rrect(r * 0.05, hy - r * 0.2, r * 0.1, r * 0.42, 2, { fill: S(cos.hatColor), lw: lw * 0.8, seed: seed + 87 });
+    }
+    if (cos.hat === 'cap') { tg.rrect(-r * 1.0, hy - r * 1.15, r * 2.0, r * 0.6, r * 0.25, { fill: S(cos.hatColor || '#2A2E3A'), lw, seed: seed + 85 }); tg.ellipse(r * 0.6, hy - r * 0.58, r * 0.6, r * 0.13, { fill: S('#1E2028'), lw, seed: seed + 86 }); tg.ellipse(0, hy - r * 0.9, r * 0.12, r * 0.1, { fill: S('#E8C66A'), lw: lw * 0.6, seed: seed + 87 }); }
+    if (cos.hat === 'top') { tg.ellipse(0, hy - r * 0.78, r * 1.3, r * 0.2, { fill: S('#22222A'), lw, seed: seed + 85 }); tg.rrect(-r * 0.78, hy - r * 1.9, r * 1.56, r * 1.12, 4, { fill: S('#22222A'), lw, seed: seed + 86 }); tg.rrect(-r * 0.78, hy - r * 1.0, r * 1.56, r * 0.18, 2, { fill: S('#7A2E2E'), lw: lw * 0.7, seed: seed + 87 }); }
+    if (cos.hat === 'wizard') { tg.ellipse(0, hy - r * 0.75, r * 1.4, r * 0.24, { fill: S('#2E3A7A'), lw, seed: seed + 85 }); tg.poly([[-r * 0.95, hy - r * 0.8], [r * 0.4, hy - r * 2.9], [r * 0.95, hy - r * 0.8]], { fill: S('#2E3A7A'), lw, seed: seed + 86, step: 14 }); tg.star(0, hy - r * 1.4, r * 0.22, { fill: S('#F2D06A'), lw: lw * 0.7, seed: seed + 87 }); }
+  }
+
+  /* ---- 顔のベース（持ち主の手描きの見本から。数値は頭の半分の高さ r を 1 とする。y は頭の中心から下向き） ----
+   * 大人：縦長の卵形。頭頂は丸く、頬からあごへ細くなり、あご先は広く丸い。眉は中心よりわずかに上、目はその下で縦長
+   * 子供：ほぼ真円で横にわずかに広い。顔の部品は低い位置にまとまり、耳は大きく丸い
+   * 目鼻は少し前（+x）に寄せ、あごも前へ少し出す（見本の、わずかに振り向いた感じ） */
+  const ADULT = {
+    outline: [[0, -1], [0.6, -0.8], [0.84, -0.3], [0.84, 0.05], [0.75, 0.48], [0.53, 0.82], [0.2, 0.985], [-0.2, 0.985], [-0.53, 0.82], [-0.75, 0.48], [-0.84, 0.05], [-0.84, -0.3], [-0.6, -0.8]],
+    w: 0.84, turn: 0.1, chin: 0.1,
+    ear: { y: 0.27, back: [0.2, 0.25], front: [0.12, 0.22], inner: true },
+    brow: -0.05, eye: { y: 0.25, x: 0.34, rx: 0.05, ry: 0.15 }, nose: 0.49, mouth: { y: 0.66, w: 0.09 }, cheek: 0.45,
+    // 前髪（前 +x → 後ろ −x）。短髪は額を広めに、女性の前髪は眉の上まで、まとめ髪は後ろへなでつける
+    fringe: [[0.88, 0.04], [0.76, -0.22], [0.52, -0.36], [0.3, -0.32], [0.1, -0.44], [-0.16, -0.38], [-0.42, -0.36], [-0.68, -0.2], [-0.88, 0.04]],
+    fringeSoft: [[0.9, 0.1], [0.8, -0.14], [0.6, -0.22], [0.4, -0.16], [0.2, -0.25], [0, -0.18], [-0.2, -0.26], [-0.42, -0.18], [-0.62, -0.24], [-0.8, -0.12], [-0.9, 0.1]],
+    fringeUp: [[0.87, 0.02], [0.72, -0.34], [0.42, -0.54], [0, -0.6], [-0.42, -0.54], [-0.72, -0.34], [-0.87, 0.02]],
+    fringeParted: [[0.88, 0.04], [0.8, -0.3], [0.56, -0.5], [0.28, -0.6], [0.02, -0.64], [-0.14, -0.5], [-0.36, -0.42], [-0.64, -0.26], [-0.88, 0.04]],
+    hairCut: 0.04, hairScale: 1.05,
+  };
+  const CHILD = {
+    outline: [[0, -1], [0.62, -0.84], [0.92, -0.45], [0.98, 0], [0.86, 0.45], [0.62, 0.8], [0.3, 0.97], [-0.3, 0.97], [-0.62, 0.8], [-0.86, 0.45], [-0.98, 0], [-0.92, -0.45], [-0.62, -0.84]],
+    w: 0.98, turn: 0.1, chin: 0.06,
+    ear: { y: 0.28, back: [0.25, 0.25], front: [0.16, 0.22], inner: false },
+    brow: 0.09, eye: { y: 0.38, x: 0.42, rx: 0.055, ry: 0.13 }, nose: 0.59, mouth: { y: 0.76, w: 0.1 }, cheek: 0.6,
+    // 前髪は眉のすぐ上まで下ろす
+    fringe: [[1.0, 0.08], [0.84, -0.14], [0.62, -0.04], [0.42, -0.16], [0.2, -0.05], [0, -0.17], [-0.22, -0.05], [-0.44, -0.16], [-0.66, -0.04], [-0.86, -0.13], [-1.0, 0.08]],
+    fringeSoft: [[1.0, 0.12], [0.86, -0.06], [0.64, -0.01], [0.42, -0.09], [0.2, -0.01], [0, -0.09], [-0.22, -0.01], [-0.44, -0.09], [-0.66, -0.01], [-0.86, -0.06], [-1.0, 0.12]],
+    hairCut: 0.08, hairScale: 1.04,
+  };
+  CHILD.fringeUp = CHILD.fringeSoft;
+  CHILD.fringeParted = CHILD.fringe;
+  // 女性は目だけ前の描き方（丸い目に白い光）
+  const HEAD = {
+    man: ADULT, oldman: ADULT, unknown: ADULT, boy: CHILD, middleman: ADULT, soldier: ADULT, monk: ADULT, baby: CHILD,
+    woman: { ...ADULT, roundEyes: true }, oldwoman: { ...ADULT, roundEyes: true }, girl: { ...CHILD, roundEyes: true }, middlewoman: { ...ADULT, roundEyes: true },
+  };
+
+  // 閉じたなめらかな曲線（Catmull-Rom）を細かい点列に
+  function spline(P, step) {
+    const out = [], n = P.length;
+    for (let i = 0; i < n; i++) {
+      const p0 = P[(i - 1 + n) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+      const m = Math.max(3, Math.round(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / step));
+      for (let k = 0; k < m; k++) {
+        const s = k / m, s2 = s * s, s3 = s2 * s;
+        const f = (a, b, c, e) => 0.5 * (2 * b + (-a + c) * s + (2 * a - 5 * b + 4 * c - e) * s2 + (-a + 3 * b - 3 * c + e) * s3);
+        out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+      }
+    }
+    return out;
+  }
+  // 輪郭の点列（ピクセル）。あご側だけ前へ少しずらす
+  function headPts(B, d) {
+    const { r, hy } = d;
+    const P = B.outline.map(([x, y]) => [(x + B.chin * clamp((y + 0.2) / 1.2, 0, 1)) * r, hy + y * r]);
+    return spline(P, Math.max(6, r * 0.12));
+  }
+  // 輪郭の、高さ y での左右の端（sd = 1 前／−1 後ろ）
+  function sideX(pts, y, sd) {
+    let best = null, bd = Infinity;
+    for (const p of pts) if (Math.sign(p[0]) === sd && Math.abs(p[1] - y) < bd) { bd = Math.abs(p[1] - y); best = p[0]; }
+    return best ?? 0;
+  }
+
+  function headBase(tg, B, d, skin, lw, seed) {
+    const { r, hy } = d, pts = headPts(B, d), E = B.ear, ey = hy + E.y * r;
+    // 耳は輪郭より奥に描く。
+    ears(tg, B, d, pts, skin, lw, seed, 'front');
+    tg.shape(pts, { fill: skin, lw: lw * 1.1, seed: seed + 31, amp: 1.2 });
+    // 後ろ側の耳は顔とひと続きに見せる：耳の内側を肌色で塗って、耳と顔の間の輪郭線を消す
+    const [brx, bry] = E.back, bx = sideX(pts, ey, -1), inset = lw * 1.6 + 2;
+    tg.ellipse(bx, ey, Math.max(1, brx * r - inset), Math.max(1, bry * r - inset), { fill: skin, stroke: null, seed: seed + 34, amp: 0.3 });
+    if (E.inner) tg.line([[bx - brx * r * 0.45, ey - bry * r * 0.45], [bx - brx * r * 0.62, ey], [bx - brx * r * 0.35, ey + bry * r * 0.5]], { lw: lw * 0.7, seed: seed + 35, amp: 0.4 });
+  }
+
+  function hairBase(tg, B, cos, d, S, lw, seed) {
+    const { r, hy } = d, col = S(cos.hairColor), hair = cos.hair, spiky = hair === 'spiky', w = r * B.w;
+    const pts = headPts(B, d);
+    if (hair === 'bald') {
+      // はげ頭：耳の上に横の髪だけ。ひげはあごに
+      for (const sd of [-1, 1]) tg.ellipse(sideX(pts, hy - r * 0.16, sd) - sd * r * 0.03, hy - r * 0.16, r * 0.12, r * 0.18, { fill: col, lw, seed: seed + 70 + sd });
+      const bx = B.turn * r;
+      if (cos.beard === 'long') tg.poly([[bx - r * 0.6, hy + r * 0.55], [bx + r * 0.6, hy + r * 0.55], [bx + r * 0.1, hy + r * 1.9]], { fill: col, lw, seed: seed + 73, hatch: { gap: 6, angle: 1.5 } });
+      else if (cos.beard === 'short') tg.ellipse(bx, hy + r * 0.84, r * 0.46, r * 0.24, { fill: col, lw, seed: seed + 73 });
+      return mustache(tg, B, cos, d, col, lw, seed);
+    }
+    if (hair === 'shaved') {
+      // 剃った頭：頭頂をうっすら青く
+      tg.shape(pts.filter((p) => p[1] < hy - r * 0.1), { fill: 'rgba(120,130,150,.22)', stroke: null, seed: seed + 74, amp: 0.4 });
+      return mustache(tg, B, cos, d, col, lw, seed);
+    }
+    if (hair === 'tuft') {
+      // 赤ん坊：頭のてっぺんにくるんと一房
+      tg.line([[r * 0.05, hy - r * 0.98], [r * 0.12, hy - r * 1.22], [-r * 0.12, hy - r * 1.25], [-r * 0.06, hy - r * 1.08], [r * 0.04, hy - r * 1.12]], { lw: lw * 1.3, seed: seed + 74, stroke: col });
+      return;
+    }
+    // 頭頂：輪郭を少し外へ広げて、生え際より上だけを使う（後ろ → 頭頂 → 前の順）
+    const cy = hy + r * 0.1, cut = hy + B.hairCut * r;
+    const arc = pts.filter((p) => p[1] < cut).map(([x, y]) => [x * B.hairScale, cy + (y - cy) * B.hairScale]);
+    const ang = ([x, y]) => { const a = Math.atan2(y - cy, x); return a > Math.PI / 2 ? a - Math.PI * 2 : a; };
+    arc.sort((a, b) => ang(a) - ang(b));
+    let top = arc;
+    if (spiky) {
+      // 頭頂のはね：間引いた点を交互に外へ出す
+      const n = 16; top = [];
+      for (let k = 0; k <= n; k++) { const p = arc[Math.round(k / n * (arc.length - 1))], up = p[1] < hy - r * 0.35 && k % 2 ? 1.07 : 1; top.push([p[0] * up, cy + (p[1] - cy) * up]); }
+    }
+    const F = hair === 'short' || spiky ? B.fringe : hair === 'bun' ? B.fringeUp : hair === 'parted' ? B.fringeParted : B.fringeSoft;
+    const fr = F.map(([x, y], k) => [x * r, hy + (y + (spiky && k % 2 ? 0.05 : 0)) * r]);
+    tg.shape([...top, ...fr], { fill: col, lw, seed: seed + 75, hatch: { gap: 6, angle: 1.3 } });
+    // 顔の横に垂らす髪
+    if (hair === 'long' || hair === 'bob') {
+      const long = hair === 'long';
+      for (const sd of [-1, 1]) {
+        // こめかみから耳の外側へ沿う横髪。頭頂に近い根元は後で線を消す。
+        const lock = [[0.94, -0.26], [1.055, -0.04], [1.10, 0.25],
+          [1.11, long ? 1.1 : 0.7], [0.94, long ? 0.98 : 0.61],
+          [0.95, 0.30], [0.89, 0.09], [0.84, -0.10]];
+        tg.shape(spline(lock.map(([x, y]) => [sd * w * x, hy + r * y]), Math.max(3, r * 0.08)),
+          { fill: col, lw, seed: seed + 77 + sd, amp: 0.5 });
+        tg.poly([[sd * w * 0.83, hy - r * 0.20], [sd * w * 0.99, hy - r * 0.16],
+          [sd * w * 1.02, hy + r * 0.045], [sd * w * 0.93, hy + r * 0.07]],
+          { fill: col, stroke: null, seed: seed + 242 + (sd > 0 ? 1 : 0), amp: 0.15, step: 3 });
+      }
+    }
+    if (hair === 'bun') tg.line([[-r * 0.6, hy - r * 1.15], [r * 0.3, hy - r * 0.85]], { lw: lw * 1.2, seed: seed + 80, stroke: S('#C9A24B') });
+    if (cos.ribbon && (hair === 'pigtails' || hair === 'bob' || hair === 'long')) for (const sd of hair === 'pigtails' ? [-1, 1] : [1]) tg.poly([[sd * w * 0.85, hy - r * 0.7], [sd * w * 1.25, hy - r * 0.95], [sd * w * 1.2, hy - r * 0.45]], { fill: S(cos.ribbon), lw, seed: seed + 82 + sd, step: 10 });
+    mustache(tg, B, cos, d, col, lw, seed);
+  }
+  // 口ひげ：鼻と口の間
+  function mustache(tg, B, cos, d, col, lw, seed) {
+    if (cos.beard !== 'mustache') return;
+    const { r, hy } = d, mw = r * B.mouth.w, nx = B.turn * r + mw * 0.46, y = hy + (B.nose + B.mouth.y) / 2 * r + r * 0.01;
+    tg.shape([[nx - r * 0.22, y + r * 0.05], [nx - r * 0.1, y - r * 0.04], [nx, y - r * 0.015], [nx + r * 0.1, y - r * 0.04], [nx + r * 0.22, y + r * 0.05], [nx, y + r * 0.04]], { fill: col, lw: lw * 0.8, seed: seed + 79, amp: 0.4 });
+  }
+
+  function faceBase(tg, B, d, expr, mouth, t, seed, lw, cos, S, pose) {
+    const { r, hy } = d, dx = r * B.turn, E = B.eye, ey = hy + E.y * r, ex = r * E.x;
+    const ink = '#2A2320', fl = Math.max(1.6, r * 0.06);
+    const blink = ((t + seed * 0.37) % 4.3) < 0.12;
+    const crying = expr === 'cry';
+    const closed = expr === 'sleep' || pose === 'lie' || blink || crying;
+    if (expr === 'sleep' || pose === 'lie') expr = 'sleep';
+    // 頬（ほんのり）
+    for (const sd of [-1, 1]) tg.ellipse(dx + sd * (ex + r * 0.1), hy + B.cheek * r, r * 0.12, r * 0.06, { fill: '#F0A0A0', stroke: null, seed: seed + 90 + sd, amp: 0.3, alpha: d.old ? 0.25 : 0.4 });
+    const browCol = S(cos.hairColor === '#D9D6CF' ? '#9A968E' : cos.hairColor);
+    for (const sd of [-1, 1]) {
+      const x = dx + sd * ex, y = ey;
+      if (B.roundEyes) {
+        // 女性：前の丸い目（白い光つき）
+        if (expr === 'joy' || expr === 'calm') {
+          const k = expr === 'joy' ? -1 : 1;
+          tg.line([[x - r * 0.13, y + (expr === 'joy' ? r * 0.03 : -r * 0.01)], [x, y + k * r * 0.09], [x + r * 0.13, y + (expr === 'joy' ? r * 0.03 : -r * 0.01)]], { lw: fl, seed: seed + 92 + sd, amp: 0.5, stroke: ink });
+        } else if (closed) {
+          tg.line([[x - r * 0.12, y], [x, y + r * 0.05], [x + r * 0.12, y]], { lw: fl, seed: seed + 94 + sd, amp: 0.5, stroke: ink });
+        } else {
+          const sy = expr === 'anger' ? 0.1 : expr === 'anxiety' ? 0.12 : expr === 'surprise' ? 0.18 : 0.15;
+          tg.ellipse(x, y, r * (expr === 'surprise' ? 0.13 : 0.11), r * sy, { fill: ink, lw: fl * 0.6, seed: seed + 96 + sd, amp: 0.3 });
+          tg.ellipse(x + r * 0.04, y - r * sy * 0.45, r * 0.045, r * 0.045, { fill: '#FFFFFF', stroke: null, seed: seed + 98 + sd, amp: 0.2 });
+        }
+      } else if (expr === 'joy' || expr === 'calm') {
+        const k = expr === 'joy' ? -1 : 1;
+        tg.line([[x - r * 0.09, y + (expr === 'joy' ? r * 0.04 : -r * 0.01)], [x, y + k * r * 0.07], [x + r * 0.09, y + (expr === 'joy' ? r * 0.04 : -r * 0.01)]], { lw: fl, seed: seed + 92 + sd, amp: 0.4, stroke: ink });
+      } else if (closed) {
+        tg.line([[x - r * 0.08, y + r * 0.02], [x, y + r * 0.06], [x + r * 0.08, y + r * 0.02]], { lw: fl, seed: seed + 94 + sd, amp: 0.4, stroke: ink });
+      } else {
+        // 縦長の目（見本どおり細い楕円をインクで塗る）。驚きは目を見開く
+        const k = expr === 'anger' ? 0.72 : expr === 'anxiety' ? 0.85 : expr === 'surprise' ? 1.2 : 1;
+        tg.ellipse(x, y + E.ry * r * (1 - k) * 0.5, E.rx * r * (expr === 'surprise' ? 1.35 : 1), E.ry * r * k, { fill: ink, lw: fl * 0.5, seed: seed + 96 + sd, amp: 0.25 });
+      }
+      // 眉：細い弧。怒りは内側を下げ、悲しみ・不安は内側を上げる
+      const by = hy + B.brow * r - (expr === 'surprise' ? r * 0.09 : 0), bx = x + sd * r * 0.02; // 驚きは眉を高く上げる
+      const tilt = expr === 'anger' ? 0.08 : expr === 'sadness' || expr === 'anxiety' || crying ? -0.07 : 0;
+      tg.line([[bx + sd * r * 0.12, by + r * 0.035 - tilt * r * 0.3], [bx + sd * r * 0.02, by - r * 0.015], [bx - sd * r * 0.11, by + r * 0.03 + tilt * r]], { lw: fl * 0.8, seed: seed + 102 + sd, amp: 0.35, stroke: browCol });
+      if (cos.glasses) tg.ellipse(x, y, r * 0.18, r * 0.2, { lw: fl * 0.7, seed: seed + 104 + sd, amp: 0.4 });
+    }
+    if (cos.glasses) tg.line([[dx - ex + r * 0.18, ey], [dx + ex - r * 0.18, ey]], { lw: fl * 0.7, seed: seed + 106 });
+    // 鼻：小さな点
+    // 口：ふだんは短い一本線（後ろの端 mx − 0.9mw 〜 前の端 mx + 0.8mw）
+    const mx = dx, my = hy + B.mouth.y * r, mw = r * B.mouth.w;
+    // 鼻は口の線の前の端から 20% の位置（左向きなら口の左端から）
+    const nx = mx + mw * 0.8 - 0.2 * mw * 1.7;
+    tg.ellipse(nx, hy + B.nose * r, r * 0.022, r * 0.02, { fill: ink, stroke: null, seed: seed + 107, amp: 0.1 });
+    if (crying) {
+      // 泣く：口を開けて、両目から涙が流れる
+      tg.shape([[mx - mw * 0.7, my + r * 0.07], [mx + mw * 0.7, my + r * 0.07], [mx + mw * 0.9, my - r * 0.01], [mx - mw * 0.9, my - r * 0.01]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
+      for (const sd of [-1, 1]) { const tx = dx + sd * ex, ph = (t * 1.6 + (sd > 0 ? 0.5 : 0)) % 1; tg.line([[tx, ey + r * 0.06], [tx + sd * r * 0.02, ey + r * 0.3]], { lw: fl * 1.2, seed: seed + 116 + sd, stroke: 'rgba(140,200,240,.85)' }); tg.ellipse(tx + sd * r * 0.02, ey + r * 0.3 + ph * r * 0.35, r * 0.04, r * 0.06, { fill: '#A8D8F0', lw: fl * 0.4, seed: seed + 118 + sd, alpha: 1 - ph }); }
+    } else if (expr === 'surprise') {
+      // 驚き：口を小さく丸く開け、頭の横に「！」
+      tg.ellipse(mx, my + r * 0.03, r * 0.06, r * 0.08, { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.25 });
+      const qx = r * 1.05, qy = hy - r * 0.95, jump = Math.abs(Math.sin(t * 5)) * r * 0.06;
+      tg.line([[qx, qy - r * 0.42 - jump], [qx - r * 0.04, qy - jump]], { lw: fl * 2.2, seed: seed + 120, stroke: '#D04040', amp: 0.2 });
+      tg.ellipse(qx - r * 0.05, qy + r * 0.15 - jump, r * 0.055, r * 0.055, { fill: '#D04040', stroke: null, seed: seed + 121 });
+    } else if (expr === 'joy' || mouth) tg.shape([[mx - mw, my - r * 0.02], [mx + mw, my - r * 0.02], [mx + mw * 0.5, my + r * 0.09], [mx - mw * 0.5, my + r * 0.09]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
+    else if (expr === 'sadness' || expr === 'anger') tg.line([[mx - mw * 0.8, my + r * 0.03], [mx, my - r * 0.015], [mx + mw * 0.8, my + r * 0.03]], { lw: fl * 0.8, seed: seed + 109, amp: 0.3, stroke: ink });
+    else if (expr === 'anxiety') tg.line([[mx - mw, my], [mx - mw * 0.4, my - r * 0.025], [mx + mw * 0.2, my + r * 0.015], [mx + mw, my - r * 0.01]], { lw: fl * 0.8, seed: seed + 110, amp: 0.3, stroke: ink });
+    else if (expr === 'sleep') tg.ellipse(mx, my + r * 0.01, r * 0.035, r * 0.03, { fill: '#B5484A', lw: fl * 0.6, seed: seed + 111, amp: 0.2 });
+    else tg.line([[mx - mw * 0.9, my - r * 0.005], [mx + mw * 0.8, my + r * 0.01]], { lw: fl * 0.8, seed: seed + 112, amp: 0.25, stroke: ink });
+    // 気持ちの記号
+    if (expr === 'sadness') { const ph = (t * 0.7 + seed) % 1, tx = dx - ex, ty = ey + E.ry * r + ph * r * 0.3; tg.shape([[tx, ty], [tx + r * 0.05, ty + r * 0.12], [tx, ty + r * 0.17], [tx - r * 0.05, ty + r * 0.12]], { fill: '#A8D8F0', lw: fl * 0.5, seed: seed + 113, amp: 0.2, alpha: 1 - ph }); }
+    if (expr === 'anxiety') tg.shape([[-r * 1.05, hy - r * 0.5], [-r * 0.95, hy - r * 0.25], [-r * 1.05, hy - r * 0.15], [-r * 1.15, hy - r * 0.25]], { fill: '#BFE3F2', lw: fl * 0.6, seed: seed + 114, amp: 0.3 });
+    if (expr === 'anger') { const px = r * 0.75, py = hy - r * 0.85, q = r * 0.12; for (const [a, b] of [[[px - q, py - q * 0.3], [px - q * 0.3, py - q * 0.3]], [[px + q * 0.3, py - q * 0.3], [px + q, py - q * 0.3]], [[px - q * 0.3, py + q * 0.3], [px - q, py + q * 0.3]], [[px + q, py + q * 0.3], [px + q * 0.3, py + q * 0.3]]]) tg.line([a, b], { lw: fl, seed: seed + 115, stroke: '#D04040', amp: 0.3 }); }
+    if (expr === 'sleep') for (let k = 0; k < 3; k++) { const a = (t * 0.5 + k / 3) % 1; tg.text('z', r * 1.2 + a * r * 1.2, hy - r * 0.8 - a * r * 2, { size: r * (0.4 + k * 0.12), color: '#FFFDF6', strokeW: r * 0.08, boilAmp: 0.4 }); }
+  }
+
+  /* ---- 後ろ頭（後ろ姿）：輪郭は正面と同じ形で左右対称。顔の部品は描かない ---- */
+  function headBack(tg, B, d, skin, cos, S, lw, seed, type, hlw = lw) {
+    const { r, hy } = d, col = S(cos.hairColor), hair = cos.hair;
+    const looseHair = hair === 'long' || hair === 'bob';
+    const P = B.outline.map(([x, y]) => [x * r, hy + y * r]), pts = spline(P, Math.max(6, r * 0.12));
+    ears(tg, B, d, pts, skin, hlw, seed, 'back');
+    if (!looseHair) tg.shape(pts, { fill: skin, lw: hlw * 1.1, seed: seed + 31, amp: 1.2 });
+    if (hair === 'tuft') { tg.line([[r * 0.05, hy - r * 0.98], [r * 0.12, hy - r * 1.22], [-r * 0.12, hy - r * 1.25], [-r * 0.06, hy - r * 1.08]], { lw: lw * 1.3, seed: seed + 74, stroke: col }); return; }
+    if (hair === 'bald') { for (const sd of [-1, 1]) tg.ellipse(sideX(pts, hy - r * 0.05, sd) - sd * r * 0.05, hy + r * 0.05, r * 0.16, r * 0.32, { fill: col, lw, seed: seed + 70 + sd }); return; }
+    if (hair === 'shaved') { tg.shape(pts.filter((p) => p[1] < hy + r * 0.55), { fill: 'rgba(150,155,165,.35)', stroke: null, seed: seed + 74, amp: 0.4 }); return; }
+    // 襟足（y=0.55）より上を髪で覆う（1.05 倍）。襟足は右から左へ 9 点の少しギザギザの線で、両端ほど少し上げる
+    const cy = hy, nape = hy + 0.55 * r, k = 1.05;
+    const arc = pts.filter((p) => p[1] < nape).map(([x, y]) => [x * k, cy + (y - cy) * k]);
+    const ang = ([x, y]) => { const a = Math.atan2(y - cy, x); return a > Math.PI / 2 ? a - Math.PI * 2 : a; };
+    arc.sort((a, b) => ang(a) - ang(b));
+    const xr = sideX(pts, nape, 1) * k, xl = sideX(pts, nape, -1) * k, edge = [];
+    for (let i = 0; i < 9; i++) { const u = i / 8, x = lerp(xr, xl, u), lift = Math.pow(Math.abs(u - 0.5) * 2, 2) * r * 0.18; edge.push([x, nape + (i % 2 ? r * 0.06 : 0) - lift]); }
+    tg.shape([...arc, ...edge], { fill: col, ...(looseHair ? { stroke: null } : {}), lw, seed: seed + 75, hatch: { gap: 6, angle: 1.3 } });
+    // 後ろ髪との接合側には輪郭を引かず、外周だけを描く。
+    if (looseHair) tg.line(arc, { lw, seed: seed + 240, amp: 0.4, step: 4 });
+    // つむじ：頭頂の少し下に小さな渦（黒髪なら明るい線、明るい髪なら暗い線）
+    const dark = rgb(col).reduce((a, b) => a + b, 0) < 330, sw = [];
+    for (let i = 0; i <= 10; i++) { const a = i * 0.62, rr = r * 0.03 + i * r * 0.012; sw.push([r * 0.05 + Math.cos(a) * rr, hy - r * 0.52 + Math.sin(a) * rr * 0.7]); }
+    tg.line(sw, { lw: lw * 0.7, seed: seed + 76, stroke: dark ? 'rgba(255,255,255,.45)' : 'rgba(40,30,20,.45)', amp: 0.3 });
+    if (hair === 'bun') tg.line([[-r * 0.6, hy - r * 1.15], [r * 0.3, hy - r * 0.85]], { lw: lw * 1.2, seed: seed + 80, stroke: S('#C9A24B') });
+  }
+
+  /* ---- 横顔：頭頂から前側を下り、あご・首の付け根を通って後頭部を上る輪郭（+x が顔の前） ---- */
+  // 参考画を +x 向きへ反転した共通輪郭。男女で形・配置を変えない。
+  const SIDE = [[0, -1], [0.45, -0.94], [0.68, -0.77], [0.78, -0.48],
+    [0.77, -0.12], [0.78, 0.18], [0.84, 0.34], [0.95, 0.42],
+    [0.90, 0.58], [0.82, 0.76], [0.68, 0.90], [0.42, 0.98], [0.24, 0.97],
+    [0.12, 0.91], [-0.28, 0.85], [-0.53, 0.70], [-0.76, 0.43],
+    [-0.91, 0.12], [-0.92, -0.28], [-0.82, -0.61], [-0.58, -0.86], [-0.27, -0.98]];
+  // 子ども・幼児：広い額、低い目鼻口、短く丸い顎（添付の横顔参照）。
+  // 頭と体の寸法は dims のまま。少年・少女・幼児でこのバランスを共有する。
+  const SIDE_CHILD = [[0, -1], [0.48, -0.94], [0.76, -0.78], [0.88, -0.48],
+    [0.88, -0.12], [0.88, 0.22], [0.94, 0.40], [1.04, 0.50],
+    [0.98, 0.66], [0.86, 0.83], [0.65, 0.96], [0.40, 0.99], [0.23, 0.97],
+    [0.12, 0.91], [-0.28, 0.85], [-0.55, 0.71], [-0.79, 0.46],
+    [-0.93, 0.13], [-0.94, -0.28], [-0.83, -0.62], [-0.58, -0.87], [-0.27, -0.98]];
+  function headSide(tg, B, d, skin, cos, S, lw, seed, type, expr, mouth, t, pose, hlw = lw) {
+    const { r, hy } = d, col = S(cos.hairColor), hair = cos.hair;
+    const ink = '#2A2320', fl = Math.max(1.6, r * 0.06);
+    const child = d.child;
+    const O = (child ? SIDE_CHILD : SIDE).map(([x, y]) => [x * r, hy + y * r]);
+    const pts = spline(O, Math.max(4, r * 0.10));
+    tg.shape(pts, { fill: skin, lw: hlw, seed: seed + 31, amp: 0.5, second: false });
+    const ex = (child ? 0.68 : 0.59) * r, ey = hy + (child ? 0.36 : 0.17) * r,
+      mx = (child ? (mouth || ["cry", "joy", "surprise"].includes(expr) ? 0.78 : ["sadness", "anger", "anxiety"].includes(expr) ? 0.82 : 0.86) : 0.83) * r, my = hy + (child ? 0.78 : 0.66) * r, mw = r * 0.08;
+    // 頬の赤み：目の中心から耳側へ 0.10r、下へ 0.20r。
+    // 大人・子ども・幼児とも、各々の目の位置に追従する。
+    tg.ellipse(ex - 0.10 * r, ey + 0.20 * r, 0.11 * r, 0.06 * r,
+      { fill: '#F0A0A0', stroke: null, seed: seed + 90, amp: 0.3, alpha: 0.4 });
+    // 髪：前側は y=0.04 より上、後ろ側は襟足（y=0.5）より上を 1.05 倍に。生え際は おでこ → 耳の前 → 襟足
+    if (hair === 'tuft') tg.line([[r * 0.05, hy - r * 0.98], [r * 0.12, hy - r * 1.22], [-r * 0.12, hy - r * 1.25]], { lw: lw * 1.3, seed: seed + 74, stroke: col });
+    else if (hair === 'bald') tg.ellipse(-r * 0.4, hy - r * 0.05, r * 0.3, r * 0.22, { fill: col, lw, seed: seed + 70 });
+    else if (hair === 'shaved') tg.shape(pts.filter((p) => p[1] < hy - r * 0.1), { fill: 'rgba(120,130,150,.22)', stroke: null, seed: seed + 74, amp: 0.4 });
+    else {
+      const k = 1.05, cy = hy;
+      const top = pts.filter(([x, y]) => (x >= 0 ? y < hy + 0.04 * r : y < hy + 0.5 * r)).map(([x, y]) => [x * k, cy + (y - cy) * k]);
+      const ang = ([x, y]) => { const a = Math.atan2(y - cy, x); return a > Math.PI / 2 ? a - Math.PI * 2 : a; };
+      top.sort((a, b) => ang(a) - ang(b));
+      const brow = hair === 'bun' || hair === 'parted' ? [[0.72 * r, hy - 0.5 * r], [0.4 * r, hy - 0.42 * r]] : hair === 'short' || hair === 'spiky' ? [[0.8 * r, hy - 0.3 * r], [0.45 * r, hy - 0.3 * r]] : [[0.86 * r, hy - 0.08 * r], [0.5 * r, hy - 0.16 * r]];
+      tg.shape([...top, ...brow, [0.14 * r, hy + 0.08 * r], [-0.46 * r, hy + 0.44 * r]], { fill: col, lw, seed: seed + 75, hatch: { gap: 6, angle: 1.3 } });
+    }
+    // 横髪は耳の後ろへ曲げ、後ろ髪につなぐ。四角い別パーツに見せない。
+    if (hair === 'long' || hair === 'bob') {
+      const end = hair === 'long' ? 1.15 : 0.70;
+      const lock = [[-0.18, -0.22], [-0.32, -0.03], [-0.40, 0.20], [-0.49, 0.48],
+        [-0.49, end * 0.82], [-0.54, end], [-0.80, end + 0.02],
+        [-0.87, end * 0.72], [-0.89, 0.17], [-0.77, -0.13], [-0.48, -0.28]];
+      tg.shape(spline(lock.map(([x, y]) => [x * r, hy + y * r]), Math.max(3, r * 0.08)),
+        { fill: col, stroke: null, lw, seed: seed + 77, amp: 0.5, hatch: { gap: 6, angle: 1.45 } });
+      // 耳・顔の外へ出ない範囲で、横髪上端と後ろ髪の境目を同色で消す。
+      tg.poly([[-0.28 * r, hy - 0.20 * r], [-0.72 * r, hy - 0.22 * r],
+        [-0.90 * r, hy + 0.10 * r], [-0.84 * r, hy + 0.65 * r],
+        [-0.57 * r, hy + 0.65 * r], [-0.44 * r, hy + 0.25 * r]],
+        { fill: col, stroke: null, seed: seed + 241, amp: 0.2, step: 4 });
+    }
+    // 耳と首の線消しを、頬の内側でつながる一枚の肌色の面にまとめる。
+    // 首の左右線と顎の外周は残し、耳の周囲の髪境界と首上端の閉じ線を消す。
+    tg.poly([[-0.29 * r + hlw, d.shY - hlw], [-0.29 * r + hlw, hy + 0.77 * r],
+      [-0.18 * r, hy + 0.53 * r], [-0.33 * r, hy + 0.48 * r],
+      [-0.43 * r, hy + 0.36 * r], [-0.44 * r, hy + 0.19 * r],
+      [-0.36 * r, hy + 0.015 * r], [-0.21 * r, hy - 0.02 * r],
+      [-0.08 * r, hy + 0.08 * r], [-0.04 * r, hy + 0.27 * r],
+      [-0.09 * r, hy + 0.49 * r], [0.035 * r, hy + 0.68 * r],
+      [0.12 * r - hlw, hy + 0.82 * r], [0.12 * r - hlw, d.shY - hlw]],
+      { fill: skin, stroke: null, seed: seed + 230, amp: 0, step: 2 });
+    const earArc = [];
+    for (let i = 0; i <= 16; i++) {
+      const a = lerp(-Math.PI / 3, -Math.PI * 1.5, i / 16);
+      earArc.push([(-0.20 + Math.cos(a) * 0.15) * r, hy + (0.25 + Math.sin(a) * 0.22) * r]);
+    }
+    tg.line(earArc, { lw: hlw, seed: seed + 232, amp: 0.2, step: 4 });
+    if (cos.ribbon && hair !== 'short') tg.poly([[-0.3 * r, hy - 0.75 * r], [-0.7 * r, hy - 0.95 * r], [-0.6 * r, hy - 0.45 * r]], { fill: S(cos.ribbon), lw, seed: seed + 82, step: 10 });
+    if (cos.beard === 'mustache') tg.shape([[0.62 * r, hy + 0.6 * r], [0.9 * r, hy + 0.56 * r], [0.84 * r, hy + 0.64 * r]], { fill: col, lw: lw * 0.8, seed: seed + 79, amp: 0.3 });
+    if (cos.beard === 'long') tg.poly([[0.2 * r, hy + 0.8 * r], [0.8 * r, hy + 0.8 * r], [0.3 * r, hy + 1.9 * r]], { fill: col, lw, seed: seed + 73, hatch: { gap: 6, angle: 1.5 } });
+    // 目（1つ。横幅を細める）・眉（外側を後ろへ）
+    const blink = ((t + seed * 0.37) % 4.3) < 0.12, crying = expr === 'cry', closed = expr === 'sleep' || pose === 'lie' || blink || crying;
+    if (expr === 'joy' || expr === 'calm') tg.line([[ex - r * 0.09, ey + (expr === 'joy' ? r * 0.04 : -r * 0.01)], [ex, ey + (expr === 'joy' ? -1 : 1) * r * 0.07], [ex + r * 0.07, ey + (expr === 'joy' ? r * 0.04 : -r * 0.01)]], { lw: fl, seed: seed + 92, amp: 0.4, stroke: ink });
+    else if (closed) tg.line([[ex - r * 0.08, ey + r * 0.02], [ex, ey + r * 0.06], [ex + r * 0.06, ey + r * 0.02]], { lw: fl, seed: seed + 94, amp: 0.4, stroke: ink });
+    else {
+      const k = expr === 'anger' ? 0.72 : expr === 'anxiety' ? 0.85 : expr === 'surprise' ? 1.2 : 1;
+      if (B.roundEyes) { tg.ellipse(ex, ey, r * 0.075 * (expr === 'surprise' ? 1.2 : 1), r * 0.13 * k, { fill: ink, lw: fl * 0.6, seed: seed + 96, amp: 0.3 }); tg.ellipse(ex + r * 0.03, ey - r * 0.06, r * 0.035, r * 0.035, { fill: '#FFFFFF', stroke: null, seed: seed + 98, amp: 0.2 }); }
+      else tg.ellipse(ex, ey + 0.16 * r * (1 - k) * 0.5, 0.047 * r * (expr === 'surprise' ? 1.3 : 1), 0.16 * r * k, { fill: ink, lw: fl * 0.5, seed: seed + 96, amp: 0.25 });
+    }
+    const by = hy + (child ? -0.04 : -0.20) * r - (expr === 'surprise' ? r * 0.09 : 0), tilt = expr === 'anger' ? 0.08 : expr === 'sadness' || expr === 'anxiety' || crying ? -0.07 : 0;
+    tg.line([[ex - r * 0.075, by + r * 0.025 - tilt * r * 0.3], [ex, by - r * 0.01], [ex + r * 0.075, by + r * 0.01 + tilt * r]], { lw: fl * 0.8, seed: seed + 102, amp: 0.35, stroke: S(cos.hairColor === '#D9D6CF' ? '#9A968E' : cos.hairColor) });
+    if (cos.glasses) { tg.ellipse(ex, ey, r * 0.15, r * 0.19, { lw: fl * 0.7, seed: seed + 104, amp: 0.4 }); tg.line([[ex - r * 0.15, ey], [-0.05 * r, ey + r * 0.05]], { lw: fl * 0.7, seed: seed + 105 }); }
+    // 口
+    if (crying || expr === 'joy' || mouth) tg.shape([[mx - mw, my - r * 0.02], [mx + mw * 0.6, my - r * 0.02], [mx + mw * 0.3, my + r * 0.09], [mx - mw * 0.6, my + r * 0.08]], { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.3 });
+    else if (expr === 'surprise') tg.ellipse(mx - mw * 0.2, my + r * 0.03, r * 0.05, r * 0.08, { fill: '#B5484A', lw: fl * 0.7, seed: seed + 108, amp: 0.25 });
+    else if (expr === 'sadness' || expr === 'anger') tg.line([[mx - mw, my + r * 0.03], [mx - mw * 0.2, my - r * 0.01], [mx + mw * 0.5, my + r * 0.02]], { lw: fl * 0.8, seed: seed + 109, amp: 0.3, stroke: ink });
+    else if (expr === 'anxiety') tg.line([[mx - mw, my], [mx - mw * 0.3, my - r * 0.025], [mx + mw * 0.5, my + r * 0.01]], { lw: fl * 0.8, seed: seed + 110, amp: 0.3, stroke: ink });
+    else tg.line([[mx - mw * 1.2, my], [mx + mw * 0.45, my]], { lw: fl * 0.8, seed: seed + 112, amp: 0.2, stroke: ink });
+    // 記号
+    if (crying || expr === 'sadness') { const ph = (t * (crying ? 1.6 : 0.7) + seed) % 1; tg.ellipse(ex - r * 0.04, ey + r * 0.2 + ph * r * 0.35, r * 0.04, r * 0.06, { fill: '#A8D8F0', lw: fl * 0.4, seed: seed + 118, alpha: 1 - ph }); }
+    if (expr === 'surprise') { const qx = r * 1.15, qy = hy - r * 0.95, jump = Math.abs(Math.sin(t * 5)) * r * 0.06; tg.line([[qx, qy - r * 0.42 - jump], [qx - r * 0.04, qy - jump]], { lw: fl * 2.2, seed: seed + 120, stroke: '#D04040', amp: 0.2 }); tg.ellipse(qx - r * 0.05, qy + r * 0.15 - jump, r * 0.055, r * 0.055, { fill: '#D04040', stroke: null, seed: seed + 121 }); }
+    if (expr === 'anxiety') tg.shape([[-r * 0.95, hy - r * 0.5], [-r * 0.85, hy - r * 0.25], [-r * 0.95, hy - r * 0.15], [-r * 1.05, hy - r * 0.25]], { fill: '#BFE3F2', lw: fl * 0.6, seed: seed + 114, amp: 0.3 });
+    if (expr === 'anger') { const px = -r * 0.2, py = hy - r * 0.9, q = r * 0.12; for (const [a, b] of [[[px - q, py - q * 0.3], [px - q * 0.3, py - q * 0.3]], [[px + q * 0.3, py - q * 0.3], [px + q, py - q * 0.3]], [[px - q * 0.3, py + q * 0.3], [px - q, py + q * 0.3]], [[px + q, py + q * 0.3], [px + q * 0.3, py + q * 0.3]]]) tg.line([a, b], { lw: fl, seed: seed + 115, stroke: '#D04040', amp: 0.3 }); }
+    if (expr === 'sleep') for (let k = 0; k < 3; k++) { const a = (t * 0.5 + k / 3) % 1; tg.text('z', r * 1.0 + a * r * 1.2, hy - r * 0.8 - a * r * 2, { size: r * (0.4 + k * 0.12), color: '#FFFDF6', strokeW: r * 0.08, boilAmp: 0.4 }); }
+  }
+
+  /* 人数・配置：誰をどこに、どちら向きに立たせるか（吹き出しのしっぽもこれを使う） */
+  function heightOf(L, type) {
+    const unit = Math.min(L.H, L.W * 1.25);
+    return unit * (type === 'baby' ? 0.28 : type === 'boy' || type === 'girl' ? 0.44 : type === 'oldman' || type === 'oldwoman' ? 0.55 : type === 'ghost' ? 0.5 : 0.58);
+  }
+  // 歩く・走るは実際に左へ進む。左端から出たら右端から出直す（2人なら並んで一緒に）
+  const MOVE = { walk: 0.07, run: 0.2 }; // 1秒に進む距離（画面幅に対して）
+  // 2人目の姿勢：一緒にするもの（歩く・走る・話す・抱き合う）以外は立って見ている
+  const SUB_POSE = { walk: 'walk', run: 'run', talk: 'talk', hug: 'hug', sit: 'sit' };
+  function moveX(L, pose, x, t) {
+    const v = MOVE[pose]; if (!v || L.still) return x; // 漫画のコマの中では、その場で足を動かす（L.still）
+    const m = L.W * 0.18, span = L.W + m * 2;
+    return ((((x + m - v * L.W * t) % span) + span) % span) - m;
+  }
+  function placement(L, f, t = 0) {
+    if (!f || f.layout === 'none') return [];
+    const one = (role, type, x, facing, pose) => (type ? [{ role, type, x: moveX(L, pose, x, t), facing, pose, h: heightOf(L, type) }] : []);
+    const solo = (p) => (p === 'talk' || p === 'hug' ? 'stand' : p);
+    if (f.layout === 'many') return one('main', f.main, L.W * 0.62, -1, solo(f.pose));
+    if (f.layout === 'two') {
+      const sp = SUB_POSE[f.pose] || 'stand';
+      if (MOVE[f.pose]) return [...one('sub', f.sub, L.W * 0.72, -1, sp), ...one('main', f.main, L.W * 0.52, -1, f.pose)];
+      if (f.pose === 'hug') return [...one('sub', f.sub, L.W * 0.44, 1, sp), ...one('main', f.main, L.W * 0.56, -1, f.pose)];
+      return [...one('sub', f.sub, L.W * 0.32, 1, sp), ...one('main', f.main, L.W * 0.68, -1, f.pose)];
+    }
+    return one('main', f.main, f.pose === 'lie' ? L.W * 0.62 : L.W * 0.6, -1, solo(f.pose));
+  }
+  /** 頭の位置（中心 x, y と半径）。姿勢で変わる */
+  function headOf(L, p, seat) {
+    const d = dims(p.type, p.h), h = p.h;
+    if (p.pose === 'lie') return { x: p.x + p.facing * (0.5 * h + d.hy), y: L.floor - 0.085 * h, r: d.r };
+    let drop = 0;
+    if (p.pose === 'sit') drop = seat === 'seiza' ? -0.12 * h - d.hipY : -0.27 * h - d.hipY;
+    if (p.pose === 'crouch') drop = -0.16 * h - d.hipY;
+    return { x: p.x, y: L.floor + d.hy + drop, r: d.r };
+  }
+
+  /* 人数・配置ごとに描く */
+  function figures(tg, L, st, t) {
+    const f = st.figures; if (!f) return;
+    const S = shader(st.time || 'day', st.innerK != null ? 0.6 * (1 - st.innerK) : 0.6);
+    const seat = st.location === 'washitsu' ? 'seiza' : 'chair';
+    const y = L.floor;
+    // 動物：大きいもの（馬・ドラゴン・モンスター）は人物より奥、小さいものは手前
+    const an = f.animal ? animalSpot(L, f) : null;
+    if (an && an.back) animal(tg, L, f.animal, an, t, S);
+    if (f.layout !== 'none') figuresPeople(tg, L, st, t, f, S, seat, y);
+    if (an && !an.back) animal(tg, L, f.animal, an, t, S);
+  }
+  function figuresPeople(tg, L, st, t, f, S, seat, y) {
+    if (f.layout === 'many') {
+      for (let k = 0; k < 4; k++) {
+        const types = ['man', 'woman', 'oldman', 'girl', 'woman', 'boy', 'oldwoman', 'man'];
+        const ty = types[(k * 3 + (st.crowdVariant || 0)) % types.length];
+        const x = L.W * (0.12 + k * 0.25), c = tg.ctx; c.save(); c.translate(x, y - L.H * 0.1); c.scale(0.62, 0.62); c.translate(-x, -(y - L.H * 0.1));
+        person(tg, L, { type: ty, era: st.era, pose: k % 2 ? 'walk' : 'stand', expr: 'normal', x, y: y - L.H * 0.1, h: heightOf(L, ty), facing: k % 2 ? 1 : -1, slot: 2 + k, shade: (h) => mix(S(h), '#B8BCC8', 0.35), alpha: 0.85 }, t);
+        c.restore();
+      }
+    }
+    for (const p of placement(L, f, t)) {
+      const main = p.role === 'main';
+      // 同じ種類の人が2人並ぶときは、2人目をパターンB（髪型・服の色違い）にする
+      const variant = !main && f.sub === f.main ? 'B' : 'A';
+      const of = (k) => (st[k] ? st[k][p.role] : undefined);
+      person(tg, L, { type: p.type, era: st.era, pose: of('poses') || p.pose, expr: main ? st.expr : st.subExpr || 'normal', x: p.x, y, h: p.h, facing: p.facing, slot: main ? 0 : 1, variant, shade: S, seat, gesture: of('gestures'), view: of('views'), talking: of('talking') }, t);
+    }
+  }
+
+  /* ================= 動物（登場人物とは別。動きは息づかい程度） ================= */
+  const ANIMALS = ['dog', 'cat', 'bird', 'horse', 'rabbit', 'dragon', 'monster'];
+  /** 動物を置く場所：人物の顔ぶれから、空いているところへ */
+  function animalSpot(L, f) {
+    const h0 = heightOf(L, 'man'), kind = f.animal, n = f.layout === 'none' ? 0 : f.layout === 'two' ? 2 : 1;
+    const back = kind === 'horse' || kind === 'dragon' || kind === 'monster';
+    let x = n === 0 ? L.W * 0.5 : n === 2 ? L.W * 0.5 : L.W * 0.36, facing = n === 1 ? 1 : -1;
+    if (back && n === 1) x = L.W * 0.3;
+    if (kind === 'dragon') x = n === 1 ? L.W * 0.3 : L.W * 0.5;
+    return { x, y: L.floor, h0, facing, back };
+  }
+  function animal(tg, L, kind, o, t, S) {
+    const c = tg.ctx, h0 = o.h0, lw = Math.max(2, h0 * 0.007), seed = 3000 + ANIMALS.indexOf(kind) * 50, br = Math.sin(t * 2.2) * 0.01;
+    const ink = '#2A2320';
+    c.save(); c.translate(o.x, o.y);
+    const shadow = (w) => { c.save(); c.fillStyle = 'rgba(20,10,20,.16)'; c.beginPath(); c.ellipse(0, 0, w, w * 0.14, 0, 0, Math.PI * 2); c.fill(); c.restore(); };
+    c.scale(o.facing, 1);
+    const eye = (x, y, r) => tg.ellipse(x, y, r * 0.7, r, { fill: ink, stroke: null, seed: seed + 49, amp: 0.2 });
+    if (kind === 'dog') {
+      const u = h0 * 0.28; shadow(u * 0.7);
+      for (const [x, k] of [[-0.35, 0], [-0.2, 1], [0.25, 2], [0.4, 3]]) tg.rrect(x * u - u * 0.05, -u * 0.32, u * 0.1, u * 0.32, 4, { fill: S('#B8865A'), lw, seed: seed + k });
+      const wag = Math.sin(t * 8) * 0.25;
+      tg.line([[-u * 0.45, -u * 0.5], [-u * 0.6 + Math.sin(wag) * u * 0.1, -u * 0.72], [-u * 0.62 + Math.sin(wag) * u * 0.25, -u * 0.85]], { lw: lw * 3, seed: seed + 5, stroke: S('#B8865A') });
+      tg.ellipse(0, -u * 0.48 * (1 + br), u * 0.52, u * 0.2, { fill: S('#C89A6A'), lw, seed: seed + 6 });
+      tg.ellipse(u * 0.48, -u * 0.72, u * 0.2, u * 0.18, { fill: S('#C89A6A'), lw, seed: seed + 7 });
+      tg.ellipse(u * 0.66, -u * 0.66, u * 0.11, u * 0.08, { fill: S('#E8D0B0'), lw, seed: seed + 8 });
+      tg.ellipse(u * 0.76, -u * 0.68, u * 0.035, u * 0.03, { fill: ink, stroke: null, seed: seed + 9 });
+      tg.ellipse(u * 0.4, -u * 0.72, u * 0.07, u * 0.16, { fill: S('#8A5A3A'), lw, seed: seed + 10 });
+      eye(u * 0.55, -u * 0.77, u * 0.03);
+    } else if (kind === 'cat') {
+      const u = h0 * 0.22; shadow(u * 0.5);
+      tg.line([[-u * 0.25, -u * 0.05], [-u * 0.55, -u * 0.05], [-u * 0.65 + Math.sin(t * 1.5) * u * 0.05, -u * 0.3]], { lw: lw * 2.6, seed: seed + 1, stroke: S('#D8944A') });
+      tg.shape([[-u * 0.3, 0], [-u * 0.32, -u * 0.35], [-u * 0.1, -u * 0.62 * (1 + br)], [u * 0.12, -u * 0.6], [u * 0.25, -u * 0.3], [u * 0.25, 0]], { fill: S('#E2A35A'), lw, seed: seed + 2 });
+      for (let k = 0; k < 3; k++) tg.line([[-u * 0.25, -u * (0.18 + k * 0.12)], [-u * 0.08, -u * (0.2 + k * 0.12)]], { lw: lw * 0.9, seed: seed + 3 + k, stroke: S('#A8642A') });
+      const hx = u * 0.05, hy = -u * 0.75;
+      for (const sd of [-1, 1]) tg.poly([[hx + sd * u * 0.06, hy - u * 0.1], [hx + sd * u * 0.18, hy - u * 0.28], [hx + sd * u * 0.2, hy - u * 0.04]], { fill: S('#E2A35A'), lw, seed: seed + 8 + sd, step: 8 });
+      tg.ellipse(hx, hy, u * 0.21, u * 0.18, { fill: S('#E2A35A'), lw, seed: seed + 11 });
+      for (const sd of [-1, 1]) eye(hx + u * 0.04 + sd * u * 0.08, hy - u * 0.01, u * 0.035);
+      tg.ellipse(hx + u * 0.04, hy + u * 0.06, u * 0.02, u * 0.015, { fill: '#D07070', stroke: null, seed: seed + 12 });
+    } else if (kind === 'rabbit') {
+      const u = h0 * 0.18; shadow(u * 0.45);
+      tg.ellipse(-u * 0.32, -u * 0.25, u * 0.1, u * 0.1, { fill: S('#FFFFFF'), lw, seed: seed + 1 });
+      tg.ellipse(0, -u * 0.28 * (1 + br), u * 0.32, u * 0.28, { fill: S('#F4F2EE'), lw, seed: seed + 2 });
+      for (const [dx, k] of [[0.12, 0], [0.24, 1]]) tg.ellipse(u * dx, -u * 0.95, u * 0.06, u * 0.26, { fill: S('#F4F2EE'), lw, seed: seed + 3 + k });
+      tg.ellipse(u * 0.2, -u * 0.6, u * 0.18, u * 0.16, { fill: S('#F4F2EE'), lw, seed: seed + 5 });
+      eye(u * 0.28, -u * 0.63, u * 0.03);
+      tg.ellipse(u * 0.37, -u * 0.56, u * 0.02, u * 0.018, { fill: '#D07070', stroke: null, seed: seed + 6 });
+    } else if (kind === 'bird') {
+      // 茶色の鳥：空を飛ぶ（羽ばたき）
+      const u = h0 * 0.18, fy = -h0 * 0.95 + Math.sin(t * 1.4) * h0 * 0.03, fx = Math.sin(t * 0.6) * h0 * 0.08, flap = Math.sin(t * 9);
+      c.translate(fx, fy);
+      tg.poly([[-u * 0.4, 0], [-u * 0.75, -u * 0.12], [-u * 0.72, u * 0.12]], { fill: S('#6A4A2E'), lw, seed: seed + 1, step: 8 });
+      tg.ellipse(0, 0, u * 0.48, u * 0.22, { fill: S('#8A6440'), lw, seed: seed + 2 });
+      tg.ellipse(u * 0.05, u * 0.07, u * 0.3, u * 0.1, { fill: S('#D8B890'), stroke: null, seed: seed + 3 });
+      tg.ellipse(u * 0.42, -u * 0.12, u * 0.17, u * 0.15, { fill: S('#8A6440'), lw, seed: seed + 4 });
+      tg.poly([[u * 0.56, -u * 0.14], [u * 0.72, -u * 0.08], [u * 0.56, -u * 0.04]], { fill: '#E8A040', lw: lw * 0.8, seed: seed + 5, step: 6 });
+      eye(u * 0.46, -u * 0.15, u * 0.03);
+      tg.poly([[-u * 0.12, -u * 0.08], [u * 0.2, -u * 0.08], [-u * 0.05, -u * 0.08 - flap * u * 0.55]], { fill: S('#6A4A2E'), lw, seed: seed + 6, step: 8 });
+    } else if (kind === 'horse') {
+      const u = h0 * 0.62; shadow(u * 0.55);
+      for (const [x, k] of [[-0.4, 0], [-0.28, 1], [0.24, 2], [0.36, 3]]) { tg.rrect(x * u - u * 0.04, -u * 0.5, u * 0.08, u * 0.5, 4, { fill: S(k % 2 ? '#7A4A2E' : '#8A5A3A'), lw, seed: seed + k }); tg.rrect(x * u - u * 0.05, -u * 0.05, u * 0.1, u * 0.05, 2, { fill: S('#3A2A22'), lw: lw * 0.8, seed: seed + 4 + k }); }
+      tg.line([[-u * 0.5, -u * 0.78], [-u * 0.62, -u * 0.6], [-u * 0.6 + Math.sin(t * 1.3) * u * 0.03, -u * 0.38]], { lw: lw * 5, seed: seed + 8, stroke: S('#3A2A22') });
+      tg.ellipse(0, -u * 0.68 * (1 + br * 0.5), u * 0.55, u * 0.22, { fill: S('#8A5A3A'), lw, seed: seed + 9 });
+      tg.poly([[u * 0.3, -u * 0.8], [u * 0.52, -u * 1.15], [u * 0.66, -u * 1.08], [u * 0.5, -u * 0.62]], { fill: S('#8A5A3A'), lw, seed: seed + 10 });
+      tg.line([[u * 0.36, -u * 0.86], [u * 0.52, -u * 1.16]], { lw: lw * 4, seed: seed + 11, stroke: S('#3A2A22') });
+      tg.ellipse(u * 0.68, -u * 1.08, u * 0.18, u * 0.08, { fill: S('#8A5A3A'), lw, seed: seed + 12 });
+      tg.poly([[u * 0.56, -u * 1.15], [u * 0.58, -u * 1.26], [u * 0.63, -u * 1.15]], { fill: S('#8A5A3A'), lw, seed: seed + 13, step: 6 });
+      eye(u * 0.64, -u * 1.11, u * 0.018);
+    } else if (kind === 'dragon') {
+      // ドラゴン：空中で羽ばたく（人物より奥・大きい）
+      const u = h0 * 0.9, fy = -h0 * 1.05 + Math.sin(t * 1.1) * h0 * 0.04, flap = Math.sin(t * 2.2);
+      c.translate(0, fy);
+      const body = S('#4E8A5A'), dark = S('#3A6A44');
+      tg.poly([[-u * 0.1, -u * 0.05], [-u * 0.55, -u * 0.35 - flap * u * 0.25], [-u * 0.42, -u * 0.05 - flap * u * 0.1], [-u * 0.3, 0]], { fill: dark, lw, seed: seed + 1, step: 14 });
+      tg.line([[-u * 0.35, u * 0.05], [-u * 0.6, u * 0.12], [-u * 0.8, u * 0.02 + Math.sin(t * 1.6) * u * 0.05]], { lw: lw * 6, seed: seed + 2, stroke: body });
+      tg.poly([[-u * 0.8, u * 0.02], [-u * 0.92, -u * 0.04], [-u * 0.88, u * 0.08]], { fill: body, lw, seed: seed + 3, step: 8 });
+      tg.ellipse(0, 0, u * 0.38, u * 0.15, { fill: body, lw, seed: seed + 4, hatch: { gap: 8, angle: 1.2 } });
+      tg.ellipse(u * 0.02, u * 0.06, u * 0.28, u * 0.07, { fill: S('#D8C88A'), stroke: null, seed: seed + 5 });
+      for (const [x, k] of [[-0.15, 0], [0.18, 1]]) tg.line([[x * u, u * 0.1], [x * u + u * 0.04, u * 0.22], [x * u + u * 0.08, u * 0.24]], { lw: lw * 3, seed: seed + 6 + k, stroke: body });
+      tg.line([[u * 0.3, -u * 0.05], [u * 0.42, -u * 0.22], [u * 0.5, -u * 0.3]], { lw: lw * 7, seed: seed + 8, stroke: body });
+      tg.ellipse(u * 0.56, -u * 0.32, u * 0.12, u * 0.08, { fill: body, lw, seed: seed + 9 });
+      tg.ellipse(u * 0.66, -u * 0.3, u * 0.07, u * 0.05, { fill: body, lw, seed: seed + 10 });
+      for (const k of [0, 1]) tg.poly([[u * (0.5 + k * 0.04), -u * 0.38], [u * (0.44 + k * 0.04), -u * 0.5], [u * (0.55 + k * 0.04), -u * 0.39]], { fill: S('#E8E0C4'), lw: lw * 0.8, seed: seed + 11 + k, step: 6 });
+      tg.ellipse(u * 0.58, -u * 0.34, u * 0.02, u * 0.025, { fill: '#F2D06A', lw: lw * 0.5, seed: seed + 13 });
+      tg.poly([[u * 0.1, -u * 0.08], [u * 0.45, -u * 0.55 - flap * u * 0.3], [u * 0.3, -u * 0.12 - flap * u * 0.08], [u * 0.2, -u * 0.02]], { fill: body, lw, seed: seed + 14, step: 14 });
+      for (let k = 0; k < 4; k++) tg.poly([[-u * 0.25 + k * u * 0.12, -u * 0.13], [-u * 0.2 + k * u * 0.12, -u * 0.22], [-u * 0.15 + k * u * 0.12, -u * 0.13]], { fill: dark, lw: lw * 0.7, seed: seed + 20 + k, step: 6 });
+    } else if (kind === 'monster') {
+      // モンスター：形の定まらない黒い影。輪郭がゆらぎ、目だけが光る
+      const u = h0 * 0.8; shadow(u * 0.5);
+      const pts = [], n = 28;
+      for (let k = 0; k < n; k++) { const a = Math.PI * 2 * k / n, wob = 1 + 0.12 * Math.sin(a * 3 + t * 1.7) + 0.08 * Math.sin(a * 5 - t * 2.3); const rx = u * 0.42 * wob, ry = u * 0.48 * wob; let y = -u * 0.48 + Math.sin(a) * ry; if (y > 0) y = Math.sin(k * 1.7 + t * 3) * u * 0.03; pts.push([Math.cos(a) * rx, y]); }
+      tg.shape(pts, { fill: S('#2A2236'), lw: lw * 1.2, seed: seed + 1, alpha: 0.94, hatch: { gap: 9, angle: 0.9, color: 'rgba(120,100,160,.25)' } });
+      const blink = (t % 3.7) < 0.12;
+      for (const [x, y, r] of [[-0.12, -0.6, 0.06], [0.12, -0.62, 0.07], [0.0, -0.45, 0.045]]) { if (!blink) tg.ellipse(x * u, y * u, r * u, r * u * 0.7, { fill: '#F2D06A', lw: lw * 0.6, seed: seed + 5 + x * 10 }); glow(tg, x * u, y * u, r * u * 3, 'rgba(242,208,106,0.25)'); }
+    }
+    c.restore();
+  }
+
+  /* ================= 吹き出し ================= */
+  // 縦書きで回す文字（長音・ダッシュ・括弧・三点リーダー・英数字）と、右上に寄せる句読点・小書きの仮名
+  const ROTATE = /[ー－—―…‥〜～（）()「」『』【】\-~A-Za-z0-9]/;
+  const PUNCT = /[、。，．]/;
+  const SMALL = /[ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ]/;
+  const toFull = (t) => t.replace(/!/g, '！').replace(/\?/g, '？');
+
+  /** 吹き出しの大きさと向きを決める（縦書きが収まれば縦、だめなら横） */
+  function bubbleLayout(L, line, fig, seat, t = 0) {
+    const U = L.U, imp = line.importance ?? 0.5;
+    const fs = clamp(Math.min(L.H * 0.036, L.W * 0.045), 13, 28) * (imp >= 0.75 ? 1.12 : 1);
+    let text = toFull(line.text.replace(/[\s　]+/g, ''));
+    if (text.length > 44) text = text.slice(0, 43) + '…';
+    const people = fig ? placement(L, fig.figures, t) : []; // 歩いている人には吹き出しもついていく
+    const who = people.find((p) => p.role === line.speaker) || (line.speaker === 'other' ? null : null);
+    const head = who ? headOf(L, who, seat) : null;
+    const m = Math.max(10, L.H * 0.035), top = Math.max(m, L.topInset || 0), pad = fs * 0.75;
+    // 縦書き：頭の上か、頭の横（上の余白から頭の高さまで）に収まるか
+    const above = (head ? head.y - head.r * 1.4 : L.H * 0.62) - top;
+    const roomH = Math.max(above, head ? head.y + head.r - top : 0);
+    const perColMax = Math.floor((roomH - pad * 2) / fs);
+    let vertical = false, cols = 0, perCol = 0;
+    if (perColMax >= 4) {
+      cols = Math.ceil(text.length / perColMax);
+      if (cols <= 4) { vertical = true; perCol = Math.ceil(text.length / cols); }
+    }
+    let w, h, rows = [];
+    if (vertical) {
+      for (let i = 0; i < cols; i++) rows.push(text.slice(i * perCol, (i + 1) * perCol));
+      w = cols * fs * 1.45 + pad * 2 - fs * 0.45; h = perCol * fs + pad * 2;
+    } else {
+      const maxW = Math.min(L.W * 0.56, fs * 16), cpl = Math.max(4, Math.floor((maxW - pad * 2) / fs));
+      for (let i = 0; i < text.length; i += cpl) rows.push(text.slice(i, i + cpl));
+      w = Math.min(text.length, cpl) * fs + pad * 2; h = rows.length * fs * 1.45 + pad * 2 - fs * 0.45;
+    }
+    // 置き場所：話している人の頭の上、画面の中央寄り。いない人のセリフは左上の隅から（しっぽは画面の外へ）
+    let x, y, tip;
+    if (head) {
+      const side = head.x > L.W / 2 ? -1 : 1;
+      x = head.x + side * (head.r * 0.6) - (side < 0 ? w : 0);
+      y = head.y - head.r * 1.5 - h;
+      tip = [head.x + side * head.r * 0.55, head.y - head.r * 0.95];
+      // 頭の上に入らなければ、頭の横に立てる（しっぽは横から頭へ）
+      if (y < top) { y = top; x = head.x + side * (head.r * 1.9) - (side < 0 ? w : 0); tip = [head.x + side * head.r * 1.05, head.y - head.r * 0.2]; }
+    } else {
+      x = m * 1.5; y = top;
+      tip = [-L.W * 0.05, y + h * 0.9];
+    }
+    x = clamp(x, m, L.W - m - w); y = clamp(y, top, L.H - m - h);
+    return { x, y, w, h, fs, pad, rows, vertical, tip, imp, offscreen: !head };
+  }
+
+  function bubble(tg, L, line, fig, t, alpha = 1, pop = 1) {
+    if (!line || !line.text || alpha <= 0.003) return;
+    const seat = fig && fig.location === 'washitsu' ? 'seiza' : 'chair';
+    const B = bubbleLayout(L, line, fig, seat, t), c = tg.ctx, U = L.U;
+    const cx = B.x + B.w / 2, cy = B.y + B.h / 2;
+    c.save(); c.globalAlpha *= alpha;
+    c.translate(cx, cy); c.scale(pop, pop); c.translate(-cx, -cy);
+    // 輪郭：角丸の四角にしっぽを継ぎ足した1本の線（手描きで揺れる）
+    const r = Math.min(B.w, B.h) * 0.42, step = Math.max(10, B.fs * 0.55);
+    const pts = tg.points.rrPts(B.x, B.y, B.w, B.h, r, step);
+    let best = 0, bd = Infinity;
+    pts.forEach((p, i) => { const d = Math.hypot(p[0] - B.tip[0], p[1] - B.tip[1]); if (d < bd) { bd = d; best = i; } });
+    const span = Math.max(1, Math.round(B.fs * 0.5 / step));
+    const n = pts.length, keep = [];
+    for (let i = 0; i < n; i++) { const di = Math.min(Math.abs(i - best), n - Math.abs(i - best)); if (di > span) keep.push(pts[i]); else if (i === best) keep.push(null); }
+    // しっぽの先：頭の少し手前で止める
+    const base = pts[best], vx = B.tip[0] - base[0], vy = B.tip[1] - base[1], len = Math.hypot(vx, vy) || 1;
+    const reach = Math.min(len, B.offscreen ? len : Math.max(B.fs * 1.2, len * 0.85));
+    const tipP = [base[0] + vx / len * reach, base[1] + vy / len * reach];
+    const outline = []; for (const p of keep) { if (p) outline.push(p); else outline.push(tipP); }
+    const lw = (B.imp >= 0.75 ? 4.5 : 3) * U;
+    tg.shape(outline, { fill: '#FFFFFF', lw, seed: 5000, amp: 1.2 });
+    // 大事なセリフ：外側に勢いの線
+    if (B.imp >= 0.75) for (let k = 0; k < 5; k++) { const a = -Math.PI * (0.15 + k * 0.17), r0 = Math.max(B.w, B.h) * 0.6, r1 = r0 + 14 * U; tg.line([[cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.8], [cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * 0.8]], { lw: 3 * U, seed: 5010 + k }); }
+    // 文字
+    c.fillStyle = '#1E2B45'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = `${B.imp >= 0.75 ? 700 : 400} ${B.fs}px "Yusei Magic", "Hiragino Maru Gothic ProN", "Zen Maru Gothic", "Hiragino Sans", sans-serif`;
+    const jig = (k) => (hash(k, tg.boil) - 0.5) * 0.6 * U;
+    if (B.vertical) {
+      B.rows.forEach((col, ci) => {
+        const x0 = B.x + B.w - B.pad - B.fs / 2 - ci * B.fs * 1.45;
+        [...col].forEach((ch, i) => {
+          const y0 = B.y + B.pad + B.fs * (i + 0.5);
+          c.save(); c.translate(x0 + jig(ci * 50 + i), y0 + jig(ci * 50 + i + 7));
+          if (PUNCT.test(ch)) c.translate(B.fs * 0.32, -B.fs * 0.3);
+          else if (SMALL.test(ch)) c.translate(B.fs * 0.1, -B.fs * 0.08);
+          if (ROTATE.test(ch)) c.rotate(Math.PI / 2);
+          c.fillText(ch, 0, 0); c.restore();
+        });
+      });
+    } else {
+      B.rows.forEach((row, ri) => { [...row].forEach((ch, i) => c.fillText(ch, B.x + B.pad + B.fs * (i + 0.5) + jig(ri * 50 + i), B.y + B.pad + B.fs * 0.5 + ri * B.fs * 1.45 + jig(ri * 50 + i + 7))); });
+    }
+    c.restore();
+    return B;
+  }
+
+  /* ================= 心象（気持ちの背景） ================= */
+  function grad(tg, L, stops, radial) {
+    const c = tg.ctx; let g;
+    if (radial) g = c.createRadialGradient(L.W / 2, L.H * 0.55, 0, L.W / 2, L.H * 0.55, Math.max(L.W, L.H) * 0.75);
+    else g = c.createLinearGradient(0, 0, 0, L.H);
+    stops.forEach((s, i) => g.addColorStop(i / (stops.length - 1), s));
+    c.fillStyle = g; c.fillRect(0, 0, L.W, L.H);
+  }
+  const EMO = {
+    anxiety(tg, L, t) {
+      const U = L.U; grad(tg, L, ['#1E1F3A', '#3A2E54', '#18202F']);
+      // 不規則に揺れる渦
+      for (let k = 0; k < 7; k++) { const r = (60 + k * 80) * U * (1 + 0.04 * Math.sin(t * 2.3 + k)); tg.ellipse(L.W / 2 + Math.sin(t * 1.7 + k) * 14 * U, L.H * 0.5 + Math.cos(t * 1.3 + k) * 10 * U, r * 1.2, r * 0.9, { stroke: k % 2 ? '#8A7FC0' : '#5A6AA8', lw: 3 * U, seed: 3000 + k, amp: 5, second: false, alpha: 0.55 }); }
+      for (let k = 0; k < 6; k++) { const pts = []; const y = L.H * (0.1 + k * 0.16); for (let i = 0; i <= 10; i++) pts.push([i * L.W / 10, y + Math.sin(i * 1.9 + t * 3 + k) * 16 * U]); tg.line(pts, { lw: 2 * U, seed: 3020 + k, stroke: 'rgba(170,160,230,.35)', amp: 4 }); }
+    },
+    joy(tg, L, t) {
+      const U = L.U; grad(tg, L, ['#F8D08E', '#F2A88E', '#D98AA0']);
+      const c = tg.ctx; c.save(); c.globalCompositeOperation = 'lighter'; const g = c.createRadialGradient(L.W / 2, L.H * 0.15, 0, L.W / 2, L.H * 0.15, L.H * 0.7); g.addColorStop(0, `rgba(255,250,215,${0.55 + 0.15 * Math.sin(t * 1.5)})`); g.addColorStop(1, 'rgba(255,240,200,0)'); c.fillStyle = g; c.fillRect(0, 0, L.W, L.H); c.restore();
+      for (let k = 0; k < 14; k++) { const tw = 0.5 + 0.5 * Math.sin(t * 4 + k * 1.7); if (tw < 0.25) continue; tg.star(L.W * (0.06 + hash(k, 1) * 0.88), L.H * (0.08 + hash(k, 2) * 0.6), (8 + tw * 14) * U, { fill: '#FFF4C8', lw: 2.5 * U, seed: 3100 + k, amp: 0.5 }); }
+      for (let k = 0; k < 12; k++) { const ph = (t * 0.12 + hash(k, 5)) % 1; tg.ellipse(L.W * hash(k, 6) + Math.sin(t + k) * 20 * U, L.H * (1 - ph), (6 + hash(k, 7) * 8) * U, (6 + hash(k, 7) * 8) * U, { fill: '#FFFBEA', lw: 2, seed: 3120 + k, alpha: Math.min(1, (1 - ph) * 1.5), second: false }); }
+    },
+    calm(tg, L, t) {
+      const U = L.U; grad(tg, L, ['#A8D2D8', '#9CC8B4', '#7EAE9C']);
+      const c = tg.ctx; c.save(); c.globalCompositeOperation = 'lighter'; const g = c.createRadialGradient(L.W / 2, L.H * 0.4, 0, L.W / 2, L.H * 0.4, L.H * 0.6); g.addColorStop(0, `rgba(240,255,250,${0.3 + 0.12 * Math.sin(t * 0.8)})`); g.addColorStop(1, 'rgba(240,255,250,0)'); c.fillStyle = g; c.fillRect(0, 0, L.W, L.H); c.restore();
+      for (let k = 0; k < 7; k++) { const pts = [], y = L.H * (0.25 + k * 0.1); for (let i = 0; i <= 8; i++) pts.push([i * L.W / 8, y + Math.sin(i * 0.9 + t * 0.6 + k * 0.7) * 10 * U]); tg.line(pts, { lw: 3 * U, seed: 3200 + k, stroke: 'rgba(255,255,255,.4)', amp: 1 }); }
+      for (let k = 0; k < 3; k++) { const x = ((t * 8 * U + k * L.W / 3) % (L.W + 200)) - 100; tg.ellipse(x, L.H * (0.18 + k * 0.08), 80 * U, 20 * U, { fill: '#EAF6F2', lw: 2, seed: 3210 + k, alpha: 0.6, second: false }); }
+    },
+    sadness(tg, L, t) {
+      const U = L.U; grad(tg, L, ['#3A485C', '#5A6C82', '#788698']);
+      const c = tg.ctx; c.save(); c.strokeStyle = 'rgba(210,225,245,.35)'; c.lineWidth = 2 * U; c.lineCap = 'round'; c.beginPath();
+      for (let i = 0; i < 40; i++) { const sp = (90 + hash(i, 3) * 60) * U, x = hash(i, 1) * L.W, y = ((t * sp + hash(i, 2) * L.H) % (L.H + 80)) - 40; c.moveTo(x, y); c.lineTo(x, y + 26 * U); }
+      c.stroke(); c.restore();
+      for (let k = 0; k < 5; k++) { const x = L.W * (0.1 + k * 0.2); tg.line([[x, 0], [x + 10 * U, L.H * 0.3 + Math.sin(t * 0.7 + k) * 20 * U]], { lw: 2 * U, seed: 3300 + k, stroke: 'rgba(200,215,235,.25)' }); }
+    },
+    anger(tg, L, t) {
+      const U = L.U; grad(tg, L, ['#8E2A26', '#4A1414', '#1E0A0A'], true);
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+      const c = tg.ctx; c.save(); c.globalCompositeOperation = 'lighter'; const g = c.createRadialGradient(L.W / 2, L.H * 0.6, 0, L.W / 2, L.H * 0.6, L.H * 0.55); g.addColorStop(0, `rgba(255,110,60,${0.25 + 0.25 * pulse})`); g.addColorStop(1, 'rgba(255,110,60,0)'); c.fillStyle = g; c.fillRect(0, 0, L.W, L.H); c.restore();
+      // 外から刺さるぎざぎざ線
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2 + 0.2, R0 = Math.max(L.W, L.H) * 0.75, R1 = R0 * (0.55 - 0.08 * pulse), cx = L.W / 2, cy = L.H * 0.55; const pts = []; for (let i = 0; i <= 4; i++) { const rr = lerp(R0, R1, i / 4), off = (i % 2 ? 1 : -1) * 0.04; pts.push([cx + Math.cos(a + off) * rr, cy + Math.sin(a + off) * rr]); } tg.line(pts, { lw: 4 * U, seed: 3400 + k, stroke: 'rgba(255,150,100,.55)', amp: 2 }); }
+    },
+    surprise(tg, L, t) {
+      // 驚き：明るい黄色の地に、中心へ向かう集中線と、はじける星
+      const U = L.U; grad(tg, L, ['#FFF2B0', '#F6D27A', '#E8A85A'], true);
+      const cx = L.W / 2, cy = L.H * 0.5, R0 = Math.hypot(L.W, L.H) * 0.6, c = tg.ctx;
+      c.save(); c.fillStyle = 'rgba(120,70,20,.22)';
+      for (let k = 0; k < 40; k++) { const a = k / 40 * Math.PI * 2 + hash(k, 1) * 0.05, w = 0.012 + hash(k, 2) * 0.02, r1 = R0 * (0.32 + 0.06 * Math.sin(t * 6 + k)); c.beginPath(); c.moveTo(cx + Math.cos(a - w) * R0, cy + Math.sin(a - w) * R0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.lineTo(cx + Math.cos(a + w) * R0, cy + Math.sin(a + w) * R0); c.fill(); }
+      c.restore();
+      const pop = (t * 1.2) % 1;
+      for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, rr = L.H * (0.12 + pop * 0.3); tg.star(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8, (10 + 10 * (1 - pop)) * U, { fill: '#FFFBEA', lw: 2.5 * U, seed: 3500 + k, alpha: 1 - pop, amp: 0.5 }); }
+    },
+  };
+  function emotion(tg, L, id, t, alpha) {
+    if (!EMO[id] || alpha <= 0) return;
+    const c = tg.ctx; c.save(); c.globalAlpha = alpha; EMO[id](tg, L, t); c.restore();
+  }
+
+  /* ================= 天候 ================= */
+  function weather(tg, L, w, t) {
+    const c = tg.ctx, U = L.U;
+    if (w.cloudy > 0) { c.save(); c.globalCompositeOperation = 'multiply'; c.fillStyle = `rgba(110,115,128,${0.32 * w.cloudy})`; c.fillRect(0, 0, L.W, L.H); c.restore(); }
+    if (w.rain > 0) {
+      const n = Math.round(110 * w.rain); c.save(); c.strokeStyle = 'rgba(190,205,230,.7)'; c.lineWidth = 2.2 * U; c.lineCap = 'round'; c.beginPath();
+      for (let i = 0; i < n; i++) { const sp = (900 + hash(i, 3) * 500) * U, x = hash(i, 1) * (L.W + 200) - 100 - ((t * sp * 0.15) % 200), y = ((t * sp + hash(i, 2) * L.H) % (L.H + 120)) - 60; c.moveTo(x, y); c.lineTo(x - 10 * U, y + 34 * U); }
+      c.stroke(); c.restore();
+    }
+    if (w.snow > 0) {
+      const n = Math.round(90 * w.snow); c.save(); c.fillStyle = 'rgba(255,255,255,.9)';
+      for (let i = 0; i < n; i++) { const sp = (40 + hash(i, 3) * 50) * U, x = (hash(i, 1) * L.W + Math.sin(t * 0.8 + i) * 30 * U + L.W) % L.W, y = ((t * sp + hash(i, 2) * L.H) % (L.H + 40)) - 20, r = (2 + hash(i, 4) * 3) * U; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+    }
+    if (w.fog > 0) { c.save(); const g = c.createLinearGradient(0, L.H, 0, 0); g.addColorStop(0, `rgba(228,230,234,${0.8 * w.fog})`); g.addColorStop(0.55, `rgba(222,226,232,${0.4 * w.fog})`); g.addColorStop(1, `rgba(222,226,232,${0.15 * w.fog})`); c.fillStyle = g; c.fillRect(0, 0, L.W, L.H); c.restore(); }
+  }
+
+  const Draw = { layout, background, person, figures, placement, headOf, bubble, bubbleLayout, emotion, weather, costume, mix, shader, LOCATIONS: Object.keys(BG), EMOTIONS: Object.keys(EMO), COSTUME, ANIMALS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Draw;
+  root.Draw = Draw;
+})(typeof window !== 'undefined' ? window : globalThis);

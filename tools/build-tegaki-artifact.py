@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""手描き挿絵文庫（tegaki/）の「お試しページ」を作る。
+"""手描き挿絵文庫（tegaki/）・手描き漫画文庫（manga/）の「お試しページ」を作る。
 
 claude.ai の Artifact（非公開のページ）に載せて、Netlify に出す前にモック判定で動作を確かめるためのもの。
 Netlify の本番デプロイはクレジットを使うので、細かい修正はここで確かめてから、まとめて main に合流する。
 
 使い方（リポジトリ直下で）:
-    python3 tools/build-tegaki-artifact.py <出力フォルダ>
+    python3 tools/build-tegaki-artifact.py <出力フォルダ>          手描き挿絵文庫
+    python3 tools/build-tegaki-artifact.py <出力フォルダ> manga    手描き漫画文庫
 
 出力フォルダにできるもの:
-    tegaki-novel.html   ページ本体（Artifact の file_path に渡す）
-    tegaki.js, draw.js  描画
+    tegaki-novel.html   ページ本体（Artifact の file_path に渡す。漫画文庫は tegaki-manga.html）
+    tegaki.js, draw.js  描画（漫画文庫は manga.js も）
     sample-sjis.js      Shift_JIS のサンプル（Artifact は UTF-8 以外の .txt を置けないので base64 で埋め込む）
     samples/*.txt|md    UTF-8 のサンプル
 
@@ -25,11 +26,17 @@ import re
 import shutil
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent / 'tegaki'
+REPO = pathlib.Path(__file__).resolve().parent.parent
 SJIS_SAMPLE = 'ame_no_teishaba.txt'
+SITES = {
+    'tegaki': {'dir': 'tegaki', 'html': 'tegaki-novel.html', 'js': ('tegaki.js', 'draw.js')},
+    'manga': {'dir': 'manga', 'html': 'tegaki-manga.html', 'js': ('tegaki.js', 'draw.js', 'manga.js')},
+}
 
 
-def main(out_dir: str) -> None:
+def main(out_dir: str, site: str = 'tegaki') -> None:
+    conf = SITES[site]
+    ROOT = REPO / conf['dir']
     out = pathlib.Path(out_dir)
     (out / 'samples').mkdir(parents=True, exist_ok=True)
     s = (ROOT / 'index.html').read_text(encoding='utf-8')
@@ -65,19 +72,19 @@ def main(out_dir: str) -> None:
         "    return 'mock'; // お試しページには中継がない（前に保存した経路があっても使わない）")
     if not s.lstrip().startswith('<title>'):
         sys.exit('ページの先頭が <title> になっていない')
-    (out / 'tegaki-novel.html').write_text(s, encoding='utf-8')
+    (out / conf['html']).write_text(s, encoding='utf-8')
 
-    for f in ('tegaki.js', 'draw.js'):
+    for f in conf['js']:
         shutil.copy(ROOT / f, out / f)
     for f in sorted((ROOT / 'samples').iterdir()):
         if f.name == SJIS_SAMPLE:
             (out / 'sample-sjis.js').write_text(f'window.SJIS_SAMPLE = "{base64.b64encode(f.read_bytes()).decode()}";\n', encoding='utf-8')
         elif f.suffix in ('.txt', '.md'):
             shutil.copy(f, out / 'samples' / f.name)
-    print(f'{out}/tegaki-novel.html を作りました（{len(s)} 文字）')
+    print(f'{out}/{conf["html"]} を作りました（{len(s)} 文字）')
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] not in SITES):
         sys.exit(__doc__)
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else 'tegaki')
