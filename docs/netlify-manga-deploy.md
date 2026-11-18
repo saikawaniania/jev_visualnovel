@@ -22,7 +22,7 @@ Netlify は無料プランで、本番デプロイ 1 回につきクレジット
 | 手順 | クレジット |
 |---|---|
 | サイトを作る（`sites:create`） | 0 |
-| 環境変数を写す（`env:clone`） | 0 |
+| 環境変数を入れる（秘密の 2 つは持ち主が画面で） | 0 |
 | ビルドの設定（Base directory など） | 0 |
 | GitHub のリポジトリとつなぐ | 0（つないだだけではビルドしない。ビルドが始まったら手順 6 は飛ばす） |
 | 最初のデプロイ | **15** |
@@ -82,21 +82,48 @@ export MANGA_ID=（表示された Site ID）
 netlify api getSite --data "{\"site_id\":\"$MANGA_ID\"}" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const s=JSON.parse(d);console.log(s.name,s.ssl_url)})'
 ```
 
-## 5. 環境変数を写す（手描き挿絵文庫と同じ値）
+## 5. 環境変数を入れる（手描き挿絵文庫と同じ値）
 
-値を画面やログに出さずに、手描き挿絵文庫のサイトから写します。
+> **注意：秘密の値は写せない。** 手描き挿絵文庫の `TYPESAFE_API_KEY` と `RELAY_PASSPHRASE` は「秘密の値（secret）」になっています。
+> 秘密の値は、`netlify env:clone`・`netlify env:get`・API のどれで読んでも本当の値が返らず、**伏せ字や空の値がそのまま写ります**。
+> 実際に、伏せ字が写ったまま最初のデプロイをして、次の 2 つが起きました。
+> - Jev の判定が「HTTP 401 authentication_error」で失敗した（伏せ字のキーを TypeSafe に渡していた）
+> - 合言葉が伏せ字の文字列になった（本当の合言葉が通らず、伏せ字と同じ文字を入れた人が持ち主として扱われる）
+>
+> **この 2 つは、持ち主に Netlify の画面で入れてもらいます。** 値をチャット・ファイル・コマンドに書かないでください。
+
+### 5-1. 秘密でない 2 つだけ CLI で写す
+
+`RELAY_PUBLIC_UNTIL`（一般公開の最終日）と `RELAY_DAILY_LIMIT`（1 日の上限）は秘密の値ではないので、CLI で写せます。
+`env:clone` は全部を写してしまうので使わず、1 つずつ入れます。
 
 ```bash
-netlify env:clone --from "$TEGAKI_ID" --to "$MANGA_ID"
+# 挿絵文庫の値を読む（秘密でないので読める。日付と数字だけ）
+netlify api getEnvVars --data "{\"account_id\":\"$TEAM\",\"site_id\":\"$TEGAKI_ID\"}" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{for(const v of JSON.parse(d)) if(["RELAY_PUBLIC_UNTIL","RELAY_DAILY_LIMIT"].includes(v.key)) console.log(v.key, (v.values.find(x=>x.context==="production"||x.context==="all")||{}).value)})'
+# 読めた値を入れる（例）
+netlify env:set RELAY_PUBLIC_UNTIL 2026-11-30 --site "$MANGA_ID"
+netlify env:set RELAY_DAILY_LIMIT 2000 --site "$MANGA_ID"
 ```
 
-写ったかを、**名前だけ** で確かめます（値は表示しない）：
+- `getEnvVars` が通らない版の CLI なら、持ち主に挿絵文庫の画面でこの 2 つの値（日付と数字）を読んでもらってください
+- 挿絵文庫に入っていなければ、入れなくてかまいません（一般公開しない・上限は既定の 2000）
+
+### 5-2. 秘密の 2 つは持ち主が画面で入れる
+
+持ち主に、次をお願いしてください（クレジットは使いません）。
+
+1. Netlify の画面で、新しいサイト（`tegaki-manga`）の **Project configuration → Environment variables → Add a variable**
+2. `TYPESAFE_API_KEY`：TypeSafe の API キーそのもの（前に「Bearer」を付けない・引用符や空白を入れない）
+3. `RELAY_PASSPHRASE`：挿絵文庫と同じ合言葉
+4. どちらも **Scopes に Functions を含める**（既定の「All scopes」でよい）。「Contains secret values」にしてよい
+
+### 5-3. 入ったことを確かめる（値は表示しない）
+
+名前がそろっているか：
 
 ```bash
 netlify env:list --site "$MANGA_ID" --json | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(Object.keys(JSON.parse(d))))'
 ```
-
-次の名前があれば OK です。
 
 | 名前 | 中身 | 必須 |
 |---|---|---|
@@ -105,7 +132,9 @@ netlify env:list --site "$MANGA_ID" --json | node -e 'let d="";process.stdin.on(
 | `RELAY_PUBLIC_UNTIL` | 一般公開の終わりの日付 | 任意（一般公開するときだけ） |
 | `RELAY_DAILY_LIMIT` | 一般公開の 1 日の上限回数 | 任意 |
 
-- `env:clone` が使えない版の CLI なら、作業を止めて持ち主に伝えてください。**値を自分で調べたり、`env:list` の値をそのまま出力したりしないでください。**
+- 秘密の値は CLI からは中身を確かめられません。中身が正しいかは、手順 8 の接続テスト（合言葉を入れて「接続テスト」）で確かめます
+- 名前がそろうまで、手順 7（最初のデプロイ）に進まないでください。**中継の関数は、デプロイしたときの値を使います**。デプロイのあとで値を直したら、反映に再デプロイ（15）が要ります
+- **値を自分で調べたり、`env:list` の値をそのまま出力したりしないでください。**
 - 一般公開の 1 日の回数は、サイトごとに別々に数えます（手描き挿絵文庫とは別枠）。
 
 ## 6. ビルドの設定と GitHub リポジトリとのつなぎ
@@ -181,7 +210,7 @@ curl -s -o /dev/null -w "%{http_code}\n" "$URL/manga.js"   # 200
 - 起動画面に「手描き漫画文庫」の題と、漫画のページの見本が出る
 - 「試しに読む」から作品を開き、スクロールを止めるとページが出る
 - 設定画面の下の表示が「判定：Jev（一般公開中…）」か「判定：簡易（キーワード）」になっている（一般公開の設定による）
-- 合言葉を設定画面に入れると、中継（本物の Jev）で判定される
+- 合言葉を設定画面に入れて「接続テスト」を押すと成功する（キーと合言葉の両方が正しいことの確認。HTTP 401 `authentication_error` ならキーが違う、「合言葉が違います」なら合言葉が違う → 手順 5-2 で入れ直して再デプロイ）
 
 ## 9. 失敗したとき
 
@@ -190,6 +219,8 @@ curl -s -o /dev/null -w "%{http_code}\n" "$URL/manga.js"   # 200
 | ビルドが `error` | `netlify logs:deploy --site "$MANGA_ID"` か画面の Deploy log。`node build.mjs` が失敗していれば Base directory が `manga` になっているか（手順 6-2） |
 | `relay-status` が 404 | 関数が入っていない。Functions directory が `manga/netlify/functions` か。ビルドの log に「public/ と netlify/functions/ を作りました」が出ているか |
 | `relay-status` が 500 | 環境変数（手順 5）。名前が足りなければ持ち主に伝える |
+| 接続テストが HTTP 401 `authentication_error` | キーが伏せ字か違う値。持ち主に手順 5-2 で入れ直してもらい、再デプロイ（15） |
+| 接続テストで「合言葉が違います」 | 合言葉が伏せ字か違う値。同上 |
 | 判定が「簡易（キーワード）」のまま | 一般公開をしていない（`RELAY_PUBLIC_UNTIL` がない・過ぎている）なら正常。合言葉を入れれば本物の Jev になる |
 
 **直すために再デプロイが必要なときは、1 回につき 15 使います。** 再デプロイの前に持ち主に一言伝えてください。
