@@ -137,7 +137,7 @@ let lay = await page.evaluate(() => {
   const firstText = document.querySelector('#text .chapter-title, #text p').getBoundingClientRect();
   return { stTop: st.top, stH: st.height, stW: st.width, firstTop: firstText.top + scrollY, cy: JV.StopDetector.centerY(), line: document.getElementById('center-line').getBoundingClientRect().top, fig: document.querySelector('#stage canvas').getBoundingClientRect().height };
 });
-check(lay.stTop === 0 && Math.abs(lay.stH - 820 * 0.58) < 2 && lay.stW === 400, `上の6割弱に漫画のページ (高さ ${lay.stH})`);
+check(lay.stTop === 0 && Math.abs(lay.stH - Math.min(820 * 0.74, (400 - 16) * 1.5 + 84)) < 2 && lay.stW === 400, `縦持ちではページを幅いっぱいに出す高さ（画面の 74% まで） (高さ ${lay.stH})`);
 check(lay.firstTop >= lay.stH, `本文は絵の下から始まる (${Math.round(lay.firstTop)})`);
 check(Math.abs(lay.cy - (lay.stH + 820) / 2) < 2 && Math.abs(lay.line - lay.cy) < 2, `停止検知の中央は「絵の下〜画面下」の中央 (${Math.round(lay.cy)})`);
 check(lay.fig && Math.abs(lay.fig - lay.stH) < 2, `絵の canvas は枠いっぱい (${Math.round(lay.fig)} / ${Math.round(lay.stH)})`);

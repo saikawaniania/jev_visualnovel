@@ -731,12 +731,14 @@
   const toFull = (t) => t.replace(/!/g, '！').replace(/\?/g, '？').replace(/[\s　]+/g, '');
   const FONT_SPEECH = '"Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif';
   /** 縦書きの文字の箱：列の高さ maxH に収まるよう、字の大きさと列数を決める（4列まで） */
-  function columns(text, fs0, maxH, maxCols = 4, pad = 0.7) {
-    let fs = fs0, t = toFull(text);
+  // minFs：これより小さくしない（スマホで読める大きさ）。入りきらなければ、文字を小さくする代わりに列を 1 つ足す
+  function columns(text, fs0, maxH, maxCols = 4, pad = 0.7, minFs = 0) {
+    let fs = Math.max(fs0, minFs), t = toFull(text);
     for (let k = 0; k < 6; k++) {
       const per = Math.max(2, Math.floor((maxH - fs * pad * 2) / fs));
       const cols = Math.ceil(t.length / per);
-      if (cols <= maxCols || k === 5) {
+      if (cols <= maxCols || k === 5 || (fs <= minFs && cols <= maxCols + 1)) {
+        if (fs <= minFs && cols === maxCols + 1) maxCols++;
         if (cols > maxCols) { t = t.slice(0, per * maxCols - 1) + '…'; }
         const n = Math.ceil(t.length / Math.min(maxCols, cols)), rows = [];
         for (let i = 0; i < t.length; i += n) rows.push(t.slice(i, i + n));
@@ -745,7 +747,7 @@
         const rs = rows.filter(Boolean), hmax = Math.max(...rs.map((r) => r.length));
         return { fs, rows: rs, w: rs.length * fs * 1.32 + fs * pad * 2 - fs * 0.32, h: hmax * fs + fs * pad * 2, pad: fs * pad };
       }
-      fs *= 0.86;
+      fs = Math.max(minFs, fs * 0.86);
     }
   }
   function verticalText(tg, B, x, y, color, weight) {
@@ -780,7 +782,7 @@
   }
 
   /** コマの吹き出しの置き場所を決める（ページの座標）。セリフ 2 つなら右が先（読み順は右→左） */
-  function placeBubbles(p, r, heads, U) {
+  function placeBubbles(p, r, heads, U, minFs = 0) {
     const out = [];
     const n = p.lines.length; if (!n) return out;
     const m = Math.max(6, Math.min(r.w, r.h) * 0.04);
@@ -789,7 +791,7 @@
     let rightEdge = r.x + r.w - m;
     p.lines.forEach((l, i) => {
       const imp = l.importance ?? 0.5;
-      const B = columns(l.text, fs0 * (imp >= 0.75 ? 1.1 : 1), maxH, n > 1 ? 3 : 4);
+      const B = columns(l.text, fs0 * (imp >= 0.75 ? 1.1 : 1), maxH, n > 1 ? 3 : 4, 0.7, minFs);
       const head = heads[l.speaker];
       // 1つだけのセリフは話し手の側に、2つなら右から順に
       let x = rightEdge - B.w;
@@ -917,12 +919,12 @@
       // 吹き出し・ナレーション
       const heads = {}; for (const [role, v] of Object.entries(S.heads)) heads[role] = [r.x + v[0] * r.w / w, r.y + v[1] * r.h / h, v[2] * r.w / w];
       if (opts.bubbles !== false) {
-        for (const b of placeBubbles(p, r, heads, U)) {
+        for (const b of placeBubbles(p, r, heads, U, opts.minFont || 0)) {
           balloon(tg, b.x, b.y, b.B.w, b.B.h, b.tip, { lw: (b.imp >= 0.75 ? 3.2 : 2.2) * U, seed: 5000 + i * 10 + b.text.length, shout: b.shout || b.imp >= 0.75 || (/[！!]/.test(b.text) && b.imp >= 0.6) });
           verticalText(tg, b.B, b.x, b.y, '#16161C', b.imp >= 0.75 ? 700 : 600);
         }
         if (p.narration) {
-          const m = Math.max(6, Math.min(r.w, r.h) * 0.035), B = columns(p.narration, clamp(Math.min(r.w * 0.06, r.h * 0.058), 10 * U, 22 * U), r.h * 0.7, 3, 0.55);
+          const m = Math.max(6, Math.min(r.w, r.h) * 0.035), B = columns(p.narration, clamp(Math.min(r.w * 0.06, r.h * 0.058), 10 * U, 22 * U), r.h * 0.7, 3, 0.55, (opts.minFont || 0) * 0.9);
           const x = r.x + r.w - m - B.w, y = r.y + m;
           c.fillStyle = '#FFFFFF'; c.fillRect(x, y, B.w, B.h);
           c.strokeStyle = '#16161C'; c.lineWidth = 1.6 * U; c.strokeRect(x, y, B.w, B.h);

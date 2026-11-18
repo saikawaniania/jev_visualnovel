@@ -218,8 +218,11 @@ body.novel #text-column {
 body.effects-off #stage { display: none; }
 
 /* 挿絵モード：縦持ちのスマホは上4割に絵・下に本文。横向きやPCは左に絵・右に本文 */
-body.illust #stage { bottom: auto; height: 58vh; height: 58svh; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); z-index: 15; }
-body.illust #text-column { padding-top: calc(58svh + 20px); background: none; box-shadow: none; }
+/* 縦持ち：ページ（2:3）を画面の幅いっぱいに出す高さ。上のバー 44px・めくりの操作 40px の分を足し、画面の高さの 74% までにする */
+:root { --stage-h: min(74vh, calc((100vw - 16px) * 1.5 + 84px)); }
+@supports (height: 1svh) { :root { --stage-h: min(74svh, calc((100vw - 16px) * 1.5 + 84px)); } }
+body.illust #stage { bottom: auto; height: var(--stage-h); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); z-index: 15; }
+body.illust #text-column { padding-top: calc(var(--stage-h) + 20px); background: none; box-shadow: none; }
 body.illust #reader-top { z-index: 25; }
 @media (orientation: landscape) {
   body.illust #stage { right: auto; width: min(50vw, 72svh); height: 100vh; height: 100svh; box-shadow: 6px 0 18px rgba(0, 0, 0, 0.45); }
@@ -231,14 +234,14 @@ body.effects-off #text-column { background: transparent; box-shadow: none; }
 
 /* ページめくり（1 つの場面が 2 ページ以上のときだけ出す）。漫画の読み順なので、左が次のページ */
 #page-nav {
-  position: fixed; z-index: 22; left: 0; right: 0; top: calc(58svh - 46px);
+  position: fixed; z-index: 22; left: 0; right: 0; top: calc(var(--stage-h) - 38px);
   display: flex; justify-content: center; align-items: center; gap: 10px; pointer-events: none;
 }
 #page-nav > * { pointer-events: auto; }
 #page-nav button { padding: 4px 12px; font-size: 13px; border-radius: 999px; background: rgba(16, 22, 36, 0.72); color: var(--night-ink); border-color: rgba(241, 240, 234, 0.3); }
 #page-nav button:disabled { opacity: 0.35; cursor: default; }
 #page-nav .count { min-width: 3.6em; text-align: center; font-size: 12px; color: var(--night-ink); background: rgba(16, 22, 36, 0.72); border-radius: 999px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
-@media (orientation: landscape) { #page-nav { top: auto; bottom: 14px; right: auto; width: min(50vw, 72svh); } }
+@media (orientation: landscape) { #page-nav { top: auto; bottom: 8px; right: auto; width: min(50vw, 72svh); } }
 body.effects-off #page-nav { display: none !important; }
 #stage { touch-action: pan-y; }
 
@@ -273,7 +276,9 @@ body.effects-off #page-nav { display: none !important; }
   color: #cfe8cf;
   font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
-  pointer-events: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 body.debug #text .seg.current { outline: 1px dashed rgba(160, 230, 160, 0.7); outline-offset: 2px; }
 body.debug #center-line {
@@ -1505,7 +1510,10 @@ JV.Debug = {
     document.body.classList.toggle('debug', on);
     el.classList.toggle('hidden', !on);
     if (!on) return;
-    el.textContent = Object.values(this.lines).filter(Boolean).join('\n');
+    // ページの判定（コマの役割・カメラ・最重要コマ）を先に。指でスクロールして残りを読める
+    const order = ['page', 'unit', 'judge'];
+    const keys = [...order.filter((k) => k in this.lines), ...Object.keys(this.lines).filter((k) => !order.includes(k))];
+    el.textContent = keys.map((k) => this.lines[k]).filter(Boolean).join('\n');
   },
 };
 
@@ -2385,8 +2393,9 @@ JV.Stage = {
   box() {
     const W = this.canvas.width, H = this.canvas.height, sc = H / (this.el.clientHeight || H);
     const portrait = window.innerHeight > window.innerWidth;
-    const top = (portrait ? 46 : 52) * sc, m = 12 * sc;
-    return { x: m, y: top, w: W - m * 2, h: H - top - m };
+    // 上は戻る・設定のバー、下はめくりの操作の分をあける。横の余白は縦持ちでは小さく（ページを大きく）
+    const top = (portrait ? 44 : 50) * sc, bottom = (portrait ? 40 : 44) * sc, m = (portrait ? 8 : 12) * sc;
+    return { x: m, y: top, w: W - m * 2, h: H - top - bottom };
   },
   frame(t) {
     const tg = this.tg, c = tg.ctx;
@@ -2394,7 +2403,8 @@ JV.Stage = {
     c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
     c.fillStyle = '#1b1f2a'; c.fillRect(0, 0, tg.W, tg.H);
     const box = this.box(), k = this.fade();
-    const opts = { box, bubbles: JV.Settings.get('bubbles') !== false, figures: !!JV.Settings.get('silhouettes') };
+    // 吹き出しの文字は、画面の上で 11px より小さくしない
+    const opts = { box, bubbles: JV.Settings.get('bubbles') !== false, figures: !!JV.Settings.get('silhouettes'), minFont: 11 * (tg.H / (this.el.clientHeight || tg.H)) };
     if (!this.page) {
       // まだページがない：白い紙だけ
       const P = Manga.pageBox(box);

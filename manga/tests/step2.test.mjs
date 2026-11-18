@@ -14,7 +14,7 @@ const layout = await page.evaluate(() => {
   return { illust: document.body.classList.contains('illust'), novel: document.body.classList.contains('novel'), stageH: stage.height / innerHeight, pos: getComputedStyle(document.getElementById('stage')).position };
 });
 check(layout.illust && !layout.novel, '漫画のページと本文を分けて出す（絵を背景にする表示はない）');
-check(layout.pos === 'fixed' && layout.stageH > 0.5 && layout.stageH < 0.65, `縦持ちではページの欄は上の約6割 (${layout.stageH.toFixed(2)})`);
+check(layout.pos === 'fixed' && layout.stageH > 0.6 && layout.stageH <= 0.745, `縦持ちではページの欄は上の 7 割前後 (${layout.stageH.toFixed(2)})`);
 check(await page.isVisible('#effects-toggle'), '右下に演出トグル');
 
 // onStop の呼び出しを記録する
